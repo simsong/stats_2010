@@ -1,0 +1,9 @@
+zips
+data
+__pycache__
+*.sqlite3.DS_Store
+*~
+*.csv
+*.zip
+*.log
+.DS_Store

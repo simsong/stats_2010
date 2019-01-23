@@ -7,3 +7,6 @@ __pycache__
 *.zip
 *.log
 .DS_Store
+*.sqlite3
+*.log
+*.zip

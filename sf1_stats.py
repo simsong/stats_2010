@@ -29,6 +29,7 @@ class SF1:
     def __init__(self,args):
         self.args = args
         self.stats = 0
+        self.stats_per_line = 0
 
     def read_sas_geo(self,fname):
         geo_line_re = re.compile(r'@(\d+) (\w+) [$](\d+)[.] [/][*](.*)[*][/]')
@@ -84,15 +85,17 @@ class SF1:
         except ValueError as r:
             print("Bad line: ",line)
             raise r
-        counts = fields[5:]
-        self.stats += len(counts)
+        self.stats_per_line = len(fields[5:])
         return
 
     def load_file(self,f, decode_func):
-        print("load_file({})".format(f.name))
+        # don't know what it currently is
+        self.stats_per_line = 0 
         t0 = time.time()
         for (ll,line) in enumerate(f):
-            decode_func(line)
+            if self.stats_per_line==0:
+                decode_func(line)
+            self.stats += self.stats_per_line
             if args.interval and (ll % args.interval==0):
                 print("{}...".format(ll),end='')
                 sys.stdout.flush()
@@ -104,9 +107,10 @@ class SF1:
         zf = zipfile.ZipFile(zipfilename)
         for zn in zf.namelist():
             if zn.endswith("packinglist.txt"):
-                continue
-            if zn[2:5]=='geo':
-                self.load_file(io.TextIOWrapper(zf.open(zn), encoding='latin1'), self.decode_geo_line)
+                pass
+            elif zn[2:5]=='geo':
+                #self.load_file(io.TextIOWrapper(zf.open(zn), encoding='latin1'), self.decode_geo_line)
+                pass
             else:
                 self.load_file(io.TextIOWrapper(zf.open(zn), encoding='latin1'), self.decode_table_line)
         print("{},{}".format(name[0:2],self.stats))
@@ -129,6 +133,5 @@ if __name__ == "__main__":
     # open database and give me a big cache
     g = SF1(args)
     g.read_sas_geo("sf1/pl_geohd_2010.sas")
-    print(args.zipfiles)
     for fname in args.zipfiles:
         g.process_zipfile(fname)

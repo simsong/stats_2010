@@ -5,4 +5,5 @@ load_geo: dbload.py
 load_blocks:
 	python dbload.py data/??0000[12]2010.pl
 
-
+clean:
+	/bin/rm -f *~

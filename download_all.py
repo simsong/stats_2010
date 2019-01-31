@@ -58,21 +58,24 @@ West_Virginia/wv
 Wisconsin/wi
 Wyoming/wy"""
 
-URLS = {'pl94':'https://www2.census.gov/census_2010/redistricting_file--pl_94-171/',
+URLS = {'pl94':'https://www2.census.gov/census_2010/redistricting_file--pl_94-171/{st}2010.pl.zip',
         'sf1':'https://www2.census.gov/census_2010/04-Summary_File_1/{st}2010.sf1.zip',
         'sf2':'https://www2.census.gov/census_2010/05-Summary_File_2/{st}2010.sf2.zip'}
 BASEDIR = os.path.dirname(__file__)
 
 if __name__=="__main__":
-    for sf in URLS:
-        download_dir = os.path.join(BASEDIR, sf)
+    products = ['pl94']
+    for product in products:
+        download_dir = os.path.abspath(os.path.join(BASEDIR, product))
+        print(f"download_dir: {download_dir}")
         if not os.path.exists(download_dir):
             os.mkdir( download_dir )
-        os.chdir( download_dir)
+        print(download_dir)
         for state in states.split("\n"):
-            url = URLS[sf].format(st=state)
+            url = URLS[product].format(st=state)
             fname = os.path.basename(url)
             if os.path.exists(fname):
+                print("{} exists")
                 goodfile = ".good" + fname
                 if os.path.exists(goodfile):
                     continue
@@ -82,6 +85,6 @@ if __name__=="__main__":
                     open(".good" + fname,"w").close()
                     continue
                 print("{} does not check. Will continue the downloading.".format(fname))
-            cmd = ['wget','-U',USER_AGENT,'-c',url]
-            print("Downloading with: "," ".join(cmd))
+            cmd = ['wget','-U',USER_AGENT,'-c',url,'-O',os.path.join(download_dir,fname)]
+            print("$ {}".format(" ".join(cmd)))
             subprocess.check_call(cmd)

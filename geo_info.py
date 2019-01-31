@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 #
-# print info about a geography file
+"""
+geo_info.py print info about a geography file
+Note that each state has its own geography file.
+"""
 
 __version__ = '0.0.1'
+
 import datetime
 import json
 import os

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 #
-# create an SQLite3 database from PL94 data
+"""
+dbload.py: create an SQLite3 database from PL94 data
+"""
+
 
 __version__ = '0.0.1'
 import datetime
@@ -19,8 +22,7 @@ from sql import SLGSQL
 CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
-SQL_SCHEMA=\
-    """
+SQL_SCHEMA="""
 CREATE TABLE IF NOT EXISTS blocks (state VARCHAR(2), county INTEGER, tract INTEGER, block INTEGER, logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx2 ON blocks(state,county,tract,block);
@@ -29,6 +31,8 @@ CREATE INDEX IF NOT EXISTS blocks_idx4 ON blocks(pop);
 CREATE INDEX IF NOT EXISTS blocks_idx5 ON blocks(houses);
 """
 
+# Define the fileds in the GEO Header. See Figure 2-5 of SF1 publication
+#
 GEO_FILEID=(1,6)
 GEO_STUSAB=(7,2)
 GEO_SUMLEV=(9,3)

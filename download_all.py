@@ -58,7 +58,8 @@ West_Virginia/wv
 Wisconsin/wi
 Wyoming/wy"""
 
-URLS = {'sf1':'https://www2.census.gov/census_2010/04-Summary_File_1/{st}2010.sf1.zip',
+URLS = {'pl94':'https://www2.census.gov/census_2010/redistricting_file--pl_94-171/',
+        'sf1':'https://www2.census.gov/census_2010/04-Summary_File_1/{st}2010.sf1.zip',
         'sf2':'https://www2.census.gov/census_2010/05-Summary_File_2/{st}2010.sf2.zip'}
 BASEDIR = os.path.dirname(__file__)
 

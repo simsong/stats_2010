@@ -22,9 +22,6 @@ def test_geo_fields():
     assert ex(GEO_LINE,GEO_COUNTY) == '013'
     assert ex(GEO_LINE,GEO_TRACT) == '000100'
     
-def test_part1_fields():
-    
-
 def test_load_geo_file():
     # Test numbers taken from various places
     # We use Alaska (AK)

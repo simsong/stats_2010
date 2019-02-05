@@ -9,17 +9,17 @@ import re
 import zipfile
 import io
 
-CHAPTER6_CSV = os.path.join(os.path.dirname(__file__), "doc/sf1_chapter6.csv")
+CHAPTER6_CSV = os.path.join(os.path.dirname(__file__), "doc/{publication}_chapter6.csv")
 
 FILE_START_RE = re.compile("^File (\d\d)")
 VAR_RE = re.compile("(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|((H|P|PCT)[0-9A-O]{6,14})")
 
-def part_matrix_columns(fileno):
+def part_matrix_columns(publication,fileno):
     """Given a SF1 part number, return the columns based on an analysis of Chapter 6."""
     assert 1<=fileno<=47
     infile = None
     cols = []
-    with open( CHAPTER6_CSV, "r", encoding='latin1') as f:
+    with open( CHAPTER6_CSV.format(publication=publication), "r", encoding='latin1') as f:
         for line in f:
             line = line.strip()
             line = re.sub(r",+", ",", line) # replace repeated commas with a single comma
@@ -32,13 +32,11 @@ def part_matrix_columns(fileno):
                 continue
             if infile != fileno:
                 continue
-            print(line)
             for word in re.split("[ ,]",line):
                 if len(word) > 3:
                     m = VAR_RE.search(word)
                     if m:
                         cols.append(word)
-                        print(len(cols),m,word,":",line)
     return cols
                     
 def sf1_file_from_zip(state,part):
@@ -52,9 +50,21 @@ def sf1_file_from_zip(state,part):
     return io.TextIOWrapper(zf, encoding='latin1')
 
     
+def pl94_file_from_zip(state,part):
+    state = state.lower()
+    zipfilename = f'/data/pl94/{state}2010.pl.zip'
+    if part=='geo':
+        partname = f'{state}{part}2010.pl'
+    else:
+        partname    = f'{state}{part:05}2010.pl'
+    zip_file = zipfile.ZipFile(zipfilename)
+    zf       = zip_file.open(partname, 'r')
+    return io.TextIOWrapper(zf, encoding='latin1')
+
+    
 
 # Define the fileds in the GEO Header. See Figure 2-5 of SF1 publication
-#
+# Check these - PL94 and SF1 appear to have different geo headers.
 GEO_FILEID=(1,6)
 GEO_STUSAB=(7,2)
 GEO_STATE=(28,2)

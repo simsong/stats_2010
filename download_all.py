@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+Program to download all of the PL94/SF1/SF2 files from the Census server.
+"""
+
+
 import os.path
 import os
 import sys
@@ -64,8 +70,15 @@ URLS = {'pl94':'https://www2.census.gov/census_2010/redistricting_file--pl_94-17
 BASEDIR = os.path.dirname(__file__)
 
 if __name__=="__main__":
-    products = ['pl94']
-    for product in products:
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Compute file changes',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("products", help="Specifies what you wish to download. Should be pl94 sf1 sf2 or any combination thereof.", 
+                        nargs="*")
+
+    args = parser.parse_args()
+    for product in args.products:
         download_dir = os.path.abspath(os.path.join(BASEDIR, product))
         print(f"download_dir: {download_dir}")
         if not os.path.exists(download_dir):

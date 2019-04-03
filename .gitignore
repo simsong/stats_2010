@@ -10,3 +10,6 @@ __pycache__
 *.sqlite3
 *.log
 *.zip
+sf1/
+sf2/
+pl94/

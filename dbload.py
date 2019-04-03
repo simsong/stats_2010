@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 """
-dbload.py: create an SQLite3 database from PL94 data
+dbload.py: create an SQLite3 database from PL94 data. Table positions defined by hand.
 """
 
 

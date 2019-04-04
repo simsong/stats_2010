@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """
 decode the information in SF1 files. Uses CHAPTER6 converted into CSV format.
+SF1 is distributed as a set of 52 ZIP files. Each file contains:
+- Geoheader, which maps every LOGRECNO to a Geography.
+- files {state}00001{year}.sf1 through {state}00047{year}.sf1 where
+  {state} is the 2- character abreviation and {year} is 2010.
+  00001 through 00047 are the segment numbers. We pass them as an integer
+
+The .sf1 files are all linked together by LOGRECNO. Each is a CSV file, without a header. The column headings are given by the Chapter6 pdf. 
+
+See README.md for a description of the file formats.
+
 """
 
 import os
@@ -24,7 +34,7 @@ def part_matrix_columns(fileno):
     assert 1<=fileno<=47
     infile = None
     cols = []
-    with open( CHAPTER6_CSV, "r", encoding='latin1') as f:
+    with open( fileno, "r", encoding='latin1') as f:
         for line in f:
             line = line.strip()
             line = re.sub(r",+", ",", line) # replace repeated commas with a single comma
@@ -85,10 +95,9 @@ def geocode_for_line(geoline):
     return "".join([ex(line,level) for level in [GEO_STATE, GEO_COUNTY, GEO_TRACT, GEO_BLKGRP, GEO_BLOCK]])
 
 def logrecno_for_sumlev(state,sumlev):
-    """Return a dictionary of the logrecnos for a state and the corresponding geocode"""
+    """Return a dictionary of the logrecnos for a state and the corresponding geocode for each"""
     logrecnos = dict()
     for geoline in sf1_file_from_zip(state,'geo'):
-        print(ex(geoline,GEO_SUMLEV), sumlev)
         if ex(geoline,GEO_SUMLEV)==sumlev:
             assert ex(geoline,GEO_FILEID)=='SF1ST'
             assert ex(geoline,GEO_STUSAB)==state
@@ -96,13 +105,60 @@ def logrecno_for_sumlev(state,sumlev):
             logrecnos[ ex(geoline, GEO_LOGRECNO) ] = geocode_for_line(geoline)
     return logrecnos
 
+table_re = re.compile(r"((P|H|PCT)\d{1,2}[A-Z]?)[.]\s+([A-Z ]+)")
+def is_table_name(fields):
+    """If @fields describes a table, return (table_number,table_description)"""
+    line = " ".join(fields)
+    m = table_re.search(line)
+    if m:
+        return m.group(1,2)
+    return None
+
+def fields_for_chapter6_file(fname):
+    """Given a chapter6 file, return each line as a an array of fields, cleaned"""
+    with open(fname,"r",encoding='latin1') as ch6:
+        for line in ch6:
+            line = line.replace('"','').strip()
+            b = line.find('[')            # Remove the [
+            if b>0:
+                line = line[0:b]
+            fields = [field.strip() for field in line.split(",") if len(field)>0]
+            yield fields
+
+def tables_in_file(fname):
+    tables = {}
+    for fields in fields_for_chapter6_file(fname):
+        tablename = is_table_name(fields)
+        if tablename is not None:
+            tables[tablename[0]] = tablename[1]
+    return tables
+
+def schema_for_sf1_part(segment):
+    """Given a segment number, parse Chapter6 and return a schema object for that segment number"""
+    assert 1 <= segment <= MAX_SEGMENT
+    with open(SF1_CHAPTER6_CSV,"r",encoding='latin1') as ch6:
+        in_table = False
+        for line in ch6:
+            line = line.replace('"','').strip()
+            # Remove the [
+            b = line.find('[')
+            if b>0:
+                line = line[0:b]
+            fields = [field.strip() for field in line.split(",") if len(field)>0]
+            
+            tablename = is_table_name(fields)
+            if tablename is not None:
+                print(tablename[0],tablename[1])
+        
+    
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Extract the schema from the SF1 Chapter 6 and produce readers for all of the file types',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--state",help="specify state to work with",default='ak')
+    parser.add_argument("--sumlevel", help="Specify summary level to work with")
     args = parser.parse_args()
-    
-    print(logrecno_for_sumlev(args.state,'750'))
+    schema_for_sf1_part(1)
+                        
 

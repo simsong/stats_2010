@@ -2,6 +2,7 @@ import os
 
 ROOT_DIR = os.path.dirname(__file__)
 DOC_DIR  = os.path.join(ROOT_DIR, "doc")
+MAX_SEGMENT = 47                # segment numbers go 1..MAX_SEGMENT
 
 WWW_SERVER='http://www2.census.gov/census_2010'
 
@@ -19,7 +20,9 @@ SF1_DATA_PREFIX="SF1ST,"
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary
 
-CHAPTER6_CSV = DOC_DIR + "/" + "sf1_chapter6.csv"
+PL94_CHAPTER6_CSV = DOC_DIR + "/" + "pl94_chapter6.csv"
+SF1_CHAPTER6_CSV = DOC_DIR + "/" + "sf1_chapter6.csv"
+SF2_CHAPTER6_CSV = DOC_DIR + "/" + "sf2_chapter6.csv"
 
 STATE_DB="""Alaska/ak
 Arizona/az

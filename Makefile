@@ -7,3 +7,9 @@ load_blocks:
 
 clean:
 	/bin/rm -f *~
+
+clean_data:
+	/bin/rm -rf pl94 sf1 sf2
+
+download_ak:
+	python download_all.py --state ak pl94 sf1 sf2

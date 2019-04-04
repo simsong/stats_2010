@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 #
 """
-dbload.py: create an SQLite3 database from PL94 data. Table positions defined by hand.
+pl94_dbload.py: create an SQLite3 database from 2010 PL94 data. Table positions defined by hand.
 """
-
 
 __version__ = '0.0.1'
 import datetime
@@ -71,7 +70,6 @@ def decode_geo_line(conn,c,line):
                 ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
             raise e
             
-
 def decode_12010(conn,c,line):
     """Update the database for a line. Note that the logical record number may not be in the DB, because this line may not be for a block"""
     fields = line.split(",")
@@ -133,7 +131,7 @@ def process_file(conn,fname):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Compute file changes',
+    parser = argparse.ArgumentParser(description='Ingest the PL94 block-level population counts',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--db", help="Specify database location", default="data.sqlite3")
     parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file", 

@@ -1,5 +1,11 @@
+"""
+Test for the pl94 database loader.
+We create a record from the PL94 and verify that we can parse it.
+"""
+
+
 import os
-from dbload import *
+from pl94_dbload import *
 
 GEO_LINE="""PLST  AK75000000  00046434902013H1  01598Z5  9999999  00010011000  9999999  9999999999999999999999999999901570E799999  9999999999999  9999999999         0000S03737-712A               999999999900007             0     107119025Block 1000                                                                                S         0        0+55.4330770-162.7240868BK       999990178553301419964019399339999999999999999999999999999999902419297                                      99                       """
 

@@ -1,4 +1,9 @@
-from sf1_decoder import *
+#
+# make sure that we can read the sf1 file
+
+from constants import *
+
+from sf1_doc_decoder import *
 
 def test_part_matrix_columns():
     cols = part_matrix_columns(3)

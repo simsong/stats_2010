@@ -22,12 +22,23 @@ import io
 # File locations
 
 from constants import *
+import census_etl
+import ctools
+
 
 SF1_GEOHEADER_NAME='{state}{part}2010.sf1'
 SF1_PART_NAME='{state}{part:05}2010.sf1'
 
 FILE_START_RE = re.compile(r"^File (\d\d)")
-VAR_RE = re.compile(r"(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|((H|P|PCT)[0-9A-O]{6,14})")
+VAR_RE       = re.compile(r"^((FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
+                           r"([PH]\d{7,8})|"
+                           r"(PCO\d{7})|"
+                           r"(PCT\d{7,8})|"
+                           r"(PCT\d{3}[A-Z]\d{3})|"
+                           r"(H\d{3}[A-Z]\d{4})|"
+                           r"(P\d{3}[A-Z]\d{3}))$")
+
+INTERVAL=10
 
 def part_matrix_columns(fileno):
     """Given a SF1 part number, return the columns based on an analysis of Chapter 6."""
@@ -127,12 +138,37 @@ def is_table_name(fields):
         return m.group('table','title')
     return None
 
+def is_variable_name(name):
+    m = VAR_RE.search(name)
+    if m:
+        return True
+    return False
+
+def is_variable_desc(fields):
+    """If @fields describes a variable, return data dictionary
+    reference name, desc, segment, and maxsize"""
+    if len(fields)==4:
+        (desc,name,segment,maxsize) = fields
+        try:
+            if not (1 <= int(segment) <= MAX_SEGMENT):
+                return False
+            if not (1 <= int(maxsize) <= 9):
+                return False
+        except ValueError as e:
+            return False
+        if is_variable_name(fields[1])==False:
+            return False
+        return (name,desc,segment,maxsize)
+    return None
+
 def fields_for_chapter6_file(fname):
     """Given a chapter6 file, return each line as a an array of fields, cleaned"""
+    print(fname)
     with open(fname,"r",encoding='latin1') as ch6:
-        for line in ch6:
+        for (ll,line) in enumerate(ch6):
+            if ll % INTERVAL==0:
+                print(ll,"...")
             yield line_to_fields(line)
-
 
 def tables_in_file(fname):
     tables = {}
@@ -145,20 +181,21 @@ def tables_in_file(fname):
 def schema_for_sf1_part(segment):
     """Given a segment number, parse Chapter6 and return a schema object for that segment number"""
     assert 1 <= segment <= MAX_SEGMENT
-    with open(SF1_CHAPTER6_CSV,"r",encoding='latin1') as ch6:
-        in_table = False
-        for line in ch6:
-            line = line.replace('"','').strip()
-            # Remove the [
-            b = line.find('[')
-            if b>0:
-                line = line[0:b]
-            fields = [field.strip() for field in line.split(",") if len(field)>0]
-            
-            tablename = is_table_name(fields)
-            if tablename is not None:
-                print(tablename[0],tablename[1])
+    current_table = None
+    tables = {}
+    for fields in fields_for_chapter6_file(SF1_CHAPTER6_CSV):
+        tn = is_table_name(fields)
+        if tn:
+            tables[tn[0]] = tn[1]
+            current_table = tn
+            continue
+        # if we are not in a table, return
+        if not current_table:
+            continue
         
+        vars = is_variable_desc(fields)
+        if vars:
+            print(vars)
     
 
 if __name__ == "__main__":

@@ -14,6 +14,8 @@ from sf1_doc_decoder import *
 
 SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 
+SF1_FIPS_LINE='FIPS Place Class Code8                                                                 PLACECC,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,2,,,,,,51,,,,,,,,A/N,'
+
 def test_line_to_fields():
     fields = line_to_fields(SF1_H22_LINE)
     assert fields[0]=='H22.'
@@ -30,6 +32,14 @@ def test_H22_LINE_parses_chapter6():
             return True
     raise RuntimeError("SF1_H22_LINE not found in SF1_CHAPTER6_CSV")
     
+def test_line_to_fields():
+    fields = line_to_fields(SF1_FIPS_LINE)
+    assert len(fields)==4
+    #assert fields[0]=='FIPS Place Class Code8 PLACECC'
+    assert fields[1]=='2'
+    assert fields[2]=='51'
+    assert fields[3]=='A/N'
+    m = VAR_RE.search(fields[0])
 
 def test_tables_in_sf1():
     tables = tables_in_file(SF1_CHAPTER6_CSV)

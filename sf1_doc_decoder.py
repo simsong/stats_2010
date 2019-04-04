@@ -165,9 +165,7 @@ def fields_for_chapter6_file(fname):
     """Given a chapter6 file, return each line as a an array of fields, cleaned"""
     print(fname)
     with open(fname,"r",encoding='latin1') as ch6:
-        for (ll,line) in enumerate(ch6):
-            if ll % INTERVAL==0:
-                print(ll,"...")
+        for line in ch6:
             yield line_to_fields(line)
 
 def tables_in_file(fname):

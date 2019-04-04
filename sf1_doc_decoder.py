@@ -105,32 +105,41 @@ def logrecno_for_sumlev(state,sumlev):
             logrecnos[ ex(geoline, GEO_LOGRECNO) ] = geocode_for_line(geoline)
     return logrecnos
 
-table_re = re.compile(r"((P|H|PCT)\d{1,2}[A-Z]?)[.]\s+([A-Z ]+)")
+def line_to_fields(line):
+    line = line.replace('"','').strip()
+    b = line.find('[')            # Remove the [
+    if b>0:
+        line = line[0:b]
+    stripped_fields = [field.strip() for field in line.split(",")]
+    return [field for field in stripped_fields if len(field)>0]
+    
+
+def fields_to_line(fields):
+    line = " ".join(fields)
+    return line
+
+table_re = re.compile(r"(?P<table>(P|H|PCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z ]+)")
 def is_table_name(fields):
     """If @fields describes a table, return (table_number,table_description)"""
-    line = " ".join(fields)
+    line = fields_to_line(fields)
     m = table_re.search(line)
     if m:
-        return m.group(1,2)
+        return m.group('table','title')
     return None
 
 def fields_for_chapter6_file(fname):
     """Given a chapter6 file, return each line as a an array of fields, cleaned"""
     with open(fname,"r",encoding='latin1') as ch6:
         for line in ch6:
-            line = line.replace('"','').strip()
-            b = line.find('[')            # Remove the [
-            if b>0:
-                line = line[0:b]
-            fields = [field.strip() for field in line.split(",") if len(field)>0]
-            yield fields
+            yield line_to_fields(line)
+
 
 def tables_in_file(fname):
     tables = {}
     for fields in fields_for_chapter6_file(fname):
-        tablename = is_table_name(fields)
-        if tablename is not None:
-            tables[tablename[0]] = tablename[1]
+        tn = is_table_name(fields)
+        if tn is not None:
+            tables[tn[0]] = tn[1]
     return tables
 
 def schema_for_sf1_part(segment):

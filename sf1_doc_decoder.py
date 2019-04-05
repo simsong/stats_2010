@@ -211,20 +211,24 @@ def schema_for_sf1_segment(segments):
                     continue
                 else:
                     raise KeyError("duplicate variable name: {}".format(var_name))
-            table.add_variable( Variable(name=var_name, desc=var_desc, field=len(table.vardict)+1, 
+            table.add_variable( Variable(name   = var_name, desc=var_desc, field=len(table.vardict)+1, 
+                                         attrib = {'segment':var_segment},
                                          vtype=TYPE_INTEGER) )
 
     return schema
 
+def schema_for_sf1():
+    return schema_for_sf1_segment(range(1,MAX_SEGMENT+1))
+                       
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Extract the schema from the SF1 Chapter 6 and produce readers for all of the file types',
+    parser = argparse.ArgumentParser(description='Extract the schema from the SF1 Chapter 6 and show what you can do with it.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--all",action='store_true', help="dump for all segments")
     parser.add_argument("segment",nargs='*',help="dump for this segment",type=int)
     args = parser.parse_args()
     if args.all:
-        schema = schema_for_sf1_segment(range(1,MAX_SEGMENT+1))
+        schema = schema_for_sf1()
     else:
         schema = schema_for_sf1_segment([args.segment])
     

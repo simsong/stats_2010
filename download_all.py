@@ -7,11 +7,25 @@ import os.path
 import os
 import sys
 import subprocess
+import random
 
 from constants import *
 
 # https://developers.whatismybrowser.com/useragents/explore/operating_system_name/mac-os-x/
-USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/601.7.7 (KHTML, like Gecko) Version/9.1.2 Safari/601.7.7"
+# A user agent that can be parameterized with two random numbers
+USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/{r1}.7.7 (KHTML, like Gecko) Version/{r2}.1.2 Safari/601.7.7"
+
+def check_zip(fname):
+    """Check the file fname. If it is not writable, just return. 
+    If it is a valid zip, then make it not writable. Return true if it checks"""
+    if os.access(zipfilename, os.R_OK) & os.R_OK:
+        return True
+    # Test the archive
+    r = subprocess.call(['unzip','-t',zipfilename],stdout=open('/dev/null','w'))
+    if r==0:
+        os.chmod(zipfilename,0o444)
+        return True
+    return False
 
 if __name__=="__main__":
     import argparse
@@ -44,17 +58,10 @@ if __name__=="__main__":
                 raise RuntimeError("{} != {}".format(os.path.basename(url),os.path.basename(zipfilename)))
 
             if os.path.exists(zipfilename):
-                print("{} exists".format(zipfilename))
-                if os.access(zipfilename, os.R_OK) & os.R_OK:
-                    print("File is read-only, so it must be good")
+                if check_zip(zipfilename):
                     continue
-                # Test the archive
-                r = subprocess.call(['unzip','-t',zipfilename])
-                if r==0:
-                    os.chmod(zipfilename,0o444)
-                    print(os.path.basename(url),os.path.basename(zipfilename))
-                    continue
-                print("{} does not check. Will continue the downloading.".format(zipfilename))
-            cmd = ['wget','-U',USER_AGENT,'-c',url,'-O',zipfilename]
+            cmd = ['wget','-U',USER_AGENT.format(r1=random.randint(1,1000),r2=random.randint(1,1000)),
+                   '-c',url,'-O',zipfilename]
             print("$ {}".format(" ".join(cmd)))
             subprocess.check_call(cmd)
+            check_zip(zipfilename)

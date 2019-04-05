@@ -4,11 +4,16 @@ ROOT_DIR = os.path.dirname(__file__)
 DOC_DIR  = os.path.join(ROOT_DIR, "doc")
 MAX_SEGMENT = 47                # segment numbers go 1..MAX_SEGMENT
 
-WWW_SERVER='http://www2.census.gov/census_2010'
+# products
+SF1='sf1'
+PL94='pl94'
+SF2='sf2'
 
-DOWNLOAD_URLS = {'pl94':WWW_SERVER+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip',
-                 'sf1' :WWW_SERVER+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip',
-                 'sf2' :WWW_SERVER+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'}
+WWW_SERVER='https://www2.census.gov/census_2010'
+
+DOWNLOAD_URLS = {PL94:WWW_SERVER+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip',
+                 SF1 :WWW_SERVER+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip',
+                 SF2 :WWW_SERVER+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'}
 
 PL94_ZIPFILE_NAME    = os.path.join(ROOT_DIR,'pl94/dist/{state}2010.pl.zip')
 SF1_ZIPFILE_NAME    = os.path.join(ROOT_DIR,'sf1/dist/{state}2010.sf1.zip')
@@ -17,12 +22,14 @@ SF2_ZIPFILE_NAME    = os.path.join(ROOT_DIR,'sf2/dist/{state}2010.sf2.zip')
 SF1_GEO_PREFIX="SF1ST "
 SF1_DATA_PREFIX="SF1ST,"
 
+
+
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary
 
 PL94_CHAPTER6_CSV = DOC_DIR + "/" + "pl94_chapter6.csv"
-SF1_CHAPTER6_CSV = DOC_DIR + "/" + "sf1_chapter6.csv"
-SF2_CHAPTER6_CSV = DOC_DIR + "/" + "sf2_chapter6.csv"
+SF1_CHAPTER6_CSV  = DOC_DIR + "/" + "sf1_chapter6.csv"
+SF2_CHAPTER6_CSV  = DOC_DIR + "/" + "sf2_chapter6.csv"
 
 STATE_DB="""Alaska/ak
 Arizona/az

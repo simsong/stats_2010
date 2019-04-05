@@ -40,6 +40,9 @@ VAR_RE       = re.compile(r"^((FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
 
 INTERVAL=10
 
+# Typo in SF1 specification. This varialble appears twice
+DUPLICATE_VARIABLES = ['PCT0200001']
+
 def part_matrix_columns(fileno):
     """Given a SF1 part number, return the columns based on an analysis of Chapter 6."""
     assert 1<=fileno<=47
@@ -116,23 +119,9 @@ def logrecno_for_sumlev(state,sumlev):
             logrecnos[ ex(geoline, GEO_LOGRECNO) ] = geocode_for_line(geoline)
     return logrecnos
 
-def line_to_fields(line):
-    line = line.replace('"','').strip()
-    b = line.find('[')            # Remove the [
-    if b>0:
-        line = line[0:b]
-    stripped_fields = [field.strip() for field in line.split(",")]
-    return [field for field in stripped_fields if len(field)>0]
-    
-
-def fields_to_line(fields):
-    line = " ".join(fields)
-    return line
-
 table_re = re.compile(r"(?P<table>(P|H|PCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z ]+)")
-def is_table_name(fields):
+def is_table_name_line(line):
     """If @fields describes a table, return (table_number,table_description)"""
-    line = fields_to_line(fields)
     m = table_re.search(line)
     if m:
         return m.group('table','title')
@@ -144,65 +133,100 @@ def is_variable_name(name):
         return True
     return False
 
-def is_variable_desc(fields):
+def parse_variable_desc(line):
     """If @fields describes a variable, return data dictionary
-    reference name, desc, segment, and maxsize"""
-    if len(fields)==4:
-        (desc,name,segment,maxsize) = fields
+    reference name, desc, segment, and maxsize. Assumes 
+    that lines that describe variables are formualted as:
+    <text> <variable-name> <segment> <maxsize>
+    """
+
+    fields = line.split()
+    if len(fields)>=4:
+        (desc,name,segment,maxsize) = (" ".join(fields[0:-4]),
+                                       fields[-3],fields[-2],fields[-1])
+        if not is_variable_name(name):
+            return False
         try:
-            if not (1 <= int(segment) <= MAX_SEGMENT):
-                return False
-            if not (1 <= int(maxsize) <= 9):
-                return False
+            segment = int(segment)
+            maxsize = int(maxsize)
         except ValueError as e:
             return False
-        if is_variable_name(fields[1])==False:
-            return False
-        return (name,desc,segment,maxsize)
+
+        if (1 <= segment <= MAX_SEGMENT) and (1 <= maxsize <= 9):
+            return (name,desc,segment,maxsize)
     return None
 
-def fields_for_chapter6_file(fname):
+def chapter6_prepare_line(line):
+        line = line.replace('"',' ').replace(',',' ').strip()
+        b = line.find('[')            # Remove the [
+        if b>0:
+            line = line[0:b]
+        return " ".join([word for word in line.split() if len(word)>0])
+
+def chapter6_file(fname):
     """Given a chapter6 file, return each line as a an array of fields, cleaned"""
-    print(fname)
-    with open(fname,"r",encoding='latin1') as ch6:
-        for line in ch6:
-            yield line_to_fields(line)
+    with open(fname,"r",encoding='latin1') as f:
+        for line in f:
+            yield chapter6_prepare_line(line)
+    
+
 
 def tables_in_file(fname):
     tables = {}
-    for fields in fields_for_chapter6_file(fname):
-        tn = is_table_name(fields)
+    for line in chapter6_file(fname):
+        tn = is_table_name_line(line)
         if tn is not None:
             tables[tn[0]] = tn[1]
     return tables
 
-def schema_for_sf1_part(segment):
+def schema_for_sf1_segment(segments):
     """Given a segment number, parse Chapter6 and return a schema object for that segment number"""
-    assert 1 <= segment <= MAX_SEGMENT
+    from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER
+    schema = Schema()
     current_table = None
     tables = {}
-    for fields in fields_for_chapter6_file(SF1_CHAPTER6_CSV):
-        tn = is_table_name(fields)
+    for line in chapter6_file(SF1_CHAPTER6_CSV):
+        tn = is_table_name_line(line)
         if tn:
             tables[tn[0]] = tn[1]
-            current_table = tn
+            current_table = tn[0]
             continue
         # if we are not in a table, return
         if not current_table:
             continue
         
-        vars = is_variable_desc(fields)
-        if vars:
-            print(vars)
+        # Can we parse variables?
+        vars = parse_variable_desc(line)
+        if not vars:
+            continue
+        
+        # Is this in one of the segments that we care about?
+        (var_name, var_desc, var_segment, var_maxsize) = vars
     
+        if var_segment in segments:
+            # Add this variable, and optionally the table, to the schema
+            table = schema.get_table(current_table, create=True)
+            if var_name in table.vardict:
+                if var_name in DUPLICATE_VARIABLES:
+                    continue
+                else:
+                    raise KeyError("duplicate variable name: {}".format(var_name))
+            table.add_variable( Variable(name=var_name, desc=var_desc, field=len(table.vardict)+1, 
+                                         vtype=TYPE_INTEGER) )
+
+    return schema
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Extract the schema from the SF1 Chapter 6 and produce readers for all of the file types',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--state",help="specify state to work with",default='ak')
-    parser.add_argument("--sumlevel", help="Specify summary level to work with")
+    parser.add_argument("--all",action='store_true', help="dump for all segments")
+    parser.add_argument("segment",nargs='*',help="dump for this segment",type=int)
     args = parser.parse_args()
-    schema_for_sf1_part(1)
-                        
+    if args.all:
+        schema = schema_for_sf1_segment(range(1,MAX_SEGMENT+1))
+    else:
+        schema = schema_for_sf1_segment([args.segment])
+    
+
 

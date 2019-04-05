@@ -132,6 +132,6 @@ if __name__ == "__main__":
 
     # open database and give me a big cache
     g = SF1(args)
-    g.read_sas_geo("sf1/pl_geohd_2010.sas")
+    g.read_sas_geo("doc/pl_geohd_2010.sas")
     for fname in args.zipfiles:
         g.process_zipfile(fname)

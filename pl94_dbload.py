@@ -89,22 +89,18 @@ def decode_22010(conn,c,line):
 
 def load_file(conn,f,func):
     t0 = time.time()
-    ll = 0
     c = conn.cursor()
-    for line in f:
-        #print(line)
+    for (ll,line) in enumerate(f,1):
         try:
             func(conn,c,line)
         except ValueError as e:
-            print("{}: {}".format(ll,line))
-            raise e
-        ll += 1
+            raise ValueError("bad line {}: {}".format(ll,line))
         if ll%10000==0:
             print("{}...".format(ll),end='')
             sys.stdout.flush()
     conn.commit()
     t1 = time.time()
-    print("Finished {}; {:,.0f} lines/sec".format(fname,ll/(t1-t0)))
+    print("Finished {}; {:,.0f} lines/sec".format(f.name,ll/(t1-t0)))
 
 def process_name(conn,f,name):
     if name[2:]=='geo2010.pl':

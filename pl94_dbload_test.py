@@ -17,7 +17,7 @@ def ex(line,desc):
     return line[desc[0]-1:desc[0]+desc[1]-1]
 
 def exi(line,desc):
-    return int(ex(desc))
+    return int(ex(line,desc))
 
 def test_geo_fields():
     assert ex(GEO_LINE,GEO_FILEID)=='PLST  '
@@ -36,7 +36,7 @@ def test_load_geo_file():
         os.unlink(fname)
     conn = sqlite3.connect(fname)
     make_database(conn)
-    load_file(conn,"data/akgeo2010.pl",decode_geo_line)
+    load_file(conn,open("pl94/akgeo2010.pl"),decode_geo_line)
 
     c = conn.cursor()
 

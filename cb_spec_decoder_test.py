@@ -3,7 +3,7 @@
 
 from constants import *
 
-from sf1_doc_decoder import *
+from cb_spec_decoder import *
 
 #def test_part_matrix_columns():
 #    cols = part_matrix_columns(3)
@@ -24,7 +24,7 @@ def test_is_table_name_line():
     assert is_table_name_line(chapter6_prepare_line(SF1_H22_LINE))
 
 def test_H22_LINE_parses_chapter6():
-    for line in chapter6_file(SF1_CHAPTER6_CSV):
+    for line in chapter6_lines(SF1_CHAPTER6_CSV):
         if line.strip().startswith("H22."):
             # I have the line. Make sure we find the tables in it.
             tn = is_table_name_line(line)
@@ -51,7 +51,7 @@ def test_tables_in_sf1():
         assert f"H11{ch}" in tables
 
 def test_schema_segment3():
-    schema = schema_for_sf1_segment([3])
+    schema = schema_for_spec(SF1_CHAPTER6_CSV,3)
     # format is table #, max variable number
     ptables = [(3,8),
                (4,3),

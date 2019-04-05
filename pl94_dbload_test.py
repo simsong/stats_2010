@@ -36,7 +36,7 @@ def test_load_geo_file():
         os.unlink(fname)
     conn = sqlite3.connect(fname)
     make_database(conn)
-    load_geo_file(conn,"data/akgeo2010.pl")
+    load_file(conn,"data/akgeo2010.pl",decode_geo_line)
 
     c = conn.cursor()
 

@@ -163,7 +163,7 @@ def chapter6_prepare_line(line):
             line = line[0:b]
         return " ".join([word for word in line.split() if len(word)>0])
 
-def chapter6_file(fname):
+def chapter6_lines(fname):
     """Given a chapter6 file, return each line as a an array of fields, cleaned"""
     with open(fname,"r",encoding='latin1') as f:
         for line in f:
@@ -173,19 +173,21 @@ def chapter6_file(fname):
 
 def tables_in_file(fname):
     tables = {}
-    for line in chapter6_file(fname):
+    for line in chapter6_lines(fname):
         tn = is_table_name_line(line)
         if tn is not None:
             tables[tn[0]] = tn[1]
     return tables
 
-def schema_for_sf1_segment(segments):
-    """Given a segment number, parse Chapter6 and return a schema object for that segment number"""
+def schema_for_spec(chapter6_filename,segment=True):
+    """Given a Chapter6 file and an optional segment number, parse Chapter6 and
+    return a schema object for that segment number
+    """
     from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER
     schema = Schema()
     current_table = None
     tables = {}
-    for line in chapter6_file(SF1_CHAPTER6_CSV):
+    for line in chapter6_lines(chapter6_filename):
         tn = is_table_name_line(line)
         if tn:
             tables[tn[0]] = tn[1]
@@ -203,7 +205,7 @@ def schema_for_sf1_segment(segments):
         # Is this in one of the segments that we care about?
         (var_name, var_desc, var_segment, var_maxsize) = vars
     
-        if var_segment in segments:
+        if (segment is True) or (var_segment == segment):
             # Add this variable, and optionally the table, to the schema
             table = schema.get_table(current_table, create=True)
             if var_name in table.vardict:
@@ -217,20 +219,17 @@ def schema_for_sf1_segment(segments):
 
     return schema
 
-def schema_for_sf1():
-    return schema_for_sf1_segment(range(1,MAX_SEGMENT+1))
-                       
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Extract the schema from the SF1 Chapter 6 and show what you can do with it.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--all",action='store_true', help="dump for all segments")
-    parser.add_argument("segment",nargs='*',help="dump for this segment",type=int)
+    parser.add_argument("segment",nargs='?',help="dump for just this segment",type=int)
     args = parser.parse_args()
     if args.all:
-        schema = schema_for_sf1()
+        schema = schema_for_spec(SF1_CHAPTER6_CSV)
     else:
-        schema = schema_for_sf1_segment([args.segment])
+        schema = schema_for_spec(SF1_CHAPTER6_CSV,args.segment)
     
 
 

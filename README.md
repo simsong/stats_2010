@@ -1,4 +1,4 @@
-# Decoding the SF1
+# Decoding the SF1 2010
 
 This file records notes of understanding the PL94 and SF1 tables.
 Note that PL94 is a subset of SF1.

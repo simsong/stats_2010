@@ -13,6 +13,7 @@ from cb_spec_decoder import *
 #    assert len(cols) == len(fields)
 
 SF1_P6_LINE='other races                                                                              P0060007              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
+SF1_P0090058='Race                                                                          P0090058              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 
 SF1_FIPS_LINE='FIPS Place Class Code8                                                                 PLACECC,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,2,,,,,,51,,,,,,,,A/N,'
@@ -33,6 +34,13 @@ def test_H22_LINE_parses_chapter6():
             return True
     raise RuntimeError("SF1_H22_LINE not found in SF1_CHAPTER6_CSV")
     
+def test_P0090058_parser():
+    (name,desc,segment,maxsize) = parse_variable_desc(chapter6_prepare_line(SF1_P0090058))
+    assert name=='P0090058'
+    assert desc=='Race'
+    assert segment==3
+    assert maxsize==9
+
 def test_tables_in_sf1():
     tables = tables_in_file(SF1_CHAPTER6_CSV)
     for table in sorted(tables):

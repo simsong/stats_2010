@@ -27,9 +27,9 @@ SF1_DATA_PREFIX="SF1ST,"
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary
 
-PL94_CHAPTER6_CSV = DOC_DIR + "/" + "pl94_chapter6.csv"
-SF1_CHAPTER6_CSV  = DOC_DIR + "/" + "sf1_chapter6.csv"
-SF2_CHAPTER6_CSV  = DOC_DIR + "/" + "sf2_chapter6.csv"
+PL94_CHAPTER6_CSV = DOC_DIR + "/2010/pl94_chapter6.csv"
+SF1_CHAPTER6_CSV  = DOC_DIR + "/2010/sf1_chapter6.csv"
+SF2_CHAPTER6_CSV  = DOC_DIR + "/2010/sf2_chapter6.csv"
 
 STATE_DB="""Alaska/ak
 Arizona/az

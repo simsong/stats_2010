@@ -62,16 +62,28 @@ class SF1:
         """Return the unique values for a given selector"""
         return set( [obj[selector] for obj in self.files] )
     
-    def get_df(self,*,year=2010,table,product=SF1,**kwargs):
+    def get_df(self,*,year=2010,tableName,product=SF1,**kwargs):
         """Get a dataframe where the tables are specified by a selector. Things to try:
         year=2010  (currently required, but defaults to 2010)
         table=tabname (you must specify a table),
         product=product (you must specify a product)
         """
+        # Get a list of all the matching files
+        table = self.schema.get_table(table)
+        paths = [ obj['path'] for obj in self.files where 
+                  obj['year']==year and obj['table']==tableName obj['product']==product]
+        rdds = [spark.sparkContext.textFile(path) for path in paths]
+        rdd  = spark.sparkContext.union(*rdds)
+        df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
+        df.registerTempTable( tableName )
+        return df
+            
         
 
 if __name__=="__main__":
     import argparse
+
+    # spark = spark_session()
 
     parser = argparse.ArgumentParser(description='Tool for using SF1 with Spark',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -88,5 +100,6 @@ if __name__=="__main__":
         print("Available tables: "," ".join([t.name for t in schema.tables()]))
 
     # Demonstrate a simple count of the number of people
-    spark = spark_session()
+    df = s.get_df(year=2010, product=SF1, table="P22")
+    spark.sql("SELECT * FROM P22 LIMIT 10").show()
     

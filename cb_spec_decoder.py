@@ -66,8 +66,9 @@ def open_decennial(ypss):
     """
 
     with zipfile.ZipFile( zipfile_name( ypss ) ) as zip_file:
-        with zip_file.open( segmentfile_name( ypss ), 'r') as zf:
-            return io.TextIOWrapper(zf, encoding='latin1')
+        # Note: You cannot use a with() on the one below:
+        zf = zip_file.open( segmentfile_name( ypss ), 'r')
+        return io.TextIOWrapper(zf, encoding='latin1')
 
     
 def is_variable_name(name):

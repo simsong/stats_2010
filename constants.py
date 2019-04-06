@@ -55,8 +55,10 @@ Oregon/or Pennsylvania/pa Rhode_Island/ri South_Carolina/sc South_Dakota/sd Tenn
 Texas/tx Utah/ut Vermont/vt Virginia/va Washington/wa West_Virginia/wv isconsin/wi Wyoming/wy"""
 
 STATES_AND_ABBREVS = STATE_DB.split()
-STATE_NAMES        = [saa.split("/")[0] for saa in STATES_AND_ABBREVS]
 STATES             = [saa.split("/")[1] for saa in STATES_AND_ABBREVS]
+
+# map states to state_names:
+STATE_NAMES        = {saa.split("/")[1]:saa.split("/")[0] for saa in STATES_AND_ABBREVS}
 
 SEGMENT_FORMAT="{segment_number:05d}"
 GEO="geo"
@@ -98,8 +100,8 @@ DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
                        SF2  : URL_2010_SF2 } } 
                  
 # Specifies directory where a zip file is downloaded. The filename is kept from the original download URL
-DEST_ZIPFILE_DIR    = {2000:ROOT_DIR+'data/{year}_{product}/dist/{state}',
-                       2010:ROOT_DIR+'data/{year}_{product}/dist'}
+DEST_ZIPFILE_DIR    = {2000:ROOT_DIR+'/data/{year}_{product}/dist/{state}',
+                       2010:ROOT_DIR+'/data/{year}_{product}/dist'}
 
 class YPSS:
     __slots__=('year','product','state','segment')
@@ -120,10 +122,15 @@ class YPSS:
         
 def download_url(ypss):
     return DOWNLOAD_URLS[ypss.year][ypss.product].format(year=ypss.year,product=ypss.product,
-                                                         state=ypss.state,segment=ypss.segment)
+                                                         state_name = STATE_NAMES[ypss.state],
+                                                         state=ypss.state,
+                                                         segment=ypss.segment)
                                                          
 def zipfile_dir(ypss):
-    return DEST_ZIPFILE_NAME[year].format(year=year,product=product,state=state,segment=segment)
+    return DEST_ZIPFILE_DIR[ypss.year].format(year=ypss.year,
+                                              product=ypss.product,
+                                              state=ypss.state,
+                                              segment=ypss.segment)
 
 def zipfile_name(ypss):
     return os.path.join( zipfile_dir(ypss), os.path.basename( download_url( ypss )))

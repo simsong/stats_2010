@@ -70,18 +70,18 @@ def open_decennial(ypss):
             return io.TextIOWrapper(zf, encoding='latin1')
 
     
-def is_table_name_line(line):
-    """If @fields describes a table, return (table_number,table_description)"""
-    m = TABLE_RE.search(line)
-    if m:
-        return m.group('table','title')
-    return None
-
 def is_variable_name(name):
     m = VAR_RE.search(name)
     if m:
         return True
     return False
+
+def parse_table_name(line):
+    """If line describes a table, return (table_number,table_description)"""
+    m = TABLE_RE.search(line)
+    if m:
+        return m.group('table','title')
+    return None
 
 def parse_linkage_desc(line):
     """If @line describes a linkage field, return
@@ -98,7 +98,6 @@ def parse_linkage_desc(line):
 
         return (name,desc,True,maxsize)
     return None
-
 
 def parse_variable_desc(line):
     """If @line describes a variable, return data dictionary
@@ -122,24 +121,28 @@ def parse_variable_desc(line):
             return (name,desc,segment,maxsize)
     return None
 
-def chapter6_prepare_line(line):
-        line = line.replace('"',' ').replace(',',' ').strip()
-        b = line.find('[')            # Remove the [
-        if b>0:
-            line = line[0:b]
-        return " ".join([word for word in line.split() if len(word)>0])
+def chapter6_prepare_csv_line(line):
+    line = line.replace('"',' ').replace(',',' ').strip()
+    b = line.find('[')            # Remove the [
+    if b>0:
+        line = line[0:b]
+    line = " ".join([word for word in line.split() if len(word)>0])
+    assert ',' not in line
+    return line
 
 def chapter6_lines(fname):
-    """Given a chapter6 file, return each line as a an array of fields, cleaned"""
+    """Given a chapter6 PDF converted to a CSV file by Adobe Acrobat,
+    return each line as a an array of fields, cleaned.
+    """
     with open(fname,"r",encoding='latin1') as f:
         for line in f:
-            yield chapter6_prepare_line(line)
+            yield chapter6_prepare_csv_line(line)
     
-
 def tables_in_file(fname):
+    """Give a chapter6 CSV file, return all of the tables in it."""
     tables = {}
     for line in chapter6_lines(fname):
-        tn = is_table_name_line(line)
+        tn = parse_table_name(line)
         if tn is not None:
             tables[tn[0]] = tn[1]
     return tables
@@ -181,7 +184,7 @@ def schema_for_spec(chapter6_filename,segment=True):
             continue
 
         # Check for table name
-        tn = is_table_name_line(line)
+        tn = parse_table_name(line)
         if tn:
             if (segment is True) or (infile == segment):
                 tables[tn[0]] = tn[1]
@@ -227,15 +230,20 @@ def schema_for_spec(chapter6_filename,segment=True):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Test program: Extract the schema from the SF1 Chapter 6 and dump the schema.',
+    parser = argparse.ArgumentParser(description="""Test program:
+    Extract the schema from the SF1 Chapter 6 and dump the schema. 
+    Normally this module will be used to generate a Schema object for a specific Chapter6 spec.""",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--all",action='store_true', help="dump for all segments")
+    parser.add_argument("--all",  action='store_true', help="dump for all segments")
+    parser.add_argument("--year", type=int, default=2010)
+    parser.add_argument("--product", type=str, default=SF1)
+    
     parser.add_argument("segment",nargs='?',help="dump for just this segment",type=int)
     args = parser.parse_args()
+    ch6file = CHAPTER6_CSV_FILES.format(year=args.year,product=args.product)
     if args.all:
-        schema = schema_for_spec(SF1_CHAPTER6_CSV)
-    else:
-        schema = schema_for_spec(SF1_CHAPTER6_CSV,args.segment)
+        args.segment = True
+    schema = schema_for_spec(ch6file, args.segment)
     schema.dump()
     
 

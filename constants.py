@@ -35,7 +35,7 @@ YEARS = [2000,2010]
 PL94 = 'pl94'
 SF1  = 'sf1'
 SF2  = 'sf2'
-PRODUCTS = [PL, SF1, SF2]
+PRODUCTS = [PL94, SF1, SF2]
 
 PRODUCT_EXTS = {2010: { PL94:'pl',
                         SF1:'sf1',
@@ -126,7 +126,7 @@ def zipfile_dir(ypss):
     return DEST_ZIPFILE_NAME[year].format(year=year,product=product,state=state,segment=segment)
 
 def zipfile_name(ypss):
-    return os.path.join( zipfile_dir(upss), os.path.basename( download_url( ypss )))
+    return os.path.join( zipfile_dir(ypss), os.path.basename( download_url( ypss )))
 
 def segmentfile_name(ypss):
     """The name within the zipfile of the requested segment"""
@@ -137,6 +137,14 @@ def segmentfile_name(ypss):
                                                  segment=ypss.segment,
                                                  ext = ext)
 
+# Number of files per data product
+FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
+                                 SF1 : 39},
+                          2010: {PL94: 2,
+                                 SF1 : 47} }
+
+MAX_SEGMENT = 47                # highest anywhere
+
 # For self-check, each year/product has a prefix at the beginning of each line
 FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
                       2010 : {SF1: "SF1ST"}}
@@ -144,5 +152,5 @@ FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary
 
-CHAPTER6_CSV_FILES = DOC_DIR + "{year}/{product}_chapter6.csv"
+CHAPTER6_CSV_FILES = DOC_DIR + "/{year}/{product}_chapter6.csv"
 

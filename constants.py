@@ -1,86 +1,148 @@
 import os
 
+"""This file describes the naming convention for the 2000 and the 2010 decennial censuses.
+This file concerns the data products PL94, SF1 and SF2.
+The data products were distributed as sets of files per state.
+  - state-names are used on the WWW server
+  - state-abbreviations are used on both the WWW server and within the files themselves.
+Each year/product/state consists of:
+  - A geoheader file, which contains all of the tabulation geographies for the year.
+  - Two or more table files, each of which contains one or more tables.
+
+The first 5 columns of each file are linkage varialbes, for linking the tables to the geoheader.
+
+Unfortunately, naming schemes were not consistent within 2000 and were changed from 2000 to 2010.
+This file attempts to provide a simple interface for downloading, unpacking, and processing all of
+the files. 
+
+The documentation is internally inconsitent, in that sometimes the
+multiple files for each state are called "segments" and sometimes they
+are called "files". 
+
+We try to consistently use the term:
+  - "file_number" to describe the numbers that go from 1..N. 
+  - segment to describe the name "geo" and the zero-filed representation of the file_number, 
+    which seems to be numbers 00000 through {N:05d}
+"""
+
 ROOT_DIR = os.path.dirname(__file__)
 DOC_DIR  = os.path.join(ROOT_DIR, "doc")
-MAX_SEGMENT = 47                # segment numbers go 1..MAX_SEGMENT
 
-# products
-SF1='sf1'
-PL94='pl94'
-SF2='sf2'
+# years
+YEARS = [2000,2010]
 
-WWW_SERVER='https://www2.census.gov/census_2010'
+# products. Note that it is called the PL94 in places and te 
+PL94 = 'pl94'
+SF1  = 'sf1'
+SF2  = 'sf2'
+PRODUCTS = [PL, SF1, SF2]
 
-DOWNLOAD_URLS = {PL94:WWW_SERVER+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip',
-                 SF1 :WWW_SERVER+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip',
-                 SF2 :WWW_SERVER+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'}
+PRODUCT_EXTS = {2010: { PL94:'pl',
+                        SF1:'sf1',
+                        SF2:'sf2' }}
+                    
 
-PL94_ZIPFILE_NAME    = os.path.join(ROOT_DIR,'pl94/dist/{state}2010.pl.zip')
-SF1_ZIPFILE_NAME    = os.path.join(ROOT_DIR,'sf1/dist/{state}2010.sf1.zip')
-SF2_ZIPFILE_NAME    = os.path.join(ROOT_DIR,'sf2/dist/{state}2010.sf2.zip')
+#
+# States. Note that for consistency, we use the phrase 'state' to refer to a 2-letter code
+# and the phrase 'state_name' to refer to the spelled out, capitalized state name.
+#
+STATE_DB="""Alaska/ak Arizona/az Arkansas/ar California/ca Colorado/co Connecticut/ct Delaware/de
+District_of_Columbia/dc Alabama/al Florida/fl Georgia/ga Hawaii/hi Idaho/id Illinois/il Indiana/in
+Iowa/ia Kansas/ks entucky/ky Louisiana/la Maine/me Maryland/md Massachusetts/ma Michigan/mi
+Minnesota/mn Mississippi/ms Missouri/mo Montana/mt Nebraska/ne Nevada/nv New_Hampshire/nh
+New_Jersey/nj New_Mexico/nm New_York/ny North_Carolina/nc North_Dakota/nd Ohio/oh Oklahoma/ok
+Oregon/or Pennsylvania/pa Rhode_Island/ri South_Carolina/sc South_Dakota/sd Tennessee/tn
+Texas/tx Utah/ut Vermont/vt Virginia/va Washington/wa West_Virginia/wv isconsin/wi Wyoming/wy"""
 
-SF1_GEO_PREFIX="SF1ST "
-SF1_DATA_PREFIX="SF1ST,"
+STATES_AND_ABBREVS = STATE_DB.split()
+STATE_NAMES        = [saa.split("/")[0] for saa in STATES_AND_ABBREVS]
+STATES             = [saa.split("/")[1] for saa in STATES_AND_ABBREVS]
 
+SEGMENT_FORMAT="{segment_number:05d}"
+GEO="geo"
 
+FILENAME_2000_SF2 = "{state}{characteristic_iteration}{file_number}_uf2.zip"
+"""
+Naming convention for SF2 data files is ssiiiyy_uf2.zip. 
+iii is the characteristic iteration (total population, race groups, American Indian and Alaska 
+Native tribes, and Hispanic/Latino groups)
+Characteristic iteration codes are in the Appendix H of the technical documentation, 
+which is available at http://www.census.gov/prod/cen2000/docs/sf2.pdf - page=278.	
+yy is the number of the file
+   Valid codes are 01 through 04.  See below for distribution of tables across files.
+"""
+
+# Download URLS.
+# Key differences between 2000 and 2010:
+# - Different URL formats
+# - In 2000, each ZIP file contains a single segment
+# - In 2010, each ZIP file contains *all* of the state's segments.
+
+WWW_SERVER_2000 = "https://www2.census.gov/census_2000/datasets/"
+URL_2000_PL94   = WWW_SERVER_2000 + "redistricting_file--pl_94-171/{state_name}/{state}{segment}.upl.zip"
+URL_2000_SF1    = WWW_SERVER_2000 + "Summary_File_1/{state_name}/{state}{segment}_uf1.zip"
+URL_2000_SF2    = WWW_SERVER_2000 + "Summary_File_2/{state_name}/{state}{segment}_uf2.zip"
+                      
+WWW_SERVER_2010='https://www2.census.gov/census_2010'
+URL_2010_PL94 = WWW_SERVER_2010+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip'
+URL_2010_SF1  = WWW_SERVER_2010+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip'
+URL_2010_SF2  = WWW_SERVER_2010+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'
+
+ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
+
+DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
+                       SF1  : URL_2000_SF1,
+                       SF2  : URL_2000_SF2},
+                 2010:{PL94 : URL_2010_PL94,
+                       SF1  : URL_2010_SF1,
+                       SF2  : URL_2010_SF2 } } 
+                 
+# Specifies directory where a zip file is downloaded. The filename is kept from the original download URL
+DEST_ZIPFILE_DIR    = {2000:ROOT_DIR+'data/{year}_{product}/dist/{state}',
+                       2010:ROOT_DIR+'data/{year}_{product}/dist'}
+
+class YPSS:
+    __slots__=('year','product','state','segment')
+    def __init__(self,year,product,state,segment):
+        assert year in YEARS
+        assert product in PRODUCTS
+        assert state in STATES
+        self.year     = year
+        self.product  = product
+        self.state    = state
+        if type(segment)==str:
+            self.segment = segment
+        elif type(segment)==int:
+            self.segment = "{:05d}".format(segment)
+        else:
+            raise ValueError("unknown type: {}".format(type(segment)))
+        
+        
+def download_url(ypss):
+    return DOWNLOAD_URLS[ypss.year][ypss.product].format(year=ypss.year,product=ypss.product,
+                                                         state=ypss.state,segment=ypss.segment)
+                                                         
+def zipfile_dir(ypss):
+    return DEST_ZIPFILE_NAME[year].format(year=year,product=product,state=state,segment=segment)
+
+def zipfile_name(ypss):
+    return os.path.join( zipfile_dir(upss), os.path.basename( download_url( ypss )))
+
+def segmentfile_name(ypss):
+    """The name within the zipfile of the requested segment"""
+    ext = PRODUCT_EXTS[ypss.year][ypss.product]
+    return "{state}{segment}{year}.{ext}".format(year=ypss.year,
+                                                 product=ypss.product,
+                                                 state=ypss.state,
+                                                 segment=ypss.segment,
+                                                 ext = ext)
+
+# For self-check, each year/product has a prefix at the beginning of each line
+FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
+                      2010 : {SF1: "SF1ST"}}
 
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary
 
-PL94_CHAPTER6_CSV = DOC_DIR + "/2010/pl94_chapter6.csv"
-SF1_CHAPTER6_CSV  = DOC_DIR + "/2010/sf1_chapter6.csv"
-SF2_CHAPTER6_CSV  = DOC_DIR + "/2010/sf2_chapter6.csv"
-
-STATE_DB="""Alaska/ak
-Arizona/az
-Arkansas/ar
-California/ca
-Colorado/co
-Connecticut/ct
-Delaware/de
-District_of_Columbia/dc
-Alabama/al
-Florida/fl
-Georgia/ga
-Hawaii/hi
-Idaho/id
-Illinois/il
-Indiana/in
-Iowa/ia
-Kansas/ks
-Kentucky/ky
-Louisiana/la
-Maine/me
-Maryland/md
-Massachusetts/ma
-Michigan/mi
-Minnesota/mn
-Mississippi/ms
-Missouri/mo
-Montana/mt
-Nebraska/ne
-Nevada/nv
-New_Hampshire/nh
-New_Jersey/nj
-New_Mexico/nm
-New_York/ny
-North_Carolina/nc
-North_Dakota/nd
-Ohio/oh
-Oklahoma/ok
-Oregon/or
-Pennsylvania/pa
-Rhode_Island/ri
-South_Carolina/sc
-South_Dakota/sd
-Tennessee/tn
-Texas/tx
-Utah/ut
-Vermont/vt
-Virginia/va
-Washington/wa
-West_Virginia/wv
-Wisconsin/wi
-Wyoming/wy"""
-
+CHAPTER6_CSV_FILES = DOC_DIR + "{year}/{product}_chapter6.csv"
 

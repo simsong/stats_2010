@@ -75,10 +75,9 @@ class SF1:
         rdds = [spark.sparkContext.textFile(path) for path in paths]
         rdd  = spark.sparkContext.union(*rdds)
         df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
-        df.registerTempTable( tableName )
+        df.registerTempTable( f"{tableName}_{year}" )
         return df
             
-        
 
 if __name__=="__main__":
     import argparse

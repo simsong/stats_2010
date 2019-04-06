@@ -76,4 +76,9 @@ def test_schema_segment3():
             varname = f'P{table:03}{v:04}'
             assert varname in t.vardict
 
+def test_spec_
+
+def test_spec_parsing():
+    # for the each of the products, look at the ak files and make sure that we have the correct
+    # number of columns
     

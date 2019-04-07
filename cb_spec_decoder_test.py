@@ -86,10 +86,45 @@ def test_schema_segment3():
             varname = f'P{table:03}{v:04}'
             assert varname in t.vardict
 
+def test_spottest_2010_sf1():
+    year = 2010
+    product = SF1
+    state  = 'ak'
+    ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
+    assert os.path.exists(ch6file)
+    schema = schema_for_spec(ch6file)
+    ypss = YPSS(year, product, state, 3)
+    for line in open_decennial( ypss ):
+        first_line = line
+        break
+    print("first line of",state)
+    print(first_line)
+    p3 = schema.get_table('P3')
+    d3 = p3.parse_line_to_dict(first_line,delimiter=',')
+    print("d3:",d3)
+    assert d3[FILEID]   == 'SF1ST'
+    assert d3[STUSAB]   == 'AK'
+    assert d3[CHARITER] == '000'
+    assert d3[CIFSN]    == '03'
+    assert d3[LOGRECNO] == '0000001'
+    assert d3['P0030001'] == 710231
+    assert d3['P0030002'] == 473576
+    assert d3['P0030003'] == 23263
+    assert d3['P0030004'] == 104871
+    assert d3['P0030005'] == 38135
+    assert d3['P0030006'] == 7409
+    assert d3['P0030007'] == 11102
+    assert d3['P0030008'] == 51875
+    
+    
+
+TEST_STATE = 'de'
+IGNORE_FILE_NUMBERS = [12]
 def test_parsed_spec_fields_correct():
     """For the each of the years and products, look at the ak files and make sure that we can account for every column.
     Eventually we will want to verify that a line read with the spec scanner from various files match as well.
     """
+    errors = 0
     for year in [2010]:
         for product in [SF1]:
             if product==SF1:
@@ -98,7 +133,9 @@ def test_parsed_spec_fields_correct():
             assert os.path.exists(ch6file)
             schema = schema_for_spec(ch6file)
             for file_number in range(1,FILES_FOR_YEAR_PRODUCT[year][product]+1):
-                state = 'ak'
+                if file_number in IGNORE_FILE_NUMBERS:
+                    continue
+                state = TEST_STATE
                 ypss = YPSS(year, product, state, file_number)
                 for line in open_decennial( ypss ):
                     fields = line.split(",")
@@ -121,24 +158,33 @@ def test_parsed_spec_fields_correct():
                             else:
                                 total_fields += len(table.vars()) - 5 # we only have these five fields on the first table
                     if len(fields) != total_fields:
-                        print(f"Found {len(fields)} fields; expected {total_fields}")
+                        print(f"File {file_number} Found {len(fields)} values in the file; expected {total_fields}")
+                        print(f"Tables found:")
+                        for table in tables_in_this_file:
+                            print(f"{table.name} has {len(table.varnames())} variables according to the specification.")
+                        print()
+                        print(f"First line of {TEST_STATE} file part {file_number}:")
                         print(line)
                         # Make a list of all the variables I think I have, and the value I found
-                        table_vars = []
+                        file_vars = []
                         for (ct,table) in enumerate(tables_in_this_file):
                             for var in table.vars():
                                 if ct==0 or var.name not in LINKAGE_VARIABLES:
-                                    table_vars.append(var)
-                        while len(table_vars) < len(fields):
-                            table_vars.append("n/a")
-                        while len(table_vars) > len(fields):
+                                    file_vars.append(var.name)
+                        while len(file_vars) < len(fields):
+                            file_vars.append("n/a")
+                        while len(file_vars) > len(fields):
                             fields.append("n/a")
 
-                        for i in range(len(table_vars)):
-                            print(f"file {file_number} field {i+1}  {table_vars[i]}   {fields[i]}")
+                        for (i,(a,b)) in enumerate(zip(file_vars,fields),1):
+                            if a[-3:]=='001':
+                                print()
+                            print(f"file {file_number} field {i}  {a}   {b}")
+                        errors += 1
                     # Only look at the first line:
                     break
-    raise RuntimeError("look at output")
+    if errors>0:
+        raise RuntimeError("Errors found")
                 
             
         

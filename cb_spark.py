@@ -13,7 +13,7 @@ You can arrange the files any way that you want inside SF1. We scan the director
 import os
 
 from constants import *
-import sf1_doc_decoder
+import cb_spec_decoder
 import ctools.cspark as cspark
 import ctools.s3     as s3
 
@@ -21,8 +21,8 @@ debug = False
 
 SF1_ROOT='SF1_ROOT'
 
-class SF1:
-    def __init__(self):
+class DecennialDF:
+    def __init__(self,*,year,product):
         """Inventory the files and return an SF1 object."""
         try:
             self.root = os.environ[SF1_ROOT]
@@ -31,7 +31,8 @@ class SF1:
 
         self.files = []
         self.find_files()
-        self.schema = sf1_doc_decoder.schema_for_sf1()
+        ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
+        self.schema = cb_spec_decoder.schema_for_spec(ch6file)
 
     def find_files(self):
         if self.root.startswith('s3:'):
@@ -47,13 +48,13 @@ class SF1:
     def register_file(self,path):
         """Files have a pattern:  {state}{section}{year}.{product}"""
         filename = os.path.basename(path)
-        if len(filename)==15 and filename[11]=='.':
+        if len(filename)==15 and filename.endswith(".sf1"):
             try:
                 self.files.append({'path':path,
                                    'state':filename[0:2],
-                                   'segment':int(filename[2:7]),
-                                   'year':filename[7:11],
-                                   'product':filename[13:16]})
+                                   CIFSN:int(filename[2:7]),
+                                   'year':int(filename[7:11]),
+                                   'product':SF1})
             except ValueError as e:
                 if debug:
                     print("bad file format:",path)
@@ -62,18 +63,28 @@ class SF1:
         """Return the unique values for a given selector"""
         return set( [obj[selector] for obj in self.files] )
     
-    def get_df(self,*,year=2010,tableName,product=SF1,**kwargs):
+    def get_df(self,*,tableName,**kwargs):
         """Get a dataframe where the tables are specified by a selector. Things to try:
         year=2010  (currently required, but defaults to 2010)
         table=tabname (you must specify a table),
         product=product (you must specify a product)
         """
         # Get a list of all the matching files
-        table = self.schema.get_table(table)
-        paths = [ obj['path'] for obj in self.files where 
-                  obj['year']==year and obj['table']==tableName obj['product']==product]
+        table = self.schema.get_table(tableName)
+        cifsn = table.attrib[CIFSN]
+        paths = [ obj['path'] for obj in self.files if
+                  (obj['year']==year and obj['product']==product) and obj[CIFSN]==cifsn]
+        if len(paths)==0:
+            print("No file found. Available data files:")
+            for obj in self.files:
+                print(obj)
+            print(f"Looking for year:{year} product:{product} CIFSN:{cifsn}")
+        print("paths:",paths)
         rdds = [spark.sparkContext.textFile(path) for path in paths]
-        rdd  = spark.sparkContext.union(*rdds)
+        # rdd  = spark.sparkContext.union(rdds=rdds)
+        # Just use the first for now
+        print("rdds=",rdds)
+        rdd = rdds[0]
         df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
         df.registerTempTable( f"{tableName}_{year}" )
         return df
@@ -82,15 +93,18 @@ class SF1:
 if __name__=="__main__":
     import argparse
 
-    # spark = spark_session()
+    spark  = cspark.spark_session()
 
     parser = argparse.ArgumentParser(description='Tool for using SF1 with Spark',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--list", help="List available files", action='store_true')
     args = parser.parse_args()
 
-    s = SF1()
+    year = 2010
+    product = SF1
+    s = DecennialDF(year=year,product=product)
     if args.list:
+        print(f"Year: {year} product: {product}")
         print("Available files: ",len(s.files))
         print("Available states: "," ".join(s.unique_selector('state')))
         print("Available products: ", " ".join(s.unique_selector('product')))
@@ -99,6 +113,6 @@ if __name__=="__main__":
         print("Available tables: "," ".join([t.name for t in schema.tables()]))
 
     # Demonstrate a simple count of the number of people
-    df = s.get_df(year=2010, product=SF1, table="P22")
-    spark.sql("SELECT * FROM P22 LIMIT 10").show()
+    df = s.get_df(year=2010, product=SF1, tableName="P22")
+    spark.sql("SELECT * FROM P22_2010 LIMIT 10").show()
     

@@ -52,14 +52,17 @@ Also consistent were the variable names.
 """
 
 FILE_START_RE = re.compile(r"^File (\d\d)")
-TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT|PCO)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
-VAR_RE        = re.compile(r"^((FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
+TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
+VAR_RE        = re.compile(r"^("
+                           r"(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
                            r"([PH]\d{7,8})|"
                            r"(PCO\d{7})|"
                            r"(PCT\d{7,8})|"
                            r"(PCT\d{3}[A-Z]\d{3})|"
                            r"(H\d{3}[A-Z]\d{4})|"
-                           r"(P\d{3}[A-Z]\d{3}))$")
+                           r"(P\d{3}[A-Z]\d{3})|"
+                           r"(HCT\d{3}\d{4})"
+                           r")$")
 
 VAR_PREFIX    = re.compile(r"^([A-Z]+)")
 
@@ -165,7 +168,7 @@ def process_tn(schema, tn, linkage_vars, file_number):
 
         if debug:
             print(f"Creating table {table_name} in file number {file_number}")
-        table = Table(name=table_name,attrib = {'CIFSN':file_number})
+        table = Table(name=table_name, attrib = {'CIFSN':file_number}, delimiter=',')
         schema.add_table(table)
 
         # Add any memorized linkage variables. 

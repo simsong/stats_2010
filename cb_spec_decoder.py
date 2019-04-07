@@ -166,14 +166,11 @@ def process_tn(schema, tn, linkage_vars, file_number):
     if not schema.has_table(table_name):
         # New table! Create it and add the linkage variables if we have any
 
-        if 'AVERAGE' in table_desc:
-            vtype = TYPE_DECIMAL
-        else:
-            vtype = TYPE_NUMBER
-
         if debug:
             print(f"Creating table {table_name} in file number {file_number}")
-        table = Table(name=table_name, attrib = {'CIFSN':file_number}, delimiter=',')
+        table = Table(name=table_name, 
+                      desc=table_desc, 
+                      attrib = {'CIFSN':file_number}, delimiter=',')
         schema.add_table(table)
 
         # Add any memorized linkage variables. 
@@ -282,11 +279,17 @@ def schema_for_spec(chapter6_filename):
         # Everything looks good: add the variable and increment the field number
         if debug:
             print(f"Adding variable {var_name} to table {table_name}")
+
+        if 'AVERAGE' in table.desc:
+            vtype = TYPE_DECIMAL
+        else:
+            vtype = TYPE_NUMBER
+
         table.add_variable( Variable(name   = var_name,
                                      desc   = var_desc,
                                      field  = field_number,
                                      width  = var_maxsize,
-                                     vtype  = TYPE_INTEGER) )
+                                     vtype  = vtype) )
         # Go to the next field
         field_number += 1
 

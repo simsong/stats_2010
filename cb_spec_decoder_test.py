@@ -4,13 +4,7 @@
 from constants import *
 
 from cb_spec_decoder import *
-
-#def test_part_matrix_columns():
-#    cols = part_matrix_columns(3)
-#    for line in sf1_file_from_zip('ak',3):
-#        fields = line.strip().split(",")
-#        break
-#    assert len(cols) == len(fields)
+from decimal import Decimal
 
 SF1_CHAPTER6_CSV = CHAPTER6_CSV_FILES.format(year=2010,product=SF1)
 SF1_P6_LINE='other races                                                                              P0060007              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
@@ -117,16 +111,38 @@ def test_spottest_2010_sf1():
     assert d3['P0030007'] == 11102
     assert d3['P0030008'] == 51875
     
+    # Make sure the second table in a fiel works
+    p4 = schema.get_table('P4')
+    d4 = p4.parse_line_to_dict(first_line)
+    assert d4[FILEID]   == 'SF1ST'
+    assert d4[STUSAB]   == 'AK'
+    assert d4[CHARITER] == '000'
+    assert d4[CIFSN]    == '03'
+    assert d4[LOGRECNO] == '0000001'
+    assert d4['P0040001'] == 710231
+    assert d4['P0040002'] == 670982
+    assert d4['P0040003'] == 39249
+
     # Let's make sure decimal works!
-    p22 = schema.get_table('P22')
-    p22.dump()
-    ypss = YPSS(year, product, state, p22.attrib[CIFSN])
+    p17 = schema.get_table('P17')
+    p17.dump()
+    ypss = YPSS(year, product, state, p17.attrib[CIFSN])
     for line in open_decennial( ypss ):
         first_line = line
         break
     print("first line of ",ypss)
     print(first_line)
-    d22 = p22.parse_line_to_dict(first_line)
+    d17 = p17.parse_line_to_dict(first_line)
+    assert d17[FILEID]   == 'SF1ST'
+    assert d17[STUSAB]   == 'AK'
+    assert d17[CHARITER] == '000'
+    assert d17[CIFSN]    == '05'
+    assert d17[LOGRECNO] == '0000001'
+    assert d17['P0170001'] == Decimal('2.65')
+    assert d17['P0170002'] == Decimal('0.72')
+    assert d17['P0170003'] == Decimal('1.93')
+
+    
     
 
 TEST_STATE = 'de'

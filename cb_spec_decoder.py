@@ -13,7 +13,10 @@ Once you have all of the files unpacked, they contain:
 
 - Segments (sometimes called file #s), which contains the 5 linkage fields and one or more "tables" arranged
   as a subset of the columsn.
-- So the first 5 columns of every file in every state are the same. 
+- So:
+   - The first 3 columns of every file in every state are the same. 
+   - Column #4 is the Characteristic Iteration File Sequence Number (CIFSN)
+   - Column #5 is the Logical Record Number
 
 File naming conventions were inconsistent in 2000 and changed in 2010. The rules are a mess
 and are contained within the Python file constants.py.
@@ -39,6 +42,8 @@ from constants import *
 import census_etl
 import ctools
 
+debug = False
+
 """
 These regular expressions are used to parse the structure of Chapter 6 of the data product specification.
 Fortunately, the format of Chapter 6 was consistent across 2000 and 2010, and between all data products.
@@ -46,7 +51,7 @@ Also consistent were the variable names.
 """
 
 FILE_START_RE = re.compile(r"^File (\d\d)")
-TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z ]+)")
+TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT|PCO)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
 VAR_RE        = re.compile(r"^((FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
                            r"([PH]\d{7,8})|"
                            r"(PCO\d{7})|"
@@ -55,10 +60,10 @@ VAR_RE        = re.compile(r"^((FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
                            r"(H\d{3}[A-Z]\d{4})|"
                            r"(P\d{3}[A-Z]\d{3}))$")
 
+VAR_PREFIX    = re.compile(r"^([A-Z]+)")
+
 # Typo in 2010 SF1 specification. This varialble appears twice; ignore it the second time.
 DUPLICATE_VARIABLES = ['PCT0200001']
-
-
 
 def open_decennial(ypss):
     """Return an IO object that reads from the specified ZIP file in Unicode.
@@ -70,12 +75,15 @@ def open_decennial(ypss):
         zf = zip_file.open( segmentfile_name( ypss ), 'r')
         return io.TextIOWrapper(zf, encoding='latin1')
 
-    
 def is_variable_name(name):
     m = VAR_RE.search(name)
     if m:
         return True
     return False
+
+def variable_prefix(name):
+    m = VAR_PREFIX.search(name)
+    return m.group(1)
 
 def parse_table_name(line):
     """If line describes a table, return (table_number,table_description)"""
@@ -118,7 +126,7 @@ def parse_variable_desc(line):
         except ValueError as e:
             return False
 
-        if (1 <= segment <= MAX_SEGMENT) and (1 <= maxsize <= 9):
+        if (1 <= segment <= MAX_CIFSN) and (1 <= maxsize <= 9):
             return (name,desc,segment,maxsize)
     return None
 
@@ -148,84 +156,136 @@ def tables_in_file(fname):
             tables[tn[0]] = tn[1]
     return tables
 
-def schema_for_spec(chapter6_filename,segment=True):
+def process_tn(schema, tn, linkage_vars):
+    """Process the tn and return the table"""
+    (table_name, table_desc) = tn
+    if not schema.has_table(table_name):
+        # New table! Create it and add the linkage variables if we have any
+
+        if debug:
+            print(f"Creating table table {table_name} in file number {file_number}")
+        table = Table(name=table_name,attrib = {'CIFSN':file_number})
+        schema.add_table(table)
+
+        # Add any memorized linkage variables. 
+        for var in linkage_vars:
+            if debug:
+                print(f"Adding saved linkage variable {var.name} to table {table_name}")
+            table.add_variable(var)
+    else:
+        return schema.get_table(table_name)
+    
+
+def schema_for_spec(chapter6_filename):
     """Given a Chapter6 file and an optional segment number, parse Chapter6 and
     return a schema object for that segment number
     """
     from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER,TYPE_VARCHAR
-    schema = Schema()
-    current_table = None
-    tables = {}
-    linkage_vars = []
-    infile = False
-    got_all_linkage = False
-    field_number = 0
-    for line in chapter6_lines(chapter6_filename):
+    schema          = Schema()
+    linkage_vars    = []
+    file_number     = False
+    last_vsn        = None      # last variable sequence number
+    for (ll,line) in enumerate(chapter6_lines(chapter6_filename),1):
         m = FILE_START_RE.search(line)
         if m:
-            infile = int(m.group(1))
-            if got_all_linkage:
-                field_number = len(linkage_vars)
+            # New file. Note the file number we are in and copy over the linkage variables if we have any.
+            # Make sure that the file number increased. 
+            # Tables do not cross files, so reset the current table and field number
+            # 
+            old_file_number = file_number
+            file_number     = int(m.group(1))
+            if file_number == 1:
+                field_number = 0
+            else:
+                assert old_file_number + 1 == file_number
+                # use memorized linkage variables
+                field_number = len(linkage_vars)    
+            table           = None
+            table_name      = None
+            field_number    = 0
             continue
         
-        # If not in a file, return
-        if infile is False:
+        # If not in a file, ignore this line
+        if file_number is False:
             continue
 
-        # Check for linkage variables
-        lnk = parse_linkage_desc(line)
-        if lnk and (got_all_linkage is False):
-            (lnk_name, lnk_desc, lnk_segment, lnk_maxsize) = lnk
-            linkage_vars.append( Variable(name  = lnk_name, 
-                                          desc  = lnk_desc, 
-                                          field = field_number,
-                                          width = lnk_maxsize,
-                                          vtype = TYPE_VARCHAR) )
-            field_number += 1
-            continue
+        # Check for linkage variables in the first file.
+        if file_number == 1:
+            lnk = parse_linkage_desc(line)
+            if lnk and lnk[0] in LINKAGE_VARIABLES:
+                (lnk_name, lnk_desc, lnk_cifsn, lnk_maxsize) = lnk
+                if debug:
+                    print(f"Discovered linkage variable {lnk_name}")
+                linkage_vars.append( Variable(name  = lnk_name, 
+                                              desc  = lnk_desc, 
+                                              field = field_number,
+                                              width = lnk_maxsize,
+                                              vtype = TYPE_VARCHAR) )
+                field_number += 1
+                continue
 
-        # Check for table name
+        # Check for start of a new table, as indicated by table name.
         tn = parse_table_name(line)
         if tn:
-            if (segment is True) or (infile == segment):
-                tables[tn[0]] = tn[1]
-                current_table = tn[0]
-                table         = schema.get_table(current_table, create=True)
-                # Add the linkage variables if we don't have them
-                if len(table.vardict)==0:
-                    for var in linkage_vars:
-                        table.add_variable(var)
+            if table is None:
+                table = process_tn(schema, tn, linkage_vars)
             else:
-                current_table = None
-                table         = None
+                assert table.name == tn[0]
+                if table.name not in schema.table_names():
+                    raise ValueError(f"{table.name} not in {schema.table_names()}")
 
-            got_all_linkage = True
-            continue
-
-        # if we are not in a table, return
-        if not current_table:
-            continue
-        
         # Can we parse variables?
         var = parse_variable_desc(line)
-        if not var:
+        if not var or var[0] in LINKAGE_VARIABLES:
             continue
         
-        # Process
-        (var_name, var_desc, var_segment, var_maxsize) = var
-        # Add this variable, and optionally the table, to the schema
-        if var_name in table.vardict:
-            if var_name in DUPLICATE_VARIABLES:
-                continue
-            else:
+        # We found a variable that we can process. 
+        (var_name, var_desc, var_cifsn, var_maxsize) = var
+
+        # Make sure variable is for the correct file
+        assert file_number == var_cifsn
+
+        ###
+        ### HANDLE ERRORS IN PDF AND OCR
+        ###
+
+        # 2010 SF1: OCR puts the table definition for PCT12G at the bottom of page 6-213
+        if var_name=='PCT012G001':
+            table = process_tn(schema, ["PCT12G","SEX BY AGE (TWO OR MORE RACES)"], linkage_vars)
+
+
+        # Check for duplicate variable name.
+        # Ignore PDF errors
+        if var_name not in DUPLICATE_VARIABLES:
+            if var_name in table.vardict:
                 raise KeyError("duplicate variable name: {}".format(var_name))
+
+        # Make sure that all the variables in the table have the same prefix.
+        var_prefix = variable_prefix(var_name)
+        if 'variable_prefix' in table.attrib:
+            assert table.attrib['variable_prefix'] == var_prefix
+        else:
+            table.attrib['variable_prefix'] = var_prefix
+            
+
+        # Everything looks good: add the variable and increment the field number
+        if debug:
+            print(f"Adding variable {var_name} to table {table_name}")
         table.add_variable( Variable(name   = var_name,
                                      desc   = var_desc,
                                      field  = field_number,
                                      width  = var_maxsize,
-                                     attrib = {'segment':var_segment},
                                      vtype  = TYPE_INTEGER) )
+        # Go to the next field
         field_number += 1
+
+        # Make sure that the varilable sequence number increased from previous one or is 001
+        vsn = int(var_name[-3:])
+        if vsn>1 and vsn!=last_vsn+1:
+            raise ValueError(f"line {ll}: found VSN {vsn} for variable {var_name}; expected {last_vsn+1} from {last_var_name}")
+        last_vsn = vsn
+        last_var_name = var_name
+        
 
     return schema
 
@@ -235,17 +295,19 @@ if __name__ == "__main__":
     Extract the schema from the SF1 Chapter 6 and dump the schema. 
     Normally this module will be used to generate a Schema object for a specific Chapter6 spec.""",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--all",  action='store_true', help="dump for all segments")
     parser.add_argument("--year", type=int, default=2010)
     parser.add_argument("--product", type=str, default=SF1)
-    
-    parser.add_argument("segment",nargs='?',help="dump for just this segment",type=int)
+    parser.add_argument("--segment",help="dump the tables just this segment",type=int)
     args = parser.parse_args()
+
     ch6file = CHAPTER6_CSV_FILES.format(year=args.year,product=args.product)
-    if args.all:
-        args.segment = True
-    schema = schema_for_spec(ch6file, args.segment)
-    schema.dump()
+    schema  = schema_for_spec(ch6file)
+    if args.segment:
+        for table in schema.tables():
+            if table.attrib[CIFSN]==args.segment:
+                dump.table()
+    else:
+        schema.dump()
     
 
 

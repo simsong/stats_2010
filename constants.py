@@ -9,7 +9,7 @@ Each year/product/state consists of:
   - A geoheader file, which contains all of the tabulation geographies for the year.
   - Two or more table files, each of which contains one or more tables.
 
-The first 5 columns of each file are linkage varialbes, for linking the tables to the geoheader.
+The first 5 columns of each file are linkage variables, for linking the tables to the geoheader.
 
 Unfortunately, naming schemes were not consistent within 2000 and were changed from 2000 to 2010.
 This file attempts to provide a simple interface for downloading, unpacking, and processing all of
@@ -103,6 +103,14 @@ DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
 DEST_ZIPFILE_DIR    = {2000:ROOT_DIR+'/data/{year}_{product}/dist/{state}',
                        2010:ROOT_DIR+'/data/{year}_{product}/dist'}
 
+# linkage variables
+FILEID='FILEID'
+STUSAB='STUSAB'
+CHARITER='CHARITER'
+CIFSN='CIFSN'
+LOGRECNO='LOGRECNO'
+LINKAGE_VARIABLES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
+
 class YPSS:
     __slots__=('year','product','state','segment')
     def __init__(self,year,product,state,segment):
@@ -150,7 +158,7 @@ FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
                           2010: {PL94: 2,
                                  SF1 : 47} }
 
-MAX_SEGMENT = 47                # highest anywhere
+MAX_CIFSN = 47                # highest anywhere
 
 # For self-check, each year/product has a prefix at the beginning of each line
 FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},

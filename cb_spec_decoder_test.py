@@ -93,15 +93,16 @@ def test_spottest_2010_sf1():
     ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
     assert os.path.exists(ch6file)
     schema = schema_for_spec(ch6file)
-    ypss = YPSS(year, product, state, 3)
+
+    p3 = schema.get_table('P3')
+    ypss = YPSS(year, product, state, p3.attrib[CIFSN])
     for line in open_decennial( ypss ):
         first_line = line
         break
-    print("first line of",state)
+    p3.dump()
+    print("first line of ",ypss)
     print(first_line)
-    p3 = schema.get_table('P3')
-    d3 = p3.parse_line_to_dict(first_line,delimiter=',')
-    print("d3:",d3)
+    d3 = p3.parse_line_to_dict(first_line)
     assert d3[FILEID]   == 'SF1ST'
     assert d3[STUSAB]   == 'AK'
     assert d3[CHARITER] == '000'
@@ -116,6 +117,16 @@ def test_spottest_2010_sf1():
     assert d3['P0030007'] == 11102
     assert d3['P0030008'] == 51875
     
+    # Let's make sure decimal works!
+    p22 = schema.get_table('P22')
+    p22.dump()
+    ypss = YPSS(year, product, state, p22.attrib[CIFSN])
+    for line in open_decennial( ypss ):
+        first_line = line
+        break
+    print("first line of ",ypss)
+    print(first_line)
+    d22 = p22.parse_line_to_dict(first_line)
     
 
 TEST_STATE = 'de'

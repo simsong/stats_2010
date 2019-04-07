@@ -126,6 +126,8 @@ class YPSS:
             self.segment = "{:05d}".format(segment)
         else:
             raise ValueError("unknown type: {}".format(type(segment)))
+    def __repr__(self):
+        return f"YPSS<{self.year}:{self.product}:{self.state}:{self.segment}>"
         
         
 def download_url(ypss):

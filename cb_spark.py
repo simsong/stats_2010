@@ -113,6 +113,14 @@ if __name__=="__main__":
         print("Available tables: "," ".join([t.name for t in schema.tables()]))
 
     # Demonstrate a simple count of the number of people
+    print("Table P3 just has counts:")
+    df = s.get_df(year=2010, product=SF1, tableName="P3")
+    spark.sql("SELECT * FROM P3_2010 LIMIT 10").show()
+
+
+    print("Table P22 has decimal numbers:")
     df = s.get_df(year=2010, product=SF1, tableName="P22")
-    spark.sql("SELECT * FROM P22_2010 LIMIT 10").show()
+    df.dump()
+    #spark.sql("SELECT * FROM P22_2010 LIMIT 10").show()
+
     

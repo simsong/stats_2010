@@ -40,7 +40,7 @@ import io
 
 from constants import *
 import census_etl
-from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER,TYPE_VARCHAR
+from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
 import ctools
 
 debug = False
@@ -166,6 +166,11 @@ def process_tn(schema, tn, linkage_vars, file_number):
     if not schema.has_table(table_name):
         # New table! Create it and add the linkage variables if we have any
 
+        if 'AVERAGE' in table_desc:
+            vtype = TYPE_DECIMAL
+        else:
+            vtype = TYPE_NUMBER
+
         if debug:
             print(f"Creating table {table_name} in file number {file_number}")
         table = Table(name=table_name, attrib = {'CIFSN':file_number}, delimiter=',')
@@ -206,7 +211,6 @@ def schema_for_spec(chapter6_filename):
                 field_number = len(linkage_vars)    
             table           = None
             table_name      = None
-            field_number    = 0
             continue
         
         # If not in a file, ignore this line

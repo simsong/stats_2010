@@ -40,6 +40,7 @@ import io
 
 from constants import *
 import census_etl
+from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER,TYPE_VARCHAR
 import ctools
 
 debug = False
@@ -156,14 +157,14 @@ def tables_in_file(fname):
             tables[tn[0]] = tn[1]
     return tables
 
-def process_tn(schema, tn, linkage_vars):
+def process_tn(schema, tn, linkage_vars, file_number):
     """Process the tn and return the table"""
     (table_name, table_desc) = tn
     if not schema.has_table(table_name):
         # New table! Create it and add the linkage variables if we have any
 
         if debug:
-            print(f"Creating table table {table_name} in file number {file_number}")
+            print(f"Creating table {table_name} in file number {file_number}")
         table = Table(name=table_name,attrib = {'CIFSN':file_number})
         schema.add_table(table)
 
@@ -172,6 +173,7 @@ def process_tn(schema, tn, linkage_vars):
             if debug:
                 print(f"Adding saved linkage variable {var.name} to table {table_name}")
             table.add_variable(var)
+        return table
     else:
         return schema.get_table(table_name)
     
@@ -180,7 +182,6 @@ def schema_for_spec(chapter6_filename):
     """Given a Chapter6 file and an optional segment number, parse Chapter6 and
     return a schema object for that segment number
     """
-    from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER,TYPE_VARCHAR
     schema          = Schema()
     linkage_vars    = []
     file_number     = False
@@ -227,12 +228,7 @@ def schema_for_spec(chapter6_filename):
         # Check for start of a new table, as indicated by table name.
         tn = parse_table_name(line)
         if tn:
-            if table is None:
-                table = process_tn(schema, tn, linkage_vars)
-            else:
-                assert table.name == tn[0]
-                if table.name not in schema.table_names():
-                    raise ValueError(f"{table.name} not in {schema.table_names()}")
+            table = process_tn(schema, tn, linkage_vars, file_number)
 
         # Can we parse variables?
         var = parse_variable_desc(line)
@@ -251,14 +247,22 @@ def schema_for_spec(chapter6_filename):
 
         # 2010 SF1: OCR puts the table definition for PCT12G at the bottom of page 6-213
         if var_name=='PCT012G001':
-            table = process_tn(schema, ["PCT12G","SEX BY AGE (TWO OR MORE RACES)"], linkage_vars)
+            table = process_tn(schema, ["PCT12G","SEX BY AGE (TWO OR MORE RACES)"], linkage_vars, file_number)
 
+
+        if table is None:
+            raise RuntimeError(f"Line {ll} we should have a table description. var: {var}")
 
         # Check for duplicate variable name.
         # Ignore PDF errors
-        if var_name not in DUPLICATE_VARIABLES:
-            if var_name in table.vardict:
-                raise KeyError("duplicate variable name: {}".format(var_name))
+        if var_name in DUPLICATE_VARIABLES and var_name in table.varnames():
+            continue            # already have this one
+        if var_name in table.varnames():
+            raise KeyError("duplicate variable name: {}".format(var_name))
+
+        ###
+        ### END OF PDF ERROR HANDLER
+        ###
 
         # Make sure that all the variables in the table have the same prefix.
         var_prefix = variable_prefix(var_name)

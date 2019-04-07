@@ -29,9 +29,11 @@ ROOT_DIR = os.path.dirname(__file__)
 DOC_DIR  = os.path.join(ROOT_DIR, "doc")
 
 # years
+YEAR = 'year'
 YEARS = [2000,2010]
 
 # products. Note that it is called the PL94 in places and te 
+PRODUCT = 'product'
 PL94 = 'pl94'
 SF1  = 'sf1'
 SF2  = 'sf2'
@@ -46,6 +48,7 @@ PRODUCT_EXTS = {2010: { PL94:'pl',
 # States. Note that for consistency, we use the phrase 'state' to refer to a 2-letter code
 # and the phrase 'state_name' to refer to the spelled out, capitalized state name.
 #
+STATE = 'state'
 STATE_DB="""Alaska/ak Arizona/az Arkansas/ar California/ca Colorado/co Connecticut/ct Delaware/de
 District_of_Columbia/dc Alabama/al Florida/fl Georgia/ga Hawaii/hi Idaho/id Illinois/il Indiana/in
 Iowa/ia Kansas/ks entucky/ky Louisiana/la Maine/me Maryland/md Massachusetts/ma Michigan/mi
@@ -62,6 +65,7 @@ STATE_NAMES        = {saa.split("/")[1]:saa.split("/")[0] for saa in STATES_AND_
 
 SEGMENT_FORMAT="{segment_number:05d}"
 GEO="geo"
+GEO_TABLE='geo'
 
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{file_number}_uf2.zip"
 """
@@ -110,6 +114,9 @@ CHARITER='CHARITER'
 CIFSN='CIFSN'
 LOGRECNO='LOGRECNO'
 LINKAGE_VARIABLES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
+
+# We use the CIFSN 0 for the geo segment
+CIFSN_GEO=0
 
 class YPSS:
     __slots__=('year','product','state','segment')

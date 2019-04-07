@@ -48,22 +48,30 @@ class DecennialDF:
     def register_file(self,path):
         """Files have a pattern:  {state}{section}{year}.{product}"""
         filename = os.path.basename(path)
-        if len(filename)==15 and filename.endswith(".sf1"):
+        if filename.endswith(".sf1"):
+            state = filename[0:2]
             try:
-                self.files.append({'path':path,
-                                   'state':filename[0:2],
-                                   CIFSN:int(filename[2:7]),
-                                   'year':int(filename[7:11]),
-                                   'product':SF1})
+                if len(filename)==13 and filename[2:5]=='geo':
+                    self.files.append({'path':path,
+                                       STATE:state,
+                                       CIFSN:CIFSN_GEO,
+                                       YEAR:int(filename[5:9]),
+                                       PRODUCT:SF1})
+                if len(filename)==15:
+                    self.files.append({'path':path,
+                                       STATE:state,
+                                       CIFSN:int(filename[2:7]),
+                                       YEAR:int(filename[7:11]),
+                                       PRODUCT:SF1})
             except ValueError as e:
                 if debug:
-                    print("bad file format:",path)
+                    print("bad filename:",path)
             
     def unique_selector(self,selector):
         """Return the unique values for a given selector"""
         return set( [obj[selector] for obj in self.files] )
     
-    def get_df(self,*,tableName,**kwargs):
+    def get_df(self,*,tableName,sqlName):
         """Get a dataframe where the tables are specified by a selector. Things to try:
         year=2010  (currently required, but defaults to 2010)
         table=tabname (you must specify a table),
@@ -71,22 +79,28 @@ class DecennialDF:
         """
         # Get a list of all the matching files
         table = self.schema.get_table(tableName)
-        cifsn = table.attrib[CIFSN]
+        if table==GEO_TABLE:
+            cifsn = CIFSN_GEO
+        else:
+            cifsn = table.attrib[CIFSN]
+
+        # Find the files
         paths = [ obj['path'] for obj in self.files if
                   (obj['year']==year and obj['product']==product) and obj[CIFSN]==cifsn]
         if len(paths)==0:
             print("No file found. Available data files:")
             for obj in self.files:
                 print(obj)
-            print(f"Looking for year:{year} product:{product} CIFSN:{cifsn}")
-        print("paths:",paths)
+            raise RuntimeError(f"No files found looking for year:{year} product:{product} CIFSN:{cifsn}")
+            
+        print("paths:\n","\n".join(paths))
         rdds = [spark.sparkContext.textFile(path) for path in paths]
         # rdd  = spark.sparkContext.union(rdds=rdds)
         # Just use the first for now
         print("rdds=",rdds)
         rdd = rdds[0]
         df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
-        df.registerTempTable( f"{tableName}_{year}" )
+        df.registerTempTable( sqlName )
         return df
             
 
@@ -102,7 +116,7 @@ if __name__=="__main__":
 
     year = 2010
     product = SF1
-    s = DecennialDF(year=year,product=product)
+    sf1_2010 = DecennialDF(year=year,product=product)
     if args.list:
         print(f"Year: {year} product: {product}")
         print("Available files: ",len(s.files))
@@ -112,15 +126,18 @@ if __name__=="__main__":
         print("Available segments: ", " ".join([str(i) for i in s.unique_selector('segment')]))
         print("Available tables: "," ".join([t.name for t in schema.tables()]))
 
+
     # Demonstrate a simple count of the number of people
     print("Table P3 just has counts:")
-    df = s.get_df(year=2010, product=SF1, tableName="P3")
+    sf1_2010.get_df(tableName="P3", sqlName='P3_2010')
     spark.sql("SELECT * FROM P3_2010 LIMIT 10").show()
 
 
     print("Table P22 has decimal numbers:")
-    df = s.get_df(year=2010, product=SF1, tableName="P22")
-    df.dump()
-    #spark.sql("SELECT * FROM P22_2010 LIMIT 10").show()
+    sf1_2010.get_df(tableName="P22", sqlName='P22_2010')
+    spark.sql("SELECT * FROM P22_2010 LIMIT 10").show()
 
     
+    print("We have geographies!")
+    sf1_2010.get_df(tableName = GEO_TABLE, sqlName='GEO_2010')
+    spark.sql("SELECT FILEID,STUSAB,LOGRECNO,STATE,COUNTYCC,TRACT,BLKGRP,BLOCK,FROM GEO_2010 LIMIT 10").show()

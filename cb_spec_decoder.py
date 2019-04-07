@@ -51,6 +51,14 @@ Fortunately, the format of Chapter 6 was consistent across 2000 and 2010, and be
 Also consistent were the variable names.
 """
 
+# Regular expressions for parsing geoheader
+# Currently we don't parse them all due to inconsistencies in the PDF
+# Generate an error if REQUIED_GEO_VARS are not present
+GEO_VAR_RE   = re.compile(r"^(?P<desc>[A-Z][A-Za-z0-9 ()/.]+) (?P<name>[A-Z]{1,13}) (?P<width>\d{1,2}) (?P<column>\d{1,3}) (?P<datatype>(A|A/N|N))$")
+REQUIRED_GEO_VARS =  ['FILEID', 'STUSAB', 'SUMLEV', 'LOGRECNO', 'STATE', 'COUNTY', 'PLACE', 'TRACT', 'BLKGRP', 'BLOCK' ]
+
+
+# Regular expression for parsing file section
 FILE_START_RE = re.compile(r"^File (\d\d)")
 TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
 VAR_RE        = re.compile(r"^("
@@ -169,8 +177,9 @@ def process_tn(schema, tn, linkage_vars, file_number):
         if debug:
             print(f"Creating table {table_name} in file number {file_number}")
         table = Table(name=table_name, 
-                      desc=table_desc, 
-                      attrib = {'CIFSN':file_number}, delimiter=',')
+                      desc=table_desc,
+                      delimiter=',',
+                      attrib = {CIFSN:file_number} )
         schema.add_table(table)
 
         # Add any memorized linkage variables. 
@@ -188,9 +197,18 @@ def schema_for_spec(chapter6_filename):
     return a schema object for that segment number
     """
     schema          = Schema()
+    geotable        = Table(name='geo', attrib = {CIFSN:CIFSN_GEO} )
+    schema.add_table(geotable)
+
+    ## Due to a PDF issue, we hard-code the PLACE
+    geotable.add_variable( Variable(name = 'PLACE', column=46, width=5, vtype=TYPE_VARCHAR))
+
+
     linkage_vars    = []
     file_number     = False
     last_vsn        = None      # last variable sequence number
+    geo_columns     = set(range(1,501))
+
     for (ll,line) in enumerate(chapter6_lines(chapter6_filename),1):
         m = FILE_START_RE.search(line)
         if m:
@@ -210,8 +228,24 @@ def schema_for_spec(chapter6_filename):
             table_name      = None
             continue
         
-        # If not in a file, ignore this line
+        # If not yet in a file, check for geoheader line
         if file_number is False:
+            m = GEO_VAR_RE.search(line)
+            if m:
+                (desc,name,width,column,datatype) = m.group('desc','name','width','column','datatype')
+                print("{}:{}".format(width,line))
+                width  = int(width)
+                column = int(column)
+                v = Variable( name = name,
+                              column = column,
+                              width = width,
+                              vtype = TYPE_VARCHAR) 
+                geotable.add_variable( v )
+                v.dump()
+
+                # Remove these columns from the set of geo column
+                for i in range(column,column+width):
+                    geo_columns.remove(i)
             continue
 
         # Check for linkage variables in the first file.
@@ -300,8 +334,37 @@ def schema_for_spec(chapter6_filename):
         last_vsn = vsn
         last_var_name = var_name
         
+    for varname in REQUIRED_GEO_VARS:
+        if varname not in geotable.varnames():
+            raise RuntimeError(f"Parser did not find geovariable {varname} in geoheader")
 
+    print("The following geo columns were not parsed:")
+    print(sorted(geo_columns))
     return schema
+
+
+def sf2010_hard_geo():
+    """Return the  hard-coded geo for the 2010 SF1"""
+    schema = Schema()
+    geotable = Table( name='geohard', desc='SF2010 geo header')
+    schema.add_table( geotable )
+    for (name,start,width) in [[ 'FILEID', 1, 6],
+                               [ 'STUSAB', 7, 2],
+                               [ 'SUMLEV', 9, 3],
+                               [ 'LOGRECNO', 19, 7],
+                               [ 'STATE',  28, 2],
+                               [ 'COUNTY', 30, 3],
+                               [ 'PLACE',  46, 5],
+                               [ 'TRACT',  55, 6],
+                               [ 'BLKGRP', 61, 1],
+                               [ 'BLOCK',  62, 4]]:
+        geotable.add_variable( Variable( name = name,
+                                       column = start,
+                                       width = width,
+                                       vtype = TYPE_VARCHAR) )
+    return schema
+    
+
 
 if __name__ == "__main__":
     import argparse
@@ -309,10 +372,17 @@ if __name__ == "__main__":
     Extract the schema from the SF1 Chapter 6 and dump the schema. 
     Normally this module will be used to generate a Schema object for a specific Chapter6 spec.""",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--year", type=int, default=2010)
+    parser.add_argument("--hard2010sf1", action='store_true', help='Use the hard-coded SF1 2010 geo schema')
+    parser.add_argument("--parsegeo", action='store_true', help='Parse the geo')
+    parser.add_argument("--year",    type=int, default=2010)
     parser.add_argument("--product", type=str, default=SF1)
-    parser.add_argument("--segment",help="dump the tables just this segment",type=int)
+    parser.add_argument("--segment", help="dump the tables just this segment",type=int)
     args = parser.parse_args()
+
+    if args.hard2010sf1:
+        schema = sf2010_hard_geo()
+        schema.dump()
+        exit(0)
 
     ch6file = CHAPTER6_CSV_FILES.format(year=args.year,product=args.product)
     schema  = schema_for_spec(ch6file)

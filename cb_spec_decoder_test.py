@@ -7,6 +7,7 @@ from cb_spec_decoder import *
 from decimal import Decimal
 
 SF1_CHAPTER6_CSV = CHAPTER6_CSV_FILES.format(year=2010,product=SF1)
+SF1_STUSAB_LINE = 'State/U.S. Abbreviation (USPS)                                                    STUSAB                    2                7              A,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_P6_LINE='other races                                                                              P0060007              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_P0090058='Race                                                                          P0090058              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
@@ -18,6 +19,12 @@ SF1_LINE_7837="PCT12G.   SEX BY AGE (TWO OR MORE RACES) [209]\227Con.,,,,,,,,,,,
 
 def test_chapter6_prepare_csv_line():
     assert chapter6_prepare_csv_line(SF1_H22_LINE)=="H22. ALLOCATION OF TENURE"
+
+def test_stusab_line():
+    pline = chapter6_prepare_csv_line( SF1_STUSAB_LINE )
+    print(pline)
+    m = GEO_VAR_RE.search( pline )
+    assert m.group('name') == 'STUSAB'
 
 def test_line_7837():
     tn = parse_table_name( chapter6_prepare_csv_line( SF1_LINE_7837 ))

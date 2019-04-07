@@ -16,7 +16,7 @@ import time
 import zipfile
 import io
 
-from sql import SLGSQL
+from slgsql import SLGSQL
 
 CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)

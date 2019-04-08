@@ -51,11 +51,11 @@ PRODUCT_EXTS = {2010: { PL94:'pl',
 STATE = 'state'
 STATE_DB="""Alaska/ak Arizona/az Arkansas/ar California/ca Colorado/co Connecticut/ct Delaware/de
 District_of_Columbia/dc Alabama/al Florida/fl Georgia/ga Hawaii/hi Idaho/id Illinois/il Indiana/in
-Iowa/ia Kansas/ks entucky/ky Louisiana/la Maine/me Maryland/md Massachusetts/ma Michigan/mi
+Iowa/ia Kansas/ks Kentucky/ky Louisiana/la Maine/me Maryland/md Massachusetts/ma Michigan/mi
 Minnesota/mn Mississippi/ms Missouri/mo Montana/mt Nebraska/ne Nevada/nv New_Hampshire/nh
 New_Jersey/nj New_Mexico/nm New_York/ny North_Carolina/nc North_Dakota/nd Ohio/oh Oklahoma/ok
 Oregon/or Pennsylvania/pa Rhode_Island/ri South_Carolina/sc South_Dakota/sd Tennessee/tn
-Texas/tx Utah/ut Vermont/vt Virginia/va Washington/wa West_Virginia/wv isconsin/wi Wyoming/wy"""
+Texas/tx Utah/ut Vermont/vt Virginia/va Washington/wa West_Virginia/wv Wisconsin/wi Wyoming/wy"""
 
 STATES_AND_ABBREVS = STATE_DB.split()
 STATES             = [saa.split("/")[1] for saa in STATES_AND_ABBREVS]
@@ -95,6 +95,15 @@ URL_2010_SF1  = WWW_SERVER_2010+'/04-Summary_File_1/{state_name}/{state}2010.sf1
 URL_2010_SF2  = WWW_SERVER_2010+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'
 
 ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
+
+# SEGMENTS_PER_PRODUCT includes the 'geo' segment, so add 1 to the largest segment number
+DOWNLOAD_SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
+                                        SF1 : 40},
+                                 2010: {PL94: 1,
+                                        SF1 : 1}}
+
+
+                        
 
 DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
                        SF1  : URL_2000_SF1,

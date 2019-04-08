@@ -35,6 +35,7 @@ import os.path
 import re
 import zipfile
 import io
+import sys
 
 # File locations
 
@@ -42,6 +43,7 @@ from constants import *
 import census_etl
 from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
 import ctools
+import ctools.tydoc  as tydoc
 
 debug = False
 
@@ -54,7 +56,7 @@ Also consistent were the variable names.
 # Regular expressions for parsing geoheader
 # Currently we don't parse them all due to inconsistencies in the PDF
 # Generate an error if REQUIED_GEO_VARS are not present
-GEO_VAR_RE   = re.compile(r"^(?P<desc>[A-Z][A-Za-z0-9 ()/.]+) (?P<name>[A-Z]{1,13}) (?P<width>\d{1,2}) (?P<column>\d{1,3}) (?P<datatype>(A|A/N|N))$")
+GEO_VAR_RE   = re.compile(r"^(?P<desc>[A-Z][-A-Za-z0-9 ()/.]+) (?P<name>[A-Z]{1,13}) (?P<width>\d{1,2}) (?P<column>\d{1,3}) (?P<datatype>(A|A/N|N))$")
 REQUIRED_GEO_VARS =  ['FILEID', 'STUSAB', 'SUMLEV', 'LOGRECNO', 'STATE', 'COUNTY', 'PLACE', 'TRACT', 'BLKGRP', 'BLOCK' ]
 
 
@@ -197,17 +199,18 @@ def schema_for_spec(chapter6_filename):
     return a schema object for that segment number
     """
     schema          = Schema()
-    geotable        = Table(name='geo', attrib = {CIFSN:CIFSN_GEO} )
+    geotable        = Table( name = GEO_TABLE, attrib = {CIFSN:CIFSN_GEO} )
     schema.add_table(geotable)
 
     ## Due to a PDF issue, we hard-code the PLACE
-    geotable.add_variable( Variable(name = 'PLACE', column=46, width=5, vtype=TYPE_VARCHAR))
+    ## Note that we start with column 0, so we subtract 1 from place
+    geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))
 
 
     linkage_vars    = []
     file_number     = False
     last_vsn        = None      # last variable sequence number
-    geo_columns     = set(range(1,501))
+    geo_columns     = set(range(0,500))
 
     for (ll,line) in enumerate(chapter6_lines(chapter6_filename),1):
         m = FILE_START_RE.search(line)
@@ -233,15 +236,14 @@ def schema_for_spec(chapter6_filename):
             m = GEO_VAR_RE.search(line)
             if m:
                 (desc,name,width,column,datatype) = m.group('desc','name','width','column','datatype')
-                print("{}:{}".format(width,line))
                 width  = int(width)
-                column = int(column)
+                column = int(column) - 1 # we start with column 0, Census starts with column 1
                 v = Variable( name = name,
-                              column = column,
+                              desc = desc,
+                              column = column, 
                               width = width,
                               vtype = TYPE_VARCHAR) 
                 geotable.add_variable( v )
-                v.dump()
 
                 # Remove these columns from the set of geo column
                 for i in range(column,column+width):
@@ -338,32 +340,10 @@ def schema_for_spec(chapter6_filename):
         if varname not in geotable.varnames():
             raise RuntimeError(f"Parser did not find geovariable {varname} in geoheader")
 
-    print("The following geo columns were not parsed:")
-    print(sorted(geo_columns))
+    if debug:
+        print("The following geo columns were not parsed:")
+        print(sorted(geo_columns))
     return schema
-
-
-def sf2010_hard_geo():
-    """Return the  hard-coded geo for the 2010 SF1"""
-    schema = Schema()
-    geotable = Table( name='geohard', desc='SF2010 geo header')
-    schema.add_table( geotable )
-    for (name,start,width) in [[ 'FILEID', 1, 6],
-                               [ 'STUSAB', 7, 2],
-                               [ 'SUMLEV', 9, 3],
-                               [ 'LOGRECNO', 19, 7],
-                               [ 'STATE',  28, 2],
-                               [ 'COUNTY', 30, 3],
-                               [ 'PLACE',  46, 5],
-                               [ 'TRACT',  55, 6],
-                               [ 'BLKGRP', 61, 1],
-                               [ 'BLOCK',  62, 4]]:
-        geotable.add_variable( Variable( name = name,
-                                       column = start,
-                                       width = width,
-                                       vtype = TYPE_VARCHAR) )
-    return schema
-    
 
 
 if __name__ == "__main__":
@@ -372,20 +352,38 @@ if __name__ == "__main__":
     Extract the schema from the SF1 Chapter 6 and dump the schema. 
     Normally this module will be used to generate a Schema object for a specific Chapter6 spec.""",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--hard2010sf1", action='store_true', help='Use the hard-coded SF1 2010 geo schema')
-    parser.add_argument("--parsegeo", action='store_true', help='Parse the geo')
+    parser.add_argument("--geodump", help='Using the schema, dump the geo information for the provided file')
     parser.add_argument("--year",    type=int, default=2010)
     parser.add_argument("--product", type=str, default=SF1)
     parser.add_argument("--segment", help="dump the tables just this segment",type=int)
+    parser.add_argument("--limit", help="limit output to this many records", type=int, default=50)
+    parser.add_argument("--sumlev", help="Just print this summary level")
     args = parser.parse_args()
 
-    if args.hard2010sf1:
-        schema = sf2010_hard_geo()
-        schema.dump()
-        exit(0)
 
     ch6file = CHAPTER6_CSV_FILES.format(year=args.year,product=args.product)
+
     schema  = schema_for_spec(ch6file)
+    schema.dump()
+
+    if args.geodump:
+        geotable = schema.get_table(GEO_TABLE)
+        tt = tydoc.tytable()
+        tt.add_head(['LOGRECNO','SUMLEV','STATE','COUNTY','TRACT','BLOCK'])
+        rows = 0
+        for line in open(args.geodump,'r',encoding='latin1'):
+            d = geotable.parse_line_to_dict(line)
+            if args.sumlev is not None:
+                if args.sumlev!=d['SUMLEV']:
+                    continue
+            tt.add_data( [d['LOGRECNO'], d['SUMLEV'], d['STATE'], d['COUNTY'], d['TRACT'], d['BLOCK']] )
+            rows += 1
+            if rows==args.limit:
+                break
+        tt.render(sys.stdout, format='md')
+        exit(0)
+            
+
     if args.segment:
         for table in schema.tables():
             if table.attrib[CIFSN]==args.segment:

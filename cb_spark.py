@@ -11,11 +11,13 @@ You can arrange the files any way that you want inside SF1. We scan the director
 """
 
 import os
+import sys
 
 from constants import *
 import cb_spec_decoder
 import ctools.cspark as cspark
 import ctools.s3     as s3
+import ctools.tydoc  as tydoc
 
 debug = False
 
@@ -33,6 +35,9 @@ class DecennialDF:
         self.find_files()
         ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
         self.schema = cb_spec_decoder.schema_for_spec(ch6file)
+
+    def get_table(self,tableName):
+        return self.schema.get_table(tableName)
 
     def find_files(self):
         if self.root.startswith('s3:'):
@@ -79,7 +84,7 @@ class DecennialDF:
         """
         # Get a list of all the matching files
         table = self.schema.get_table(tableName)
-        if table==GEO_TABLE:
+        if tableName == GEO_TABLE:
             cifsn = CIFSN_GEO
         else:
             cifsn = table.attrib[CIFSN]
@@ -93,27 +98,53 @@ class DecennialDF:
                 print(obj)
             raise RuntimeError(f"No files found looking for year:{year} product:{product} CIFSN:{cifsn}")
             
-        print("paths:\n","\n".join(paths))
+        # Create an RDD for each text file
         rdds = [spark.sparkContext.textFile(path) for path in paths]
-        # rdd  = spark.sparkContext.union(rdds=rdds)
-        # Just use the first for now
-        print("rdds=",rdds)
-        rdd = rdds[0]
+        # Combine them into a single file
+        rdd  = spark.sparkContext.union(rdds)
+        # Convert it to a dataframe
         df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
         df.registerTempTable( sqlName )
         return df
             
+    def find_variable_by_name(self,name):
+        """Scans all tables in the schema until a variable name is found. Returns it"""
+        for table in self.schema.tables():
+            try:
+                return (table, table.get_variable(name))
+            except KeyError:
+                pass
+        raise KeyError(f"variable {name} not found in any table in schema")
+
+    def print_legend(self,df,*,printHeading=True,file=sys.stdout):
+        """Print the legend for the columns in the dataframe. Takes advantage of the fact that all column names are unique with the Census Bureau."""
+        if printHeading:
+            print("Legend:")
+        rows = []
+        for varName in df.columns:
+            if "." in varName:
+                varName = varName.split(".")[-1] # take the last name
+            rows.append( self.find_variable_by_name(varName) )
+        rows.sort()
+        old_table = None
+        for (table, var) in rows:
+            if table!= old_table:
+                print(f"Table {table.name}   {table.desc}")
+                old_table = table
+            print("  ", var.name, var.desc)
+        print("")
 
 if __name__=="__main__":
     import argparse
 
-    spark  = cspark.spark_session()
+    spark  = cspark.spark_session(logLevel='ERROR')
 
     parser = argparse.ArgumentParser(description='Tool for using SF1 with Spark',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--list", help="List available files", action='store_true')
     args = parser.parse_args()
 
+    # Get a schema object associated with the SF1 for 2010
     year = 2010
     product = SF1
     sf1_2010 = DecennialDF(year=year,product=product)
@@ -127,17 +158,46 @@ if __name__=="__main__":
         print("Available tables: "," ".join([t.name for t in schema.tables()]))
 
 
-    # Demonstrate a simple count of the number of people
-    print("Table P3 just has counts:")
-    sf1_2010.get_df(tableName="P3", sqlName='P3_2010')
-    spark.sql("SELECT * FROM P3_2010 LIMIT 10").show()
-
-
-    print("Table P22 has decimal numbers:")
-    sf1_2010.get_df(tableName="P22", sqlName='P22_2010')
-    spark.sql("SELECT * FROM P22_2010 LIMIT 10").show()
-
-    
-    print("We have geographies!")
+    print("Geolevels by state and summary level:")
     sf1_2010.get_df(tableName = GEO_TABLE, sqlName='GEO_2010')
-    spark.sql("SELECT FILEID,STUSAB,LOGRECNO,STATE,COUNTYCC,TRACT,BLKGRP,BLOCK,FROM GEO_2010 LIMIT 10").show()
+    #print(spark.sql("SELECT * from GEO_2010 LIMIT 10").collect())
+    #spark.sql("SELECT FILEID,STUSAB,LOGRECNO,STATE,COUNTYCC,TRACT,BLKGRP,BLOCK,FROM GEO_2010 LIMIT 10").show()
+    tt = tydoc.tytable()
+    tt.add_head(['State','Summary Level','Count'])
+    for row in spark.sql("SELECT STUSAB,SUMLEV,COUNT(*) FROM GEO_2010 GROUP BY STUSAB,SUMLEV ORDER BY 1,2").collect():
+        tt.add_data(row)
+    tt.render(sys.stdout, format='md')
+
+    print("Test; Print the names of 20 distinct names in the file (unformatted printing)")
+    d0 = spark.sql("SELECT DISTINCT LOGRECNO,STUSAB,STATE,SUMLEV,NAME FROM GEO_2010 LIMIT 20")
+    sf1_2010.print_legend(d0)
+    for row in d0.collect():
+        print(row)
+
+
+    print("Table P2 just has counts. Here we dump the first 10 records:")
+    sf1_2010.get_df(tableName="P2", sqlName='P2_2010')
+    d1 = spark.sql("SELECT * FROM P2_2010 LIMIT 10")
+    d1.show()
+    sf1_2010.print_legend(d1)
+
+
+    print("Table P17 has decimal numbers; they are represented as decimal numbers. Here are the first 10 rows:")
+    sf1_2010.get_df(tableName="P17", sqlName='P17_2010')
+    d2 = spark.sql("SELECT * FROM P17_2010 LIMIT 10")
+    d2.show()
+    sf1_2010.print_legend(d2)
+
+    print("Table P2 counts by state and county:")
+    res = spark.sql("SELECT GEO_2010.STUSAB,GEO_2010.COUNTY,GEO_2010.NAME,P0020001,P0020002,P0020003,P0020004,P0020005,P0020006 FROM GEO_2010 "
+                    "INNER JOIN P2_2010 ON GEO_2010.STUSAB=P2_2010.STUSAB and GEO_2010.LOGRECNO=P2_2010.LOGRECNO "
+                    "WHERE GEO_2010.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
+
+    tt = tydoc.tytable()
+    tt.add_head( res.columns )
+    for row in res.collect():
+        tt.add_data(row)
+    tt.render(sys.stdout, format='md')
+    sf1_2010.print_legend(res)
+
+    # Compute counts by 

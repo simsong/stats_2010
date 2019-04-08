@@ -96,6 +96,13 @@ URL_2010_SF2  = WWW_SERVER_2010+'/05-Summary_File_2/{state_name}/{state}2010.sf2
 
 ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
 
+SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
+                               SF1 : 40},
+                        2010: {PL94: 3,
+                               SF1 : 48}}
+
+
+
 # SEGMENTS_PER_PRODUCT includes the 'geo' segment, so add 1 to the largest segment number
 DOWNLOAD_SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
                                         SF1 : 40},

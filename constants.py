@@ -119,8 +119,8 @@ LINKAGE_VARIABLES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
 CIFSN_GEO=0
 
 class YPSS:
-    __slots__=('year','product','state','segment')
-    def __init__(self,year,product,state,segment):
+    __slots__=('year','product','state','segment','chariter')
+    def __init__(self,year,product,state,segment,chariter=0):
         assert year in YEARS
         assert product in PRODUCTS
         assert state in STATES
@@ -130,23 +130,31 @@ class YPSS:
         if type(segment)==str:
             self.segment = segment
         elif type(segment)==int:
-            self.segment = "{:05d}".format(segment)
+            self.segment = "{:02d}".format(segment)
+        else:
+            raise ValueError("unknown type: {}".format(type(segment)))
+        if type(segment)==str:
+            self.chariter = chariter
+        elif type(chariter)==int:
+            self.chariter = "{:03d}".format(chariter)
         else:
             raise ValueError("unknown type: {}".format(type(segment)))
     def __repr__(self):
-        return f"YPSS<{self.year}:{self.product}:{self.state}:{self.segment}>"
+        return f"YPSS<{self.year}:{self.product}:{self.state}:{self.chariter}:{self.segment}>"
         
         
 def download_url(ypss):
     return DOWNLOAD_URLS[ypss.year][ypss.product].format(year=ypss.year,product=ypss.product,
                                                          state_name = STATE_NAMES[ypss.state],
                                                          state=ypss.state,
+                                                         chariter=ypss.chariter,
                                                          segment=ypss.segment)
                                                          
 def zipfile_dir(ypss):
     return DEST_ZIPFILE_DIR[ypss.year].format(year=ypss.year,
                                               product=ypss.product,
                                               state=ypss.state,
+                                              chariter=ypss.chariter,
                                               segment=ypss.segment)
 
 def zipfile_name(ypss):
@@ -158,6 +166,7 @@ def segmentfile_name(ypss):
     return "{state}{segment}{year}.{ext}".format(year=ypss.year,
                                                  product=ypss.product,
                                                  state=ypss.state,
+                                                 chariter=ypss.chariter,
                                                  segment=ypss.segment,
                                                  ext = ext)
 

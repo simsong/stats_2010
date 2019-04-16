@@ -125,7 +125,7 @@ def test_spottest_2010_sf1():
     assert d3['P0030007'] == 11102
     assert d3['P0030008'] == 51875
     
-    # Make sure the second table in a fiel works
+    # Make sure the second table in a file works
     p4 = schema.get_table('P4')
     d4 = p4.parse_line_to_dict(first_line)
     assert d4[FILEID]   == 'SF1ST'
@@ -157,8 +157,6 @@ def test_spottest_2010_sf1():
     assert d17['P0170003'] == Decimal('1.93')
 
     
-    
-
 TEST_STATE = 'de'
 IGNORE_FILE_NUMBERS = [12]
 def test_parsed_spec_fields_correct():
@@ -228,5 +226,14 @@ def test_parsed_spec_fields_correct():
         raise RuntimeError("Errors found")
                 
             
-        
+def test_spottest_2010_sf2():
+    year = 2010
+    product = SF1
+    state  = 'ak'
+    ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
+    assert os.path.exists(ch6file)
+    schema = schema_for_spec(ch6file)
+    pco1 = schema.get_table("PCO1")
+    pco1.
     
+

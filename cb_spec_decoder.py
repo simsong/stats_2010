@@ -74,7 +74,8 @@ VAR_RE        = re.compile(r"^("
                            r"(HCT\d{3}\d{4})"
                            r")$")
 
-VAR_PREFIX    = re.compile(r"^([A-Z]+)")
+VAR_FIELDS_RE = re.compile(r"^(?P<prefix>[A-Z]+)(?P<tablenumber>\d{1,3})(?P<sequence>[A-Z]?)(?P<number>\d+)$")
+VAR_PREFIX_RE = re.compile(r"^(?P<prefix>[A-Z]+)")
 
 # Typo in 2010 SF1 specification. This varialble appears twice; ignore it the second time.
 DUPLICATE_VARIABLES = ['PCT0200001']
@@ -86,8 +87,13 @@ def open_decennial(ypss):
 
     with zipfile.ZipFile( zipfile_name( ypss ) ) as zip_file:
         # Note: You cannot use a with() on the one below:
-        zf = zip_file.open( segmentfile_name( ypss ), 'r')
-        return io.TextIOWrapper(zf, encoding='latin1')
+        try:
+            zf = zip_file.open( segmentfile_name( ypss ), 'r')
+            return io.TextIOWrapper(zf, encoding='latin1')
+        except KeyError as f:
+            print(str(f))
+        raise FileNotFoundError(f"segment {segmentfile_name( ypss )} not in file {zipfile_name(ypss)}")
+        
 
 def is_variable_name(name):
     m = VAR_RE.search(name)
@@ -96,14 +102,15 @@ def is_variable_name(name):
     return False
 
 def variable_prefix(name):
-    m = VAR_PREFIX.search(name)
-    return m.group(1)
+    m = VAR_PREFIX_RE.search(name)
+    return m.group('prefix')
 
 def parse_table_name(line):
     """If line describes a table, return (table_number,table_description)"""
-    m = TABLE_RE.search(line)
+    m = TABLE_RE.search( line )
     if m:
-        return m.group('table','title')
+        (table,title) = m.group('table','title')
+        return (table.strip(), title.strip())
     return None
 
 def parse_linkage_desc(line):
@@ -144,13 +151,23 @@ def parse_variable_desc(line):
             return (name,desc,segment,maxsize)
     return None
 
+FOOTNOTE_RE = re.compile(r'\[\d+\]')
 def chapter6_prepare_csv_line(line):
+    # Remove the quotes
     line = line.replace('"',' ').replace(',',' ').strip()
-    b = line.find('[')            # Remove the [
-    if b>0:
-        line = line[0:b]
+
+    # Remove a foonote, if present
+    m = FOOTNOTE_RE.search(line)
+    if m:
+        line = line[:m.span()[0]] + line[m.span()[1]:]
+
+    # Remove the space between words
     line = " ".join([word for word in line.split() if len(word)>0])
+
+    # Make sure there are none of the bad characters
     assert ',' not in line
+    assert '[' not in line
+    assert ']' not in line
     return line
 
 def chapter6_lines(fname):
@@ -209,7 +226,7 @@ def schema_for_spec(chapter6_filename):
 
     linkage_vars    = []
     file_number     = False
-    last_vsn        = None      # last variable sequence number
+    prev_var_m      = None      # previous variable match
     geo_columns     = set(range(0,500))
 
     for (ll,line) in enumerate(chapter6_lines(chapter6_filename),1):
@@ -290,19 +307,18 @@ def schema_for_spec(chapter6_filename):
             table = process_tn(schema, ["PCT12G","SEX BY AGE (TWO OR MORE RACES)"], linkage_vars, file_number)
 
 
+        ###
+        ### VALIDATE THE VARIABLE. (THIS ALSO VALIDATES OUR PARSING)
+        ###
+
         if table is None:
             raise RuntimeError(f"Line {ll} we should have a table description. var: {var}")
 
-        # Check for duplicate variable name.
-        # Ignore PDF errors
-        if var_name in DUPLICATE_VARIABLES and var_name in table.varnames():
-            continue            # already have this one
+        # Check for duplicate variable name (ignoring errors we know of)
         if var_name in table.varnames():
+            if var_name in DUPLICATE_VARIABLES:
+                continue            # Known erros
             raise KeyError("duplicate variable name: {}".format(var_name))
-
-        ###
-        ### END OF PDF ERROR HANDLER
-        ###
 
         # Make sure that all the variables in the table have the same prefix.
         var_prefix = variable_prefix(var_name)
@@ -311,6 +327,32 @@ def schema_for_spec(chapter6_filename):
         else:
             table.attrib['variable_prefix'] = var_prefix
             
+        # Validate this variable in relationship to the previous variable.
+        m = VAR_FIELDS_RE.search(var_name)
+        if m and prev_var_m:
+            # if vsn=1 and the vtable hasn't changed, make sure that the vseries has increased
+            num = m.group('number')
+            if ( prev_var_m.group('tablenumber') == m.group('tablenumber') and num==1 ):
+
+                expected_sequence = chr(ord(prev_var.m.group('sequence'))+1)
+                if expected_sequence != m.group('sequence'):
+                    raise ValueError(f"line {ll}: found VSERIES {vseries} for variable {var_name}; "
+                                     f"expected {expected}.")
+
+
+            # Make sure that the varilable sequence number increased from previous one or is 001
+            if num>1:
+                last_num = int(last_var_m.group('number'))
+                if num != last_num+1:
+                    raise ValueError(f"line {ll}: found VSN {num} for variable {var_name}; "
+                                     f"expected {last_num+1}")
+        last_var_m   = m
+
+        ###
+        ### END OF PDF ERROR HANDLER
+        ###
+
+
 
         # Everything looks good: add the variable and increment the field number
         if debug:
@@ -329,12 +371,9 @@ def schema_for_spec(chapter6_filename):
         # Go to the next field
         field_number += 1
 
-        # Make sure that the varilable sequence number increased from previous one or is 001
-        vsn = int(var_name[-3:])
-        if vsn>1 and vsn!=last_vsn+1:
-            raise ValueError(f"line {ll}: found VSN {vsn} for variable {var_name}; expected {last_vsn+1} from {last_var_name}")
-        last_vsn = vsn
-        last_var_name = var_name
+
+
+        # If VSN is 001 and the first 
         
     for varname in REQUIRED_GEO_VARS:
         if varname not in geotable.varnames():
@@ -387,7 +426,7 @@ if __name__ == "__main__":
     if args.segment:
         for table in schema.tables():
             if table.attrib[CIFSN]==args.segment:
-                dump.table()
+                table.dump()
     else:
         schema.dump()
     

@@ -163,12 +163,12 @@ def zipfile_name(ypss):
 def segmentfile_name(ypss):
     """The name within the zipfile of the requested segment"""
     ext = PRODUCT_EXTS[ypss.year][ypss.product]
-    return "{state}{segment}{year}.{ext}".format(year=ypss.year,
-                                                 product=ypss.product,
-                                                 state=ypss.state,
-                                                 chariter=ypss.chariter,
-                                                 segment=ypss.segment,
-                                                 ext = ext)
+    return "{state:2}{chariter:03}{segment:02}{year:04}.{ext}".format(
+        state=ypss.state,
+        chariter=int(ypss.chariter),
+        segment=int(ypss.segment),
+        year=int(ypss.year),
+        ext = ext)
 
 # Number of files per data product
 FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,

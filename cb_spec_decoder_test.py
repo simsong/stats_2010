@@ -13,7 +13,8 @@ SF1_P6_LINE='other races                                                        
 SF1_P0090058='Race                                                                          P0090058              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 
-SF1_FIPS_LINE='FIPS Place Class Code8                                                                 PLACECC,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,2,,,,,,51,,,,,,,,A/N,'
+SF1_LINE_100='"Place (FIPS)7, 8                                                                                    PLACE'
+SF1_LINE_102='FIPS Place Class Code8                                                                 PLACECC,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,2,,,,,,51,,,,,,,,A/N,'
 
 SF1_LINE_4016='FAMILIES (TWO OR MORE RACES HOUSEHOLDER) [1]",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,P035F001,,,,,,,,,,12,,,,,,,9'
 SF1_LINE_7837='PCT12G.   SEX BY AGE (TWO OR MORE RACES) [209]\227Con.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
@@ -44,6 +45,10 @@ def test_geo_vars():
     assert m.group('name') == 'NAME'
     assert m.group('width') == '90'
     assert m.group('column') == '227'
+
+def test_line_100_102():
+    m = GEO_VAR_RE.search( chapter6_prepare_csv_line(SF1_LINE_102) )
+    assert m.group('name') == 'PLACECC'
 
 def test_line_4016():
     prepared = chapter6_prepare_csv_line( SF1_LINE_4016)
@@ -99,7 +104,7 @@ def test_tables_in_sf1():
         assert f"H11{ch}" in tables
 
 def test_schema_segment3():
-    schema = schema_for_spec(SF1_CHAPTER6_CSV)
+    schema = schema_for_spec(SF1_CHAPTER6_CSV, year=2010, product=SF1)
     # format is table #, max variable number
     ptables = [(3,8),
                (4,3),
@@ -123,7 +128,7 @@ def test_spottest_2010_sf1():
     state  = 'ak'
     ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
     assert os.path.exists(ch6file)
-    schema = schema_for_spec(ch6file)
+    schema = schema_for_spec(ch6file, year=year, product=product)
 
     p3 = schema.get_table('P3')
     ypss = YPSS(year, product, state, p3.attrib[CIFSN])
@@ -193,7 +198,7 @@ def test_parsed_spec_fields_correct():
                 chariter = '000'
             ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
             assert os.path.exists(ch6file)
-            schema = schema_for_spec(ch6file)
+            schema = schema_for_spec(ch6file, year=year, product=product)
             for file_number in range(1,FILES_FOR_YEAR_PRODUCT[year][product]+1):
                 if file_number in IGNORE_FILE_NUMBERS:
                     continue
@@ -255,7 +260,7 @@ def test_spottest_2010_sf2():
     state  = 'ak'
     ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
     assert os.path.exists(ch6file)
-    schema = schema_for_spec(ch6file)
+    schema = schema_for_spec(ch6file, year=year, product=product)
     pco1 = schema.get_table("PCO1")
 
     

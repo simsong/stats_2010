@@ -40,10 +40,13 @@ import sys
 # File locations
 
 from constants import *
-import census_etl
-from census_etl.schema import Range,Variable,Table,Recode,Schema,TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
+
 import ctools
 import ctools.tydoc  as tydoc
+from ctools.schema.schema import Schema
+from ctools.schema.variable import Variable
+from ctools.schema import TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
+
 
 debug = False
 
@@ -195,11 +198,10 @@ def process_tn(schema, tn, linkage_vars, file_number):
 
         if debug:
             print(f"Creating table {table_name} in file number {file_number}")
-        table = Table(name=table_name, 
-                      desc=table_desc,
-                      delimiter=',',
-                      attrib = {CIFSN:file_number} )
-        schema.add_table(table)
+        table = schema.add_table_named(name=table_name, 
+                                       desc=table_desc,
+                                       delimiter=',',
+                                       attrib = {CIFSN:file_number} )
 
         # Add any memorized linkage variables. 
         for var in linkage_vars:
@@ -211,17 +213,17 @@ def process_tn(schema, tn, linkage_vars, file_number):
         return schema.get_table(table_name)
     
 
-def schema_for_spec(chapter6_filename):
+def schema_for_spec(chapter6_filename, *, year, product, debug=False):
     """Given a Chapter6 file and an optional segment number, parse Chapter6 and
-    return a schema object for that segment number
+    return a schema object for that segment number. 
+    year and product are provided so that patches can be applied.
     """
     schema          = Schema()
-    geotable        = Table( name = GEO_TABLE, attrib = {CIFSN:CIFSN_GEO} )
-    schema.add_table(geotable)
+    geotable        = schema.add_table_named( name=GEO_TABLE, attrib = {CIFSN:CIFSN_GEO} )
 
-    ## Due to a PDF issue, we hard-code the PLACE
-    ## Note that we start with column 0, so we subtract 1 from place
-    geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))
+    ## Patch as necessary
+    if year==2010 and product==SF1:
+        geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))
 
 
     linkage_vars    = []
@@ -260,6 +262,8 @@ def schema_for_spec(chapter6_filename):
                               column = column, 
                               width = width,
                               vtype = TYPE_VARCHAR) 
+                if debug:
+                    print(f"Adding variable {v} to geotable")
                 geotable.add_variable( v )
 
                 # Remove these columns from the set of geo column
@@ -397,12 +401,13 @@ if __name__ == "__main__":
     parser.add_argument("--segment", help="dump the tables just this segment",type=int)
     parser.add_argument("--limit", help="limit output to this many records", type=int, default=50)
     parser.add_argument("--sumlev", help="Just print this summary level")
+    parser.add_argument("--debug",   action='store_true')
     args = parser.parse_args()
 
 
     ch6file = CHAPTER6_CSV_FILES.format(year=args.year,product=args.product)
 
-    schema  = schema_for_spec(ch6file)
+    schema  = schema_for_spec(ch6file, year=year, product=product, debug=args.debug)
     schema.dump()
 
     if args.geodump:

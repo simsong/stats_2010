@@ -24,17 +24,14 @@ debug = False
 SF1_ROOT='SF1_ROOT'
 
 class DecennialDF:
-    def __init__(self,*,year,product):
+    def __init__(self,*,root,year,product,debug=False):
         """Inventory the files and return an SF1 object."""
-        try:
-            self.root = os.environ[SF1_ROOT]
-        except KeyError:
-            raise RuntimeError("Environment variable SF1_ROOT must be defined with location of SF1 files")
-
+        self.root  = root
         self.files = []
         self.find_files()
-        ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
-        self.schema = cb_spec_decoder.schema_for_spec(ch6file)
+        self.debug = debug
+        ch6file = CHAPTER6_CSV_FILES.format(year=year, product=product)
+        self.schema = cb_spec_decoder.schema_for_spec(ch6file, year=year, product=product, debug=debug)
 
     def get_table(self,tableName):
         return self.schema.get_table(tableName)
@@ -147,7 +144,13 @@ if __name__=="__main__":
     # Get a schema object associated with the SF1 for 2010
     year = 2010
     product = SF1
-    sf1_2010 = DecennialDF(year=year,product=product)
+
+    try:
+        root = os.environ[SF1_ROOT]
+    except KeyError:
+        raise RuntimeError("Environment variable SF1_ROOT must be defined with location of SF1 files")
+
+    sf1_2010 = DecennialDF(root=root,year=year,product=product)
     if args.list:
         print(f"Year: {year} product: {product}")
         print("Available files: ",len(s.files))

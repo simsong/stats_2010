@@ -44,6 +44,25 @@ PRODUCT_EXTS = {2010: { PL94:'pl',
                         SF1:'sf1',
                         SF2:'sf2' }}
                     
+# Number of files per data product
+FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
+                                 SF1 : 39},
+                          2010: {PL94: 2,
+                                 SF1 : 47} }
+
+MAX_CIFSN = 47                # highest anywhere
+
+# For self-check, each year/product has a prefix at the beginning of each line
+FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
+                      2010 : {SF1: "SF1ST"}}
+
+# This is chapter6 exported as a CSV using Adobe Acrobat
+# Chapter 6 is the data dictionary. In some cases, we have just it
+
+SPEC_CSV_FILES     = DOC_DIR + "/{year}/{product}.csv"
+CHAPTER6_CSV_FILES = DOC_DIR + "/{year}/{product}_chapter6.csv"
+
+
 
 #
 # States. Note that for consistency, we use the phrase 'state' to refer to a 2-letter code
@@ -170,21 +189,4 @@ def segmentfile_name(ypss):
         segment=int(ypss.segment),
         year=int(ypss.year),
         ext = ext)
-
-# Number of files per data product
-FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
-                                 SF1 : 39},
-                          2010: {PL94: 2,
-                                 SF1 : 47} }
-
-MAX_CIFSN = 47                # highest anywhere
-
-# For self-check, each year/product has a prefix at the beginning of each line
-FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
-                      2010 : {SF1: "SF1ST"}}
-
-# This is chapter6 exported as a CSV using Adobe Acrobat
-# Chapter 6 is the data dictionary
-
-CHAPTER6_CSV_FILES = DOC_DIR + "/{year}/{product}_chapter6.csv"
 

@@ -39,14 +39,13 @@ import sys
 
 # File locations
 
-from constants import *
+import constants as c
 
 import ctools
-import ctools.tydoc  as tydoc
+import ctools.tydoc as tydoc
 from ctools.schema.schema import Schema
 from ctools.schema.variable import Variable
 from ctools.schema import TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
-
 
 debug = False
 
@@ -59,7 +58,9 @@ Also consistent were the variable names.
 # Regular expressions for parsing geoheader
 # Currently we don't parse them all due to inconsistencies in the PDF
 # Generate an error if REQUIED_GEO_VARS are not present
-GEO_VAR_RE   = re.compile(r"^(?P<desc>[A-Z][-A-Za-z0-9 ()/.]+) (?P<name>[A-Z]{1,13}) (?P<width>\d{1,2}) (?P<column>\d{1,3}) (?P<datatype>(A|A/N|N))$")
+# Note that we have several dashes below
+GEO_VAR_RE   = re.compile(r"^(?P<desc>[A-Z][\-\–\—A-Za-z0-9 ()/.]+) (?P<name>[A-Z]{1,13}) (?P<width>\d{1,2}) (?P<column>\d{1,3}) (?P<datatype>(A|A/N|N))$")
+
 REQUIRED_GEO_VARS =  ['FILEID', 'STUSAB', 'SUMLEV', 'LOGRECNO', 'STATE', 'COUNTY', 'PLACE', 'TRACT', 'BLKGRP', 'BLOCK' ]
 
 
@@ -80,18 +81,19 @@ VAR_RE        = re.compile(r"^("
 VAR_FIELDS_RE = re.compile(r"^(?P<prefix>[A-Z]+)(?P<tablenumber>\d{1,3})(?P<sequence>[A-Z]?)(?P<number>\d+)$")
 VAR_PREFIX_RE = re.compile(r"^(?P<prefix>[A-Z]+)")
 
-# Typo in 2010 SF1 specification. This varialble appears twice; ignore it the second time.
-DUPLICATE_VARIABLES = ['PCT0200001']
+### TYPOS and OCR errors
+## Typo in 2010 SF1 specification. This varialble appears twice; ignore it the second time.
+DUPLICATE_VARIABLES = set(['PCT0200001'])
 
 def open_decennial(ypss):
     """Return an IO object that reads from the specified ZIP file in Unicode.
     This avoids the need to unzip the files.
     """
 
-    with zipfile.ZipFile( zipfile_name( ypss ) ) as zip_file:
+    with zipfile.ZipFile( c.zipfile_name( ypss ) ) as zip_file:
         # Note: You cannot use a with() on the one below:
         try:
-            zf = zip_file.open( segmentfile_name( ypss ), 'r')
+            zf = zip_file.open( c.segmentfile_name( ypss ), 'r')
             return io.TextIOWrapper(zf, encoding='latin1')
         except KeyError as f:
             print(str(f))
@@ -150,7 +152,7 @@ def parse_variable_desc(line):
         except ValueError as e:
             return False
 
-        if (1 <= segment <= MAX_CIFSN) and (1 <= maxsize <= 9):
+        if (1 <= segment <= c.MAX_CIFSN) and (1 <= maxsize <= 9):
             return (name,desc,segment,maxsize)
     return None
 
@@ -168,9 +170,7 @@ def chapter6_prepare_csv_line(line):
     line = " ".join([word for word in line.split() if len(word)>0])
 
     # Make sure there are none of the bad characters
-    assert ',' not in line
-    assert '[' not in line
-    assert ']' not in line
+    assert all(ch not in line for ch in '[,]')
     return line
 
 def chapter6_lines(fname):
@@ -181,15 +181,6 @@ def chapter6_lines(fname):
         for line in f:
             yield chapter6_prepare_csv_line(line)
     
-def tables_in_file(fname):
-    """Give a chapter6 CSV file, return all of the tables in it."""
-    tables = {}
-    for line in chapter6_lines(fname):
-        tn = parse_table_name(line)
-        if tn is not None:
-            tables[tn[0]] = tn[1]
-    return tables
-
 def process_tn(schema, tn, linkage_vars, file_number):
     """Process the tn and return the table"""
     (table_name, table_desc) = tn
@@ -201,7 +192,7 @@ def process_tn(schema, tn, linkage_vars, file_number):
         table = schema.add_table_named(name=table_name, 
                                        desc=table_desc,
                                        delimiter=',',
-                                       attrib = {CIFSN:file_number} )
+                                       attrib = {c.CIFSN:file_number} )
 
         # Add any memorized linkage variables. 
         for var in linkage_vars:
@@ -211,7 +202,6 @@ def process_tn(schema, tn, linkage_vars, file_number):
         return table
     else:
         return schema.get_table(table_name)
-    
 
 def schema_for_spec(chapter6_filename, *, year, product, debug=False):
     """Given a Chapter6 file and an optional segment number, parse Chapter6 and
@@ -219,12 +209,13 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
     year and product are provided so that patches can be applied.
     """
     schema          = Schema()
-    geotable        = schema.add_table_named( name=GEO_TABLE, attrib = {CIFSN:CIFSN_GEO} )
+    geotable        = schema.add_table_named( name=c.GEO_TABLE, attrib = {c.CIFSN:c.CIFSN_GEO} )
 
     ## Patch as necessary
-    if year==2010 and product==SF1:
+    if year==2010 and product==c.PL94:
+        geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))        
+    if year==2010 and product==c.SF1:
         geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))
-
 
     linkage_vars    = []
     file_number     = False
@@ -274,7 +265,7 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
         # Check for linkage variables in the first file.
         if file_number == 1:
             lnk = parse_linkage_desc(line)
-            if lnk and lnk[0] in LINKAGE_VARIABLES:
+            if lnk and lnk[0] in c.LINKAGE_VARIABLES:
                 (lnk_name, lnk_desc, lnk_cifsn, lnk_maxsize) = lnk
                 if debug:
                     print(f"Discovered linkage variable {lnk_name}")
@@ -293,7 +284,7 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
 
         # Can we parse variables?
         var = parse_variable_desc(line)
-        if not var or var[0] in LINKAGE_VARIABLES:
+        if not var or var[0] in c.LINKAGE_VARIABLES:
             continue
         
         # We found a variable that we can process. 
@@ -343,7 +334,6 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
                     raise ValueError(f"line {ll}: found VSERIES {vseries} for variable {var_name}; "
                                      f"expected {expected}.")
 
-
             # Make sure that the varilable sequence number increased from previous one or is 001
             if num>1:
                 last_num = int(last_var_m.group('number'))
@@ -355,8 +345,6 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
         ###
         ### END OF PDF ERROR HANDLER
         ###
-
-
 
         # Everything looks good: add the variable and increment the field number
         if debug:
@@ -375,8 +363,6 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
         # Go to the next field
         field_number += 1
 
-
-
         # If VSN is 001 and the first 
         
     for varname in REQUIRED_GEO_VARS:
@@ -387,6 +373,122 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
         print("The following geo columns were not parsed:")
         print(sorted(geo_columns))
     return schema
+
+class DecennialData:
+    def __init__(self,*,root,year,product,debug=False):
+        """Inventory the files and return an SF1 object."""
+        self.root  = root
+        self.files = []
+        self.find_files()
+        self.debug = debug
+        self.schema = None
+        for filename in [c.CHAPTER6_CSV_FILES.format(year=year, product=product),
+                         c.SPEC_CSV_FILES.format(year=year, product=product)]:
+            self.schema = schema_for_spec(filename, year=year, product=product, debug=debug)
+            break
+        if self.schema is None:
+            raise FileNotFoundError(f"Cannot file {specfile} or {ch6file}")
+
+
+    def get_table(self,tableName):
+        return self.schema.get_table(tableName)
+
+    def find_files(self):
+        if self.root.startswith('s3:'):
+            for obj in s3.list_objects(self.root):
+                self.register_file(obj[s3._Key])
+        elif self.root.startswith('hdfs:'):
+            raise RuntimeError('hdfs SF1_ROOT not implemented')
+        else:
+            for (dirpath,dirnames,filenames) in os.walk(self.root):
+                for filename in filenames:
+                    self.register_file(os.path.join(dirpath,filename))
+
+    def register_file(self,path):
+        """Files have a pattern:  {state}{section}{year}.{product}"""
+        filename = os.path.basename(path)
+        if filename.endswith(".sf1"):
+            state = filename[0:2]
+            try:
+                if len(filename)==13 and filename[2:5]=='geo':
+                    self.files.append({'path':path,
+                                       STATE:state,
+                                       CIFSN:CIFSN_GEO,
+                                       YEAR:int(filename[5:9]),
+                                       PRODUCT:SF1})
+                if len(filename)==15:
+                    self.files.append({'path':path,
+                                       STATE:state,
+                                       CIFSN:int(filename[2:7]),
+                                       YEAR:int(filename[7:11]),
+                                       PRODUCT:SF1})
+            except ValueError as e:
+                if debug:
+                    print("bad filename:",path)
+            
+    def unique_selector(self,selector):
+        """Return the unique values for a given selector"""
+        return set( [obj[selector] for obj in self.files] )
+    
+    def get_df(self,*,tableName,sqlName):
+        """Get a dataframe where the tables are specified by a selector. Things to try:
+        year=2010  (currently required, but defaults to 2010)
+        table=tabname (you must specify a table),
+        product=product (you must specify a product)
+        """
+        # Get a list of all the matching files
+        table = self.schema.get_table(tableName)
+        if tableName == GEO_TABLE:
+            cifsn = CIFSN_GEO
+        else:
+            cifsn = table.attrib[CIFSN]
+
+        # Find the files
+        paths = [ obj['path'] for obj in self.files if
+                  (obj['year']==year and obj['product']==product) and obj[CIFSN]==cifsn]
+        if len(paths)==0:
+            print("No file found. Available data files:")
+            for obj in self.files:
+                print(obj)
+            raise RuntimeError(f"No files found looking for year:{year} product:{product} CIFSN:{cifsn}")
+            
+        # Create an RDD for each text file
+        rdds = [spark.sparkContext.textFile(path) for path in paths]
+        # Combine them into a single file
+        rdd  = spark.sparkContext.union(rdds)
+        # Convert it to a dataframe
+        df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
+        df.registerTempTable( sqlName )
+        return df
+            
+    def find_variable_by_name(self,name):
+        """Scans all tables in the schema until a variable name is found. Returns it"""
+        for table in self.schema.tables():
+            try:
+                return (table, table.get_variable(name))
+            except KeyError:
+                pass
+        raise KeyError(f"variable {name} not found in any table in schema")
+
+    def print_legend(self,df,*,printHeading=True,file=sys.stdout):
+        """Print the legend for the columns in the dataframe. Takes advantage of the fact that all column names are unique with the Census Bureau."""
+        if printHeading:
+            print("Legend:")
+        rows = []
+        for varName in df.columns:
+            if "." in varName:
+                varName = varName.split(".")[-1] # take the last name
+            rows.append( self.find_variable_by_name(varName) )
+        rows.sort()
+        old_table = None
+        for (table, var) in rows:
+            if table!= old_table:
+                print(f"Table {table.name}   {table.desc}")
+                old_table = table
+            print("  ", var.name, var.desc)
+        print("")
+
+
 
 
 if __name__ == "__main__":

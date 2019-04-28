@@ -2,6 +2,8 @@
 #
 """
 pl94_dbload.py: create an SQLite3 database from 2010 PL94 data. Table positions defined by hand.
+This is a legacy program which was written before we could directly parse the PL94 PDF.
+This approach works, but it does not scale very well. 
 """
 
 __version__ = '0.0.1'
@@ -15,8 +17,6 @@ import sys
 import time
 import zipfile
 import io
-
-from slgsql import SLGSQL
 
 CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
@@ -43,6 +43,26 @@ GEO_BLKGRP=(61,1)
 GEO_BLOCK=(62,4)        # first digit of block is blockgroup
 
 DEBUG_BLOCK=None
+
+
+
+class SLGSQL:
+    def iso_now():
+        """Report current time in ISO-8601 format"""
+        return datetime.datetime.now().isoformat()[0:19]
+
+    def create_schema(conn,schema):
+        """Create the schema if it doesn't exist."""
+        c = conn.cursor()
+        for line in schema.split(";"):
+            c.execute(line)
+
+    def execselect(conn, sql, vals=()):
+        """Execute a SQL query and return the first line"""
+        c = conn.cursor()
+        c.execute(sql, vals)
+        return c.fetchone()
+
 
 
 def make_database(conn):

@@ -23,114 +23,6 @@ debug = False
 
 SF1_ROOT='SF1_ROOT'
 
-class DecennialDF:
-    def __init__(self,*,root,year,product,debug=False):
-        """Inventory the files and return an SF1 object."""
-        self.root  = root
-        self.files = []
-        self.find_files()
-        self.debug = debug
-        ch6file = CHAPTER6_CSV_FILES.format(year=year, product=product)
-        self.schema = cb_spec_decoder.schema_for_spec(ch6file, year=year, product=product, debug=debug)
-
-    def get_table(self,tableName):
-        return self.schema.get_table(tableName)
-
-    def find_files(self):
-        if self.root.startswith('s3:'):
-            for obj in s3.list_objects(self.root):
-                self.register_file(obj[s3._Key])
-        elif self.root.startswith('hdfs:'):
-            raise RuntimeError('hdfs SF1_ROOT not implemented')
-        else:
-            for (dirpath,dirnames,filenames) in os.walk(self.root):
-                for filename in filenames:
-                    self.register_file(os.path.join(dirpath,filename))
-
-    def register_file(self,path):
-        """Files have a pattern:  {state}{section}{year}.{product}"""
-        filename = os.path.basename(path)
-        if filename.endswith(".sf1"):
-            state = filename[0:2]
-            try:
-                if len(filename)==13 and filename[2:5]=='geo':
-                    self.files.append({'path':path,
-                                       STATE:state,
-                                       CIFSN:CIFSN_GEO,
-                                       YEAR:int(filename[5:9]),
-                                       PRODUCT:SF1})
-                if len(filename)==15:
-                    self.files.append({'path':path,
-                                       STATE:state,
-                                       CIFSN:int(filename[2:7]),
-                                       YEAR:int(filename[7:11]),
-                                       PRODUCT:SF1})
-            except ValueError as e:
-                if debug:
-                    print("bad filename:",path)
-            
-    def unique_selector(self,selector):
-        """Return the unique values for a given selector"""
-        return set( [obj[selector] for obj in self.files] )
-    
-    def get_df(self,*,tableName,sqlName):
-        """Get a dataframe where the tables are specified by a selector. Things to try:
-        year=2010  (currently required, but defaults to 2010)
-        table=tabname (you must specify a table),
-        product=product (you must specify a product)
-        """
-        # Get a list of all the matching files
-        table = self.schema.get_table(tableName)
-        if tableName == GEO_TABLE:
-            cifsn = CIFSN_GEO
-        else:
-            cifsn = table.attrib[CIFSN]
-
-        # Find the files
-        paths = [ obj['path'] for obj in self.files if
-                  (obj['year']==year and obj['product']==product) and obj[CIFSN]==cifsn]
-        if len(paths)==0:
-            print("No file found. Available data files:")
-            for obj in self.files:
-                print(obj)
-            raise RuntimeError(f"No files found looking for year:{year} product:{product} CIFSN:{cifsn}")
-            
-        # Create an RDD for each text file
-        rdds = [spark.sparkContext.textFile(path) for path in paths]
-        # Combine them into a single file
-        rdd  = spark.sparkContext.union(rdds)
-        # Convert it to a dataframe
-        df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
-        df.registerTempTable( sqlName )
-        return df
-            
-    def find_variable_by_name(self,name):
-        """Scans all tables in the schema until a variable name is found. Returns it"""
-        for table in self.schema.tables():
-            try:
-                return (table, table.get_variable(name))
-            except KeyError:
-                pass
-        raise KeyError(f"variable {name} not found in any table in schema")
-
-    def print_legend(self,df,*,printHeading=True,file=sys.stdout):
-        """Print the legend for the columns in the dataframe. Takes advantage of the fact that all column names are unique with the Census Bureau."""
-        if printHeading:
-            print("Legend:")
-        rows = []
-        for varName in df.columns:
-            if "." in varName:
-                varName = varName.split(".")[-1] # take the last name
-            rows.append( self.find_variable_by_name(varName) )
-        rows.sort()
-        old_table = None
-        for (table, var) in rows:
-            if table!= old_table:
-                print(f"Table {table.name}   {table.desc}")
-                old_table = table
-            print("  ", var.name, var.desc)
-        print("")
-
 if __name__=="__main__":
     import argparse
 
@@ -150,7 +42,7 @@ if __name__=="__main__":
     except KeyError:
         raise RuntimeError("Environment variable SF1_ROOT must be defined with location of SF1 files")
 
-    sf1_2010 = DecennialDF(root=root,year=year,product=product)
+    sf1_2010 =  cb_spec_decoder.DecennialData(root=root,year=year,product=product)
     if args.list:
         print(f"Year: {year} product: {product}")
         print("Available files: ",len(s.files))

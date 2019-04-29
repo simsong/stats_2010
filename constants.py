@@ -37,12 +37,32 @@ PRODUCT = 'product'
 PL94 = 'pl94'
 SF1  = 'sf1'
 SF2  = 'sf2'
-PRODUCTS = [PL94, SF1, SF2]
+AIAN = 'aian'
+PRODUCTS = [PL94, SF1, SF2, AIAN]
 
 PRODUCT_EXTS = {2010: { PL94:'pl',
                         SF1:'sf1',
                         SF2:'sf2' }}
                     
+# Number of files per data product
+FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
+                                 SF1 : 39},
+                          2010: {PL94: 2,
+                                 SF1 : 47} }
+
+MAX_CIFSN = 47                # highest anywhere
+
+# For self-check, each year/product has a prefix at the beginning of each line
+FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
+                      2010 : {SF1: "SF1ST"}}
+
+# This is chapter6 exported as a CSV using Adobe Acrobat
+# Chapter 6 is the data dictionary. In some cases, we have just it
+
+SPEC_CSV_FILES     = DOC_DIR + "/{year}/{product}.csv"
+CHAPTER6_CSV_FILES = DOC_DIR + "/{year}/{product}_chapter6.csv"
+
+
 
 #
 # States. Note that for consistency, we use the phrase 'state' to refer to a 2-letter code
@@ -135,8 +155,8 @@ LINKAGE_VARIABLES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
 CIFSN_GEO=0
 
 class YPSS:
-    __slots__=('year','product','state','segment')
-    def __init__(self,year,product,state,segment):
+    __slots__=('year','product','state','segment','chariter')
+    def __init__(self,year,product,state,segment,chariter=0):
         assert year in YEARS
         assert product in PRODUCTS
         assert state in STATES
@@ -146,23 +166,31 @@ class YPSS:
         if type(segment)==str:
             self.segment = segment
         elif type(segment)==int:
-            self.segment = "{:05d}".format(segment)
+            self.segment = "{:02d}".format(segment)
+        else:
+            raise ValueError("unknown type: {}".format(type(segment)))
+        if type(segment)==str:
+            self.chariter = chariter
+        elif type(chariter)==int:
+            self.chariter = "{:03d}".format(chariter)
         else:
             raise ValueError("unknown type: {}".format(type(segment)))
     def __repr__(self):
-        return f"YPSS<{self.year}:{self.product}:{self.state}:{self.segment}>"
+        return f"YPSS<{self.year}:{self.product}:{self.state}:{self.chariter}:{self.segment}>"
         
         
 def download_url(ypss):
     return DOWNLOAD_URLS[ypss.year][ypss.product].format(year=ypss.year,product=ypss.product,
                                                          state_name = STATE_NAMES[ypss.state],
                                                          state=ypss.state,
+                                                         chariter=ypss.chariter,
                                                          segment=ypss.segment)
                                                          
 def zipfile_dir(ypss):
     return DEST_ZIPFILE_DIR[ypss.year].format(year=ypss.year,
                                               product=ypss.product,
                                               state=ypss.state,
+                                              chariter=ypss.chariter,
                                               segment=ypss.segment)
 
 def zipfile_name(ypss):
@@ -171,26 +199,10 @@ def zipfile_name(ypss):
 def segmentfile_name(ypss):
     """The name within the zipfile of the requested segment"""
     ext = PRODUCT_EXTS[ypss.year][ypss.product]
-    return "{state}{segment}{year}.{ext}".format(year=ypss.year,
-                                                 product=ypss.product,
-                                                 state=ypss.state,
-                                                 segment=ypss.segment,
-                                                 ext = ext)
-
-# Number of files per data product
-FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
-                                 SF1 : 39},
-                          2010: {PL94: 2,
-                                 SF1 : 47} }
-
-MAX_CIFSN = 47                # highest anywhere
-
-# For self-check, each year/product has a prefix at the beginning of each line
-FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
-                      2010 : {SF1: "SF1ST"}}
-
-# This is chapter6 exported as a CSV using Adobe Acrobat
-# Chapter 6 is the data dictionary
-
-CHAPTER6_CSV_FILES = DOC_DIR + "/{year}/{product}_chapter6.csv"
+    return "{state:2}{chariter:03}{segment:02}{year:04}.{ext}".format(
+        state=ypss.state,
+        chariter=int(ypss.chariter),
+        segment=int(ypss.segment),
+        year=int(ypss.year),
+        ext = ext)
 

@@ -20,15 +20,27 @@ import ctools.cspark as cspark
 import ctools.s3     as s3
 import ctools.tydoc  as tydoc
 
+if 'DAS_S3ROOT' in os.environ:
+    DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
+else:
+    DATAROOT = os.path.join( os.path.dirname(__file__), 'data')
+
 def demo():
     # Get a schema object associated with the SF1 for 2010
+
     year = 2010
     product = SF1
-    sf1_2010 = DecennialDF(year=year,product=product)
+    sf1_2010 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=year,product=product)
+
     print("Geolevels by state and summary level:")
     sf1_2010.get_df(tableName = GEO_TABLE, sqlName='GEO_2010')
-    #print(spark.sql("SELECT * from GEO_2010 LIMIT 10").collect())
-    #spark.sql("SELECT FILEID,STUSAB,LOGRECNO,STATE,COUNTYCC,TRACT,BLKGRP,BLOCK,FROM GEO_2010 LIMIT 10").show()
+
+    print("10 records from GEO_2010:")
+    for _ in spark.sql("SELECT * from GEO_2010 LIMIT 10").collect():
+        print(_)
+    #spark.sql("SELECT FILEID,STUSAB,LOGRECNO,STATE,COUNTYCC,TRACT,BLKGRP,BLOCK FROM GEO_2010 LIMIT 10").show()
+
+
     tt = tydoc.tytable()
     tt.add_head(['State','Summary Level','Count'])
     for row in spark.sql("SELECT STUSAB,SUMLEV,COUNT(*) FROM GEO_2010 GROUP BY STUSAB,SUMLEV ORDER BY 1,2").collect():
@@ -75,18 +87,8 @@ if __name__=="__main__":
 
     parser = argparse.ArgumentParser(description='Tool for using SF1 with Spark',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--list", help="List available files", action='store_true')
     parser.add_argument("--validate", help="Validate all data files", action='store_true')
     args = parser.parse_args()
-
-
-    if args.list or args.validate:
-        register_files(verbose=args.list)
-        print("Total data files: ",len(files))
-        years    = unique_selector( YEAR )
-        products = unique_selector( PRODUCT )
-        print(f"Available years: {years}")
-        print(f"Available products: {products}")
 
     if args.validate:
         for year in years:
@@ -115,5 +117,5 @@ if __name__=="__main__":
 
     # Note that getting spark here causes the arguments to be reparsed under spark-submit
     # Normally that's not a problem
-    spark  = cspark.spark_session(logLevel='ERROR')
+    spark  = cspark.spark_session(logLevel='ERROR', pydirs=['.','ctools','ctools/schema'])
     demo()

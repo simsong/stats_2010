@@ -166,11 +166,19 @@ def chapter6_prepare_csv_line(line):
     if m:
         line = line[:m.span()[0]] + line[m.span()[1]:]
 
+    # If there is still a '[', remove everything after it
+    for ch in '[]':
+        bracket = line.find(ch)
+        if bracket != -1:
+            line = line[:bracket]
+
     # Remove the space between words
     line = " ".join([word for word in line.split() if len(word)>0])
 
     # Make sure there are none of the bad characters
-    assert all(ch not in line for ch in '[,]')
+    for ch in '[,]':
+        if ch in line:
+            raise RuntimeError(f"line: {line} contains: {ch}")
     return line
 
 def chapter6_lines(fname):
@@ -221,6 +229,8 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
     file_number     = False
     prev_var_m      = None      # previous variable match
     geo_columns     = set(range(0,500))
+    table           = None
+    table_name      = None
 
     for (ll,line) in enumerate(chapter6_lines(chapter6_filename),1):
         m = FILE_START_RE.search(line)
@@ -377,17 +387,22 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
 class DecennialData:
     def __init__(self,*,root,year,product,debug=False):
         """Inventory the files and return an SF1 object."""
-        self.root  = root
         self.files = []
+        self.root  = root
         self.find_files()
         self.debug = debug
         self.schema = None
+        checked = []
         for filename in [c.CHAPTER6_CSV_FILES.format(year=year, product=product),
                          c.SPEC_CSV_FILES.format(year=year, product=product)]:
-            self.schema = schema_for_spec(filename, year=year, product=product, debug=debug)
-            break
-        if self.schema is None:
-            raise FileNotFoundError(f"Cannot file {specfile} or {ch6file}")
+            if os.path.exists(filename):
+                if debug:
+                    print(f"year:{year} product:{product} filename:{filename}")
+                self.filename = filename
+                self.schema   = schema_for_spec(filename, year=year, product=product, debug=debug)
+                return
+            checked.append(filename)
+        raise FileNotFoundError(f"Cannot find: "+str(checked))
 
 
     def get_table(self,tableName):

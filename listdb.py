@@ -33,10 +33,11 @@ if __name__=="__main__":
     root = os.path.dirname(__file__)
     for year in years:
         for product in products:
-
             try:
                 df = cb_spec_decoder.DecennialData(root=root, year=year, product=product, debug=args.debug)
             except FileNotFoundError as e:
+                if args.debug:
+                    print("DEBUG:",str(e))
                 print(f"Not found: {year} {product}")
                 continue
             except RuntimeError as e:

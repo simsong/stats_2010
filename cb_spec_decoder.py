@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 decode the information in SF1 files. 
-  - Uses CHAPTER6 PDF converted into CSV format by Adobe Acrobat.
+  - Uses PDF converted into CSV format by Adobe Acrobat and Microsoft Excel.
 
 2000 SF1 is distributed as a set of 39 x 52 = 2028 ZIP file, one for each segment, and one for the geoheader.
 
@@ -25,7 +25,7 @@ The files within a state are all linked together by LOGRECNO.
 
 Each is a CSV file, without a header. 
 It is surprising that these CSV files were distributed without any headers.
-The column headings are given by the Chapter6 pdf. 
+The column headings are given by the data dictionary.
 The purpose of this program is to parse the PDF files and recover the headers for every column.
 
 """
@@ -65,7 +65,9 @@ REQUIRED_GEO_VARS =  ['FILEID', 'STUSAB', 'SUMLEV', 'LOGRECNO', 'STATE', 'COUNTY
 
 
 # Regular expression for parsing file section
-FILE_START_RE = re.compile(r"^File (\d\d)")
+CHAPTER_RE    = re.compile(r"^Chapter (\d+)\.")
+DATA_DICTIONARY_RE = re.compile(r"^Data.Dictionary")
+FILE_START_RE = re.compile(r"^File (\d+)")
 TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
 VAR_RE        = re.compile(r"^("
                            r"(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
@@ -99,6 +101,12 @@ def open_decennial(ypss):
             print(str(f))
         raise FileNotFoundError(f"segment {segmentfile_name( ypss )} not in file {zipfile_name(ypss)}")
         
+
+def is_chapter_line(line):
+    return CHAPTER_RE.search(line) and True
+
+def is_data_dictionary_line(line):
+    return DATA_DICTIONARY_RE.search(line) and True
 
 def is_variable_name(name):
     m = VAR_RE.search(name)
@@ -157,7 +165,13 @@ def parse_variable_desc(line):
     return None
 
 FOOTNOTE_RE = re.compile(r'\[\d+\]')
-def chapter6_prepare_csv_line(line):
+def csvspec_prepare_csv_line(line):
+    # Remove BOM if present
+    line = line.replace(u"\uFEFF","")
+
+    # Replace Unicode hard spaces with regular spaces
+    line = line.replace(u"\u00A0"," ")
+
     # Remove the quotes
     line = line.replace('"',' ').replace(',',' ').strip()
 
@@ -175,19 +189,20 @@ def chapter6_prepare_csv_line(line):
     # Remove the space between words
     line = " ".join([word for word in line.split() if len(word)>0])
 
+
     # Make sure there are none of the bad characters
     for ch in '[,]':
         if ch in line:
             raise RuntimeError(f"line: {line} contains: {ch}")
     return line
 
-def chapter6_lines(fname):
-    """Given a chapter6 PDF converted to a CSV file by Adobe Acrobat,
-    return each line as a an array of fields, cleaned.
+def csvspec_lines(fname):
+    """Given a data dictionary converted to a CSV file by Adobe Acrobat and Microsoft Excel,
+    return each line as a an array of fields, cleaned. Note that
     """
-    with open(fname,"r",encoding='latin1') as f:
+    with open(fname,"r",encoding='utf-8') as f:
         for line in f:
-            yield chapter6_prepare_csv_line(line)
+            yield csvspec_prepare_csv_line(line)
     
 def process_tn(schema, tn, linkage_vars, file_number):
     """Process the tn and return the table"""
@@ -211,9 +226,10 @@ def process_tn(schema, tn, linkage_vars, file_number):
     else:
         return schema.get_table(table_name)
 
-def schema_for_spec(chapter6_filename, *, year, product, debug=False):
-    """Given a Chapter6 file and an optional segment number, parse Chapter6 and
-    return a schema object for that segment number. 
+def schema_for_spec(csv_filename, *, year, product, debug=False):
+    """Take the Census-provided PDF of the spec. Convert it to an Excel Spreadsheet with Adobe Acrobat, then save it as a CSV file.
+    If you cannot convert the entire file, try converting just the Data Dictionary chapter. 
+    Parse the data dictionary and return a schema object for that segment number. 
     year and product are provided so that patches can be applied.
     """
     schema          = Schema()
@@ -231,8 +247,18 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
     geo_columns     = set(range(0,500))
     table           = None
     table_name      = None
+    in_data_dictionary = False
+    last_line       = ""
 
-    for (ll,line) in enumerate(chapter6_lines(chapter6_filename),1):
+    for (ll,line) in enumerate(csvspec_lines(csv_filename),1):
+        if not in_data_dictionary:
+            # Look for the data dictionary chapter
+            if is_data_dictionary_line(line) and is_chapter_line(last_line):
+                in_data_dictionary = True
+                continue
+            last_line = line
+            continue
+            
         m = FILE_START_RE.search(line)
         if m:
             # New file. Note the file number we are in and copy over the linkage variables if we have any.
@@ -374,6 +400,8 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
         field_number += 1
 
         # If VSN is 001 and the first 
+    if in_data_dictionary==False:
+        raise RuntimeError(f"Parser did not find the data dictionary")
         
     for varname in REQUIRED_GEO_VARS:
         if varname not in geotable.varnames():
@@ -384,6 +412,15 @@ def schema_for_spec(chapter6_filename, *, year, product, debug=False):
         print(sorted(geo_columns))
     return schema
 
+def get_cvsspec(*,year,product):
+    checked = []
+    for filename_fmt in c.SPEC_FILES:
+        filename = filename_fmt.format(year=year, product=product)
+        if os.path.exists(filename):
+            return filename
+        checked.append(filename)
+    raise FileNotFoundError(f"Did not find any of these files: " + (" ".join(checked)))
+        
 class DecennialData:
     def __init__(self,*,root,year,product,debug=False):
         """Inventory the files and return an SF1 object."""
@@ -392,18 +429,7 @@ class DecennialData:
         self.find_files()
         self.debug = debug
         self.schema = None
-        checked = []
-        for filename in [c.CHAPTER6_CSV_FILES.format(year=year, product=product),
-                         c.SPEC_CSV_FILES.format(year=year, product=product)]:
-            if os.path.exists(filename):
-                if debug:
-                    print(f"year:{year} product:{product} filename:{filename}")
-                self.filename = filename
-                self.schema   = schema_for_spec(filename, year=year, product=product, debug=debug)
-                return
-            checked.append(filename)
-        raise FileNotFoundError(f"Cannot find: "+str(checked))
-
+        self.schema = schema_for_spec( get_cvsspec(year=year, product=product), debug=debug)
 
     def get_table(self,tableName):
         return self.schema.get_table(tableName)
@@ -504,13 +530,11 @@ class DecennialData:
         print("")
 
 
-
-
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="""Test program:
     Extract the schema from the SF1 Chapter 6 and dump the schema. 
-    Normally this module will be used to generate a Schema object for a specific Chapter6 spec.""",
+    Normally this module will be used to generate a Schema object for a specific data dictionary specification.""",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--geodump", help='Using the schema, dump the geo information for the provided file')
     parser.add_argument("--year",    type=int, default=2010)
@@ -522,7 +546,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    ch6file = CHAPTER6_CSV_FILES.format(year=args.year,product=args.product)
+    ch6file = CSVSPEC_CSV_FILES.format(year=args.year,product=args.product)
 
     schema  = schema_for_spec(ch6file, year=year, product=product, debug=args.debug)
     schema.dump()

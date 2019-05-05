@@ -37,8 +37,8 @@ PRODUCT = 'product'
 PL94 = 'pl94'
 SF1  = 'sf1'
 SF2  = 'sf2'
-AIAN = 'aian'
-PRODUCTS = [PL94, SF1, SF2, AIAN]
+AIANSF = 'aiansf'
+PRODUCTS = [PL94, SF1, SF2, AIANSF]
 
 PRODUCT_EXTS = {2010: { PL94:'pl',
                         SF1:'sf1',
@@ -59,10 +59,12 @@ FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary. In some cases, we have just it
 
-SPEC_CSV_FILES     = DOC_DIR + "/{year}/{product}.csv"
-CHAPTER6_CSV_FILES = DOC_DIR + "/{year}/{product}_chapter6.csv"
-
-
+SPEC_CSV_FILE     = DOC_DIR + "/{year}/{product}.csv"
+CHAPTER6_CSV_FILE = DOC_DIR + "/{year}/{product}_chapter6.csv"
+CHAPTER7_CSV_FILE = DOC_DIR + "/{year}/{product}_chapter7.csv"
+SPEC_FILES = [SPEC_CSV_FILE,
+              CHAPTER6_CSV_FILE,
+              CHAPTER7_CSV_FILE]
 
 #
 # States. Note that for consistency, we use the phrase 'state' to refer to a 2-letter code

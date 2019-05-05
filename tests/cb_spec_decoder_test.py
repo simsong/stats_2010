@@ -1,12 +1,11 @@
 #
 # make sure that we can read the sf1 file
 
-from constants import *
-
+from constants       import *
 from cb_spec_decoder import *
 from decimal import Decimal
 
-SF1_CHAPTER6_CSV = CHAPTER6_CSV_FILES.format(year=2010,product=SF1)
+SF1_CHAPTER6_CSV = CHAPTER6_CSV_FILE.format(year=2010,product=SF1)
 
 # LINES FROM THE 2010 SF1 that did not OCR properly
 SF1_P6_LINE='other races                                                                              P0060007              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
@@ -23,10 +22,12 @@ SF1_GEO_STUSAB_LINE = 'State/U.S. Abbreviation (USPS)                           
 # note that this is not a hyphen:
 SF2_LINE_120 = 'Census Tract7 000100–998999,,,,,,,,,,,Census tract,,,,,,,,,,,,,,,,,TRACT,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,6,,,,,,,,,,55,,,,,,A/N,,,'
 
+AINSF_LINE_3375="Chapter 6.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"
+AINSF_LINE_3376="Data Dictionary                                                                        ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"
 
 
-def test_chapter6_prepare_csv_line():
-    assert chapter6_prepare_csv_line(SF1_H22_LINE)=="H22. ALLOCATION OF TENURE"
+def test_csvspec_prepare_csv_line():
+    assert csvspec_prepare_csv_line(SF1_H22_LINE)=="H22. ALLOCATION OF TENURE"
 
 def test_VAR_FIELDS_RE():
     m = VAR_FIELDS_RE.search("P035F001")
@@ -37,12 +38,12 @@ def test_VAR_FIELDS_RE():
     
 
 def test_geo_vars():
-    pline = chapter6_prepare_csv_line( SF1_GEO_STUSAB_LINE )
+    pline = csvspec_prepare_csv_line( SF1_GEO_STUSAB_LINE )
     print(pline)
     m = GEO_VAR_RE.search( pline )
     assert m.group('name') == 'STUSAB'
 
-    pline = chapter6_prepare_csv_line( SF1_GEO_NAME_LINE )
+    pline = csvspec_prepare_csv_line( SF1_GEO_NAME_LINE )
     print(pline)
     m = GEO_VAR_RE.search( pline )
     assert m.group('name') == 'NAME'
@@ -50,36 +51,36 @@ def test_geo_vars():
     assert m.group('column') == '227'
 
 def test_line_100_102():
-    m = GEO_VAR_RE.search( chapter6_prepare_csv_line(SF1_LINE_102) )
+    m = GEO_VAR_RE.search( csvspec_prepare_csv_line(SF1_LINE_102) )
     assert m.group('name') == 'PLACECC'
 
 def test_sf2_line_102():
-    line = chapter6_prepare_csv_line( SF2_LINE_120)
+    line = csvspec_prepare_csv_line( SF2_LINE_120)
     print("line:",line)
     m = GEO_VAR_RE.search( line )
     assert m.group('name') == 'TRACT'
 
 def test_line_4016():
-    prepared = chapter6_prepare_csv_line( SF1_LINE_4016)
+    prepared = csvspec_prepare_csv_line( SF1_LINE_4016)
     print("prepared:",prepared)
     assert 'FAMILIES (TWO OR MORE RACES HOUSEHOLDER)' in prepared
     assert "P035F001" in prepared
     assert '12' in prepared
-    (name,desc,segment,maxsize) = parse_variable_desc( chapter6_prepare_csv_line( SF1_LINE_4016))
+    (name,desc,segment,maxsize) = parse_variable_desc( csvspec_prepare_csv_line( SF1_LINE_4016))
     assert name=='P035F001'
     assert desc=='FAMILIES (TWO OR MORE RACES HOUSEHOLDER)'
     assert segment==12
 
 def test_line_7837():
-    tn = parse_table_name( chapter6_prepare_csv_line( SF1_LINE_7837 ))
+    tn = parse_table_name( csvspec_prepare_csv_line( SF1_LINE_7837 ))
     assert tn[0]=='PCT12G'
     assert tn[1]=='SEX BY AGE (TWO OR MORE RACES)'
 
 def test_parse_table_name():
-    assert parse_table_name(chapter6_prepare_csv_line(SF1_H22_LINE))
+    assert parse_table_name(csvspec_prepare_csv_line(SF1_H22_LINE))
 
 def test_H22_LINE_parses_chapter6():
-    for line in chapter6_lines(SF1_CHAPTER6_CSV):
+    for line in csvspec_lines(SF1_CHAPTER6_CSV):
         if line.strip().startswith("H22."):
             # I have the line. Make sure we find the tables in it.
             tn = parse_table_name(line)
@@ -89,7 +90,7 @@ def test_H22_LINE_parses_chapter6():
     raise RuntimeError(f"SF1_H22_LINE not found in {SF1_CHAPTER6_CSV}")
     
 def test_P0090058_parser():
-    (name,desc,segment,maxsize) = parse_variable_desc(chapter6_prepare_csv_line(SF1_P0090058))
+    (name,desc,segment,maxsize) = parse_variable_desc(csvspec_prepare_csv_line(SF1_P0090058))
     assert name=='P0090058'
     assert desc=='Race'
     assert segment==3
@@ -98,7 +99,7 @@ def test_P0090058_parser():
 def tables_in_file(fname):
     """Give a chapter6 CSV file, return all of the tables in it."""
     tables = {}
-    for line in chapter6_lines(fname):
+    for line in csvspec_lines(fname):
         tn = parse_table_name(line)
         if tn is not None:
             tables[tn[0]] = tn[1]
@@ -144,7 +145,7 @@ def test_spottest_2010_sf1():
     year = 2010
     product = SF1
     state  = 'ak'
-    ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
+    ch6file = CHAPTER6_CSV_FILE.format(year=year,product=product)
     assert os.path.exists(ch6file)
     schema = schema_for_spec(ch6file, year=year, product=product)
 
@@ -214,7 +215,7 @@ def test_parsed_spec_fields_correct():
         for product in [SF1]:
             if product==SF1:
                 chariter = '000'
-            ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
+            ch6file = CHAPTER6_CSV_FILE.format(year=year,product=product)
             assert os.path.exists(ch6file)
             schema = schema_for_spec(ch6file, year=year, product=product)
             for file_number in range(1,FILES_FOR_YEAR_PRODUCT[year][product]+1):
@@ -276,10 +277,35 @@ def test_spottest_2010_sf2():
     year = 2010
     product = SF1
     state  = 'ak'
-    ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
+    ch6file = CHAPTER6_CSV_FILE.format(year=year,product=product)
     assert os.path.exists(ch6file)
     schema = schema_for_spec(ch6file, year=year, product=product)
     pco1 = schema.get_table("PCO1")
 
     
 
+def test_find_data_dictionary():
+    assert is_chapter_line(AINSF_LINE_3375)
+    assert is_data_dictionary_line(AINSF_LINE_3376)
+    
+def test_find_all_data_dictionaries():
+    for year in YEARS:
+        for product in PRODUCTS:
+            filename = get_cvsspec(year=year, product=product)
+            print(filename)
+            last_line = ""
+            found = False
+            if not any( (is_chapter_line( line) for line in csvspec_lines(filename))) :
+                raise RuntimeError(f"{filename} has no chapter lines in it")
+
+            if not any( (is_data_dictionary_line(line) for line in csvspec_lines(filename))) :
+                raise RuntimeError(f"{filename} has no data dictionary lines in it")
+
+            for line in csvspec_lines(filename):
+                if is_chapter_line(last_line) and is_data_dictionary_line(line):
+                    found = True
+                    break
+                last_line = line
+            if not found:
+                raise RuntimeError(f"{filename} does not appear to have a data dictionary")
+            print("---")

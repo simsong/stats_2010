@@ -28,6 +28,9 @@ We try to consistently use the term:
 ROOT_DIR = os.path.dirname(__file__)
 DOC_DIR  = os.path.join(ROOT_DIR, "doc")
 
+if not os.path.exists(DOC_DIR):
+    raise FileNotFoundError(DOC_DIR)
+
 # years
 YEAR = 'year'
 YEARS = [2000,2010]

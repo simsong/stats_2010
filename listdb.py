@@ -22,6 +22,8 @@ if __name__=="__main__":
     parser.add_argument("--year",  type=int, help=f"Only list specified year (default {c.YEARS})")
     parser.add_argument("--product", type=str, help=f"Only list specified data product (default {c.PRODUCTS})")
     parser.add_argument("--table", type=str,  help='Only show specified table; default is all tables.')
+    parser.add_argument("--showtables", help="Show all the tables", action='store_true')
+    parser.add_argument("--showvars", help="Show all the variables", action='store_true')
     parser.add_argument("--dump",  action='store_true', help='dump every table')
     parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
@@ -45,10 +47,12 @@ if __name__=="__main__":
                 print(e)
                 print("")
                 continue
-            print(f"{year} {product}:")
             tables = df.schema.tables() if not args.table else [df.schema.get_table(args.table)]
-            for table in tables:
-                print(f"   table {table.name:8}  {len(table.vars()):3} vars")
-                if args.dump:
-                    table.dump()
+            print(f"{year} {product}:   {len(tables)} tables")
+            if args.showtables:
+                for table in tables:
+                    print(f"   table {table.name:8}  {len(table.vars()):3} vars")
+                    if args.showvars:
+                        for variable in table.varnames():
+                            printf(f"        {variable}")
             print()

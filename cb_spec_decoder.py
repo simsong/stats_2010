@@ -39,10 +39,12 @@ import sys
 
 # File locations
 
+from urllib.parse import urlparse
 import constants as c
 
 import ctools
 import ctools.tydoc as tydoc
+import ctools.s3 as s3
 from ctools.schema.schema import Schema
 from ctools.schema.variable import Variable
 from ctools.schema import TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
@@ -437,48 +439,62 @@ def get_cvsspec(*,year,product):
     raise FileNotFoundError(f"Did not find any of these files: " + (" ".join(checked)))
         
 class DecennialData:
-    def __init__(self,*,root,year,product,debug=False):
+    def __init__(self,*, dataroot, year, product, debug=False):
         """Inventory the files and return an SF1 object."""
-        self.files = []
-        self.root  = root
-        self.find_files()
+
+        self.year      = int(year)
+        self.product   = product
         self.debug = debug
-        self.schema = None
-        self.schema = schema_for_spec( get_cvsspec(year=year, product=product), 
-                                       year=year, product=product, debug=debug)
+
+        ### Get the schema
+
+        self.specfile = get_cvsspec(year=year, product=product)
+        self.schema = schema_for_spec( self.specfile, year=year, product=product, debug=debug)
+
+        ### Get the data files
+        # files is an array of dictionaries which list every file under the dataroot
+        self.files     = []
+        for path in dataroot.split(";"):
+            self.find_files(path)
+        if len(self.files)==0:
+            raise RuntimeError(f"No data files found in dataroot: {dataroot}")
+
 
     def get_table(self,tableName):
         return self.schema.get_table(tableName)
 
-    def find_files(self):
-        if self.root.startswith('s3:'):
-            for obj in s3.list_objects(self.root):
-                self.register_file(obj[s3._Key])
-        elif self.root.startswith('hdfs:'):
+    def find_files(self, dataroot):
+        p = urlparse(dataroot)
+        if p.scheme=='s3':
+            for obj in s3.list_objects(dataroot):
+                self.register_file( 's3://' + p.netloc + '/' + obj[s3._Key])
+        elif dataroot.startswith('hdfs:'):
             raise RuntimeError('hdfs SF1_ROOT not implemented')
         else:
-            for (dirpath,dirnames,filenames) in os.walk(self.root):
+            # Must be a file in the file system
+            for (dirpath,dirnames,filenames) in os.walk(dataroot):
                 for filename in filenames:
                     self.register_file(os.path.join(dirpath,filename))
 
     def register_file(self,path):
         """Files have a pattern:  {state}{section}{year}.{product}"""
+        print(f"register_file({path})")
         filename = os.path.basename(path)
         if filename.endswith(".sf1"):
             state = filename[0:2]
             try:
                 if len(filename)==13 and filename[2:5]=='geo':
                     self.files.append({'path':path,
-                                       STATE:state,
-                                       CIFSN:CIFSN_GEO,
-                                       YEAR:int(filename[5:9]),
-                                       PRODUCT:SF1})
+                                       c.STATE:state,
+                                       c.CIFSN:c.CIFSN_GEO,
+                                       c.YEAR:int(filename[5:9]),
+                                       c.PRODUCT:c.SF1})
                 if len(filename)==15:
                     self.files.append({'path':path,
-                                       STATE:state,
-                                       CIFSN:int(filename[2:7]),
-                                       YEAR:int(filename[7:11]),
-                                       PRODUCT:SF1})
+                                       c.STATE:state,
+                                       c.CIFSN:int(filename[2:7]),
+                                       c.YEAR:int(filename[7:11]),
+                                       c.PRODUCT:c.SF1})
             except ValueError as e:
                 if debug:
                     print("bad filename:",path)
@@ -487,32 +503,34 @@ class DecennialData:
         """Return the unique values for a given selector"""
         return set( [obj[selector] for obj in self.files] )
     
-    def get_df(self,*,tableName,sqlName):
-        """Get a dataframe where the tables are specified by a selector. Things to try:
-        year=2010  (currently required, but defaults to 2010)
-        table=tabname (you must specify a table),
-        product=product (you must specify a product)
+    def get_df(self,*, tableName, sqlName):
+        """Get a dataframe where the tables are specified by a selector.
         """
         # Get a list of all the matching files
         table = self.schema.get_table(tableName)
-        if tableName == GEO_TABLE:
-            cifsn = CIFSN_GEO
+        if tableName == c.GEO_TABLE:
+            cifsn = c.CIFSN_GEO
         else:
-            cifsn = table.attrib[CIFSN]
+            cifsn = table.attrib[c.CIFSN]
 
         # Find the files
         paths = [ obj['path'] for obj in self.files if
-                  (obj['year']==year and obj['product']==product) and obj[CIFSN]==cifsn]
+                  (obj['year']==self.year and obj['product']==self.product) and obj[c.CIFSN]==cifsn]
+
         if len(paths)==0:
             print("No file found. Available data files:")
             for obj in self.files:
                 print(obj)
-            raise RuntimeError(f"No files found looking for year:{year} product:{product} CIFSN:{cifsn}")
+            raise RuntimeError(f"No files found looking for year:{self.year} product:{self.product} CIFSN:{cifsn}")
             
         # Create an RDD for each text file
+        from pyspark.sql import SparkSession
+        spark = SparkSession.builder.getOrCreate()
         rdds = [spark.sparkContext.textFile(path) for path in paths]
+
         # Combine them into a single file
         rdd  = spark.sparkContext.union(rdds)
+
         # Convert it to a dataframe
         df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
         df.registerTempTable( sqlName )
@@ -562,13 +580,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    ch6file = CSVSPEC_CSV_FILES.format(year=args.year,product=args.product)
-
-    schema  = schema_for_spec(ch6file, year=year, product=product, debug=args.debug)
+    specfile = c.CSVSPEC_CSV_FILES.format(year=args.year,product=args.product)
+    schema  = schema_for_spec(specfile, year=year, product=product, debug=args.debug)
     schema.dump()
 
     if args.geodump:
-        geotable = schema.get_table(GEO_TABLE)
+        geotable = schema.get_table(c.GEO_TABLE)
         tt = tydoc.tytable()
         tt.add_head(['LOGRECNO','SUMLEV','STATE','COUNTY','TRACT','BLOCK'])
         rows = 0
@@ -587,7 +604,7 @@ if __name__ == "__main__":
 
     if args.segment:
         for table in schema.tables():
-            if table.attrib[CIFSN]==args.segment:
+            if table.attrib[c.CIFSN]==args.segment:
                 table.dump()
     else:
         schema.dump()

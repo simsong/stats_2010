@@ -32,11 +32,11 @@ if __name__=="__main__":
     years = c.YEARS if not args.year else [args.year]
     products = c.PRODUCTS if not args.product else [args.product]
 
-    root = os.path.dirname(__file__)
+    dataroot = os.path.dirname(__file__)
     for year in years:
         for product in products:
             try:
-                df = cb_spec_decoder.DecennialData(root=root, year=year, product=product, debug=args.debug)
+                df = cb_spec_decoder.DecennialData(dataroot=dataroot, year=year, product=product, debug=args.debug)
             except FileNotFoundError as e:
                 if args.debug:
                     print("DEBUG:",str(e))

@@ -86,8 +86,11 @@ VAR_FIELDS_RE = re.compile(r"^(?P<prefix>[A-Z]+)(?P<tablenumber>\d{1,3})(?P<sequ
 VAR_PREFIX_RE = re.compile(r"^(?P<prefix>[A-Z]+)")
 
 ### TYPOS and OCR errors
-## Typo in 2010 SF1 specification. This varialble appears twice; ignore it the second time.
-DUPLICATE_VARIABLES = set(['PCT0200001'])
+## Typo in 2010 SF1 specification. A few variables are mentioned twice; ignore it the second time.
+DUPLICATE_VARIABLES = set(['P027E003', # 2000 SF1
+                           'PCT0200001', # 2010 SF1
+
+                           ])
 
 def open_decennial(ypss):
     """Return an IO object that reads from the specified ZIP file in Unicode.
@@ -206,8 +209,8 @@ def csvspec_lines(fname):
         for line in f:
             yield csvspec_prepare_csv_line(line)
     
-def process_tn(schema, tn, linkage_vars, file_number):
-    """Process the tn and return the table"""
+def add_named_table(schema, tn, linkage_vars, file_number):
+    """Add the named table to the schema, and add the linkage variables to the table. """
     (table_name, table_desc) = tn
     if not schema.has_table(table_name):
         # New table! Create it and add the linkage variables if we have any
@@ -244,9 +247,9 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))
 
     linkage_vars    = []
-    file_number     = False
+    segment_number     = False
     prev_var_m      = None      # previous variable match
-    geo_columns     = set(range(0,500))
+    geo_columns     = set()     # track the columns we have used
     table           = None
     table_name      = None
     in_data_dictionary = False
@@ -267,12 +270,12 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             # Make sure that the file number increased. 
             # Tables do not cross files, so reset the current table and field number
             # 
-            old_file_number = file_number
-            file_number     = int(m.group(1))
-            if file_number == 1:
+            old_segment_number = segment_number
+            segment_number     = int(m.group(1))
+            if segment_number == 1:
                 field_number = 0
             else:
-                assert old_file_number + 1 == file_number
+                assert old_segment_number + 1 == segment_number
                 # use memorized linkage variables
                 field_number = len(linkage_vars)    
             table           = None
@@ -280,7 +283,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             continue
         
         # If not yet in a file, check for geoheader line
-        if file_number is False:
+        if segment_number is False:
             m = GEO_VAR_RE.search(line)
             if m:
                 (desc,name,width,column,datatype) = m.group('desc','name','width','column','datatype')
@@ -295,13 +298,14 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                     print(f"Adding variable {v} to geotable")
                 geotable.add_variable( v )
 
-                # Remove these columns from the set of geo column
+                # Add these columns from the set of geo column we are using
                 for i in range(column,column+width):
-                    geo_columns.remove(i)
+                    if i in geo_columns:
+                        raise RuntimeError(f"Column {i} is used in multiple columns")
             continue
 
-        # Check for linkage variables in the first file.
-        if file_number == 1:
+        # If this is the first segment, learn the linkage variables from the it
+        if segment_number == 1:
             lnk = parse_linkage_desc(line)
             if lnk and lnk[0] in c.LINKAGE_VARIABLES:
                 (lnk_name, lnk_desc, lnk_cifsn, lnk_maxsize) = lnk
@@ -318,7 +322,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         # Check for start of a new table, as indicated by table name.
         tn = parse_table_name(line)
         if tn:
-            table = process_tn(schema, tn, linkage_vars, file_number)
+            table = add_named_table(schema, tn, linkage_vars, segment_number)
 
         # Can we parse variables?
         var = parse_variable_desc(line)
@@ -328,8 +332,8 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         # We found a variable that we can process. 
         (var_name, var_desc, var_cifsn, var_maxsize) = var
 
-        # Make sure variable is for the correct file
-        assert file_number == var_cifsn
+        # Make sure variable is for the correct segment
+        assert segment_number == var_cifsn
 
         ###
         ### HANDLE ERRORS IN PDF AND OCR
@@ -337,8 +341,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
 
         # 2010 SF1: OCR puts the table definition for PCT12G at the bottom of page 6-213
         if var_name=='PCT012G001':
-            table = process_tn(schema, ["PCT12G","SEX BY AGE (TWO OR MORE RACES)"], linkage_vars, file_number)
-
+            table = add_named_table(schema, ["PCT12G","SEX BY AGE (TWO OR MORE RACES)"], linkage_vars, segment_number)
 
         ###
         ### VALIDATE THE VARIABLE. (THIS ALSO VALIDATES OUR PARSING)
@@ -398,10 +401,15 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                                      field  = field_number,
                                      width  = var_maxsize,
                                      vtype  = vtype) )
-        # Go to the next field
-        field_number += 1
+
+        field_number += 1        # Go to the next field
 
         # If VSN is 001 and the first 
+
+    ###
+    ### Validate the learned schema
+    ###
+
     if in_data_dictionary==False:
         raise RuntimeError(f"Parser did not find the data dictionary")
         
@@ -409,9 +417,16 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         if varname not in geotable.varnames():
             raise RuntimeError(f"Parser did not find geovariable {varname} in geoheader")
 
+    for table in schema.tables():
+        if len(table.vars()) <= len(linkage_vars):
+            raise RuntimeError(f"Table {table.name} does not have enough variables (has {len(table.vars())})")
+
     if debug:
         print("The following geo columns were not parsed:")
-        print(sorted(geo_columns))
+        for i in range(0,max(geo_columns)):
+            if i not in geo_columns:
+                print(i,end=' ')
+        print()
     return schema
 
 def get_cvsspec(*,year,product):
@@ -431,6 +446,12 @@ class DecennialData:
         self.product   = product
         self.debug = debug
 
+        ### Get the schema
+
+        self.specfile = get_cvsspec(year=year, product=product)
+        self.schema = schema_for_spec( self.specfile, year=year, product=product, debug=debug)
+
+        ### Get the data files
         # files is an array of dictionaries which list every file under the dataroot
         self.files     = []
         for path in dataroot.split(";"):
@@ -438,8 +459,6 @@ class DecennialData:
         if len(self.files)==0:
             raise RuntimeError(f"No data files found in dataroot: {dataroot}")
 
-        self.specfile = get_cvsspec(year=year, product=product)
-        self.schema = schema_for_spec( self.specfile, debug=debug)
 
     def get_table(self,tableName):
         return self.schema.get_table(tableName)

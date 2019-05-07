@@ -40,8 +40,10 @@ PRODUCT = 'product'
 PL94 = 'pl94'
 SF1  = 'sf1'
 SF2  = 'sf2'
+SF3  = 'sf3'
+SF4  = 'sf4'
 AIANSF = 'aiansf'
-PRODUCTS = [PL94, SF1, SF2, AIANSF]
+PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF]
 
 PRODUCT_EXTS = {2010: { PL94:'pl',
                         SF1:'sf1',

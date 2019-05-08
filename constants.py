@@ -45,17 +45,25 @@ SF4  = 'sf4'
 AIANSF = 'aiansf'
 PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF]
 
-PRODUCT_EXTS = {2010: { PL94:'pl',
-                        SF1:'sf1',
-                        SF2:'sf2' }}
+PRODUCT_EXTS = { PL94:'pl',
+                 SF1:'sf1',
+                 SF2:'sf2',
+                 SF3:'sf3',
+                 SF4:'sf4'}
                     
 # Number of files per data product
 FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
-                                 SF1 : 39},
+                                 SF1 : 39,
+                                 SF2 : -1, 
+                                 SF3 : -1,
+                                 SF4 : -1,
+                                 AIANSF: -1 },
                           2010: {PL94: 2,
-                                 SF1 : 47} }
+                                 SF1 : 47,
+                                 SF2 : -1, 
+                                 AIANSF: -1 } }
 
-MAX_CIFSN = 47                # highest anywhere
+MAX_CIFSN = 48                # highest anywhere
 
 # For self-check, each year/product has a prefix at the beginning of each line
 FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
@@ -205,7 +213,7 @@ def zipfile_name(ypss):
 
 def segmentfile_name(ypss):
     """The name within the zipfile of the requested segment"""
-    ext = PRODUCT_EXTS[ypss.year][ypss.product]
+    ext = PRODUCT_EXTS[ypss.product]
     return "{state:2}{chariter:03}{segment:02}{year:04}.{ext}".format(
         state=ypss.state,
         chariter=int(ypss.chariter),

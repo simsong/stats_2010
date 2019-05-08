@@ -47,7 +47,6 @@ def find_files():
                 for filename in filenames:
                     yield os.path.join(dirpath,filename)
 
-
 def register_files(verbose=False):
     for path in find_files():
         register_file(path,verbose=verbose)

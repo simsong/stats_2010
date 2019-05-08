@@ -7,9 +7,10 @@ List datasets and other information
 import os
 import sys
 
-import constants as c
+import constants as C
 
 import cb_spec_decoder
+import cb_spark_demo
 import ctools.cspark as cspark
 import ctools.s3     as s3
 import ctools.tydoc  as tydoc
@@ -19,8 +20,8 @@ if __name__=="__main__":
 
     parser = argparse.ArgumentParser(description='List available datasets and other specified information.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--year",  type=int, help=f"Only list specified year (default {c.YEARS})")
-    parser.add_argument("--product", type=str, help=f"Only list specified data product (default {c.PRODUCTS})")
+    parser.add_argument("--year",  type=int, help=f"Only list specified year (default {C.YEARS})")
+    parser.add_argument("--product", type=str, help=f"Only list specified data product (default {C.PRODUCTS})")
     parser.add_argument("--table", type=str,  help='Only show specified table; default is all tables.')
     parser.add_argument("--showtables", help="Show all the tables", action='store_true')
     parser.add_argument("--showvars", help="Show all the variables", action='store_true')
@@ -28,22 +29,22 @@ if __name__=="__main__":
     parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
 
-    # Get a schema object associated with the SF1 for 2010
-    years = c.YEARS if not args.year else [args.year]
-    products = c.PRODUCTS if not args.product else [args.product]
-
-    dataroot = os.path.dirname(__file__)
-    for year in years:
-        for product in products:
+    for year in C.FILES_FOR_YEAR_PRODUCT.keys():
+        for product in C.FILES_FOR_YEAR_PRODUCT[year].keys():
+            if args.year and year!=args.year:
+                continue
+            if args.product and product!=args.product:
+                continue
             try:
-                df = cb_spec_decoder.DecennialData(dataroot=dataroot, year=year, product=product, debug=args.debug)
+                df = cb_spec_decoder.DecennialData(dataroot=cb_spark_demo.DATAROOT, year=year, 
+                                                   product=product, debug=args.debug)
             except FileNotFoundError as e:
                 if args.debug:
                     print("DEBUG:",str(e))
                 print(f"Not found: {year} {product}")
                 continue
             except RuntimeError as e:
-                print(f"Internal constency error reading f{year} {product}:")
+                print(f"Internal consistency error reading {year} {product}:")
                 print(e)
                 print("")
                 continue

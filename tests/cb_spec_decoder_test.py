@@ -7,16 +7,13 @@ from decimal import Decimal
 
 SF1_CHAPTER6_CSV = CHAPTER6_CSV_FILE.format(year=2010,product=SF1)
 
-# LINES FROM THE 2010 SF1 that did not OCR properly
+# LINES FROM THE 2010 SF1 that did not OCR or match properly
 SF1_P6_LINE='other races                                                                              P0060007              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_P0090058='Race                                                                          P0090058              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
-SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 
 SF1_LINE_100='"Place (FIPS)7, 8                                                                                    PLACE'
 SF1_LINE_102='FIPS Place Class Code8                                                                 PLACECC,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,2,,,,,,51,,,,,,,,A/N,'
 
-SF1_LINE_4016='FAMILIES (TWO OR MORE RACES HOUSEHOLDER) [1]",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,P035F001,,,,,,,,,,12,,,,,,,9'
-SF1_LINE_7837='PCT12G.   SEX BY AGE (TWO OR MORE RACES) [209]\227Con.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_GEO_NAME_LINE='Area Name-Legal/Statistical Area Description (LSAD) Term-Part Indicator18,,,,,,,,,,,,,,,,,,,,,,NAME,,,,,,,,,,,,,,,,,90,,,,,,227,,,,,,,,A/N,'
 SF1_GEO_STUSAB_LINE = 'State/U.S. Abbreviation (USPS)                                                    STUSAB                    2                7              A,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 # note that this is not a hyphen:
@@ -60,6 +57,7 @@ def test_sf2_line_102():
     m = GEO_VAR_RE.search( line )
     assert m.group('name') == 'TRACT'
 
+SF1_LINE_4016='FAMILIES (TWO OR MORE RACES HOUSEHOLDER) [1]",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,P035F001,,,,,,,,,,12,,,,,,,9'
 def test_line_4016():
     prepared = csvspec_prepare_csv_line( SF1_LINE_4016)
     print("prepared:",prepared)
@@ -71,11 +69,28 @@ def test_line_4016():
     assert desc=='FAMILIES (TWO OR MORE RACES HOUSEHOLDER)'
     assert segment==12
 
+SF1_LINE_13306='Total:,,,,,,,,,,,,,,,,,,,,,,,,PCT0230001,,,,,,,,,,,,,,48,,,,,,,9,,,,,,,,,'
+def test_line_13306():
+    assert is_variable_name("PCT0230001")
+
+    prepared = csvspec_prepare_csv_line( SF1_LINE_13306 )
+    assert "Total" in prepared
+    assert "PCT0230001" in prepared
+    assert "48" in prepared
+    print(prepared)
+    (name,desc,segment,maxsize) = parse_variable_desc( prepared )
+    assert name=='PCT0230001'
+    assert desc=='Total'
+    assert segment==48
+
+
+SF1_LINE_7837='PCT12G.   SEX BY AGE (TWO OR MORE RACES) [209]\227Con.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 def test_line_7837():
     tn = parse_table_name( csvspec_prepare_csv_line( SF1_LINE_7837 ))
     assert tn[0]=='PCT12G'
     assert tn[1]=='SEX BY AGE (TWO OR MORE RACES)'
 
+SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 def test_parse_table_name():
     assert parse_table_name(csvspec_prepare_csv_line(SF1_H22_LINE))
 

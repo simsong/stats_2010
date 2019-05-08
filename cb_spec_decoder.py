@@ -85,6 +85,8 @@ VAR_RE        = re.compile(r"^("
 VAR_FIELDS_RE = re.compile(r"^(?P<prefix>[A-Z]+)(?P<tablenumber>\d{1,3})(?P<sequence>[A-Z]?)(?P<number>\d+)$")
 VAR_PREFIX_RE = re.compile(r"^(?P<prefix>[A-Z]+)")
 
+# Regular expression for extracting table name from a variable
+
 ### TYPOS and OCR errors
 ## Typo in 2010 SF1 specification. A few variables are mentioned twice; ignore it the second time.
 DUPLICATE_VARIABLES = set(['P027E003', # 2000 SF1
@@ -165,9 +167,12 @@ def parse_variable_desc(line):
         except ValueError as e:
             return False
 
+        print(segment,maxsize)
         if (1 <= segment <= c.MAX_CIFSN) and (1 <= maxsize <= 9):
+            if desc[-1:]==':':
+                desc = desc[0:-1]
             return (name,desc,segment,maxsize)
-    return None
+    return False
 
 FOOTNOTE_RE = re.compile(r'\[\d+\]')
 def csvspec_prepare_csv_line(line):
@@ -231,6 +236,24 @@ def add_named_table(schema, tn, linkage_vars, file_number):
     else:
         return schema.get_table(table_name)
 
+TABLE_FROM_VAR_RE = re.compile(r"([A-Z]+(000[0-9]|00[1-9]|0[1-9][0-9])[A-Z]*)")
+PAT = re.compile(r"[A-Z]+(0+)(\d+)")
+def table_name_from_variable(varname):
+    m = TABLE_FROM_VAR_RE.search(varname)
+    if m:
+        table_name = m.group(1)
+        # Remove the leading 0 if there is a number
+        m = PAT.search(table_name)
+        if m:
+            old = m.group(1)+m.group(2)
+            new = m.group(2)
+            table_name = table_name.replace(old,new)
+        return table_name
+    return None
+
+
+
+
 def schema_for_spec(csv_filename, *, year, product, debug=False):
     """Take the Census-provided PDF of the spec. Convert it to an Excel Spreadsheet with Adobe Acrobat, then save it as a CSV file.
     If you cannot convert the entire file, try converting just the Data Dictionary chapter. 
@@ -251,11 +274,14 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     prev_var_m      = None      # previous variable match
     geo_columns     = set()     # track the columns we have used
     table           = None
-    table_name      = None
     in_data_dictionary = False
     last_line       = ""
 
     for (ll,line) in enumerate(csvspec_lines(csv_filename),1):
+        if "P35" in line:
+            print(f"{ll}:{line}")
+            print(f"table: {table} ")
+            print("---------------------------------------")
         if not in_data_dictionary:
             # Look for the data dictionary chapter
             if is_data_dictionary_line(line) and is_chapter_line(last_line):
@@ -279,7 +305,6 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                 # use memorized linkage variables
                 field_number = len(linkage_vars)    
             table           = None
-            table_name      = None
             continue
         
         # If not yet in a file, check for geoheader line
@@ -320,9 +345,9 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                 continue
 
         # Check for start of a new table, as indicated by table name.
-        tn = parse_table_name(line)
-        if tn:
-            table = add_named_table(schema, tn, linkage_vars, segment_number)
+        table_name = parse_table_name(line)
+        if table_name:
+            table = add_named_table(schema, table_name, linkage_vars, segment_number)
 
         # Can we parse variables?
         var = parse_variable_desc(line)
@@ -382,29 +407,40 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                     raise ValueError(f"line {ll}: found VSN {num} for variable {var_name}; "
                                      f"expected {last_num+1}")
         last_var_m   = m
+        tnfv = table_name_from_variable(var_name)
 
         ###
         ### END OF PDF ERROR HANDLER
         ###
-
-        # Everything looks good: add the variable and increment the field number
-        if debug:
-            print(f"Adding variable {var_name} to table {table_name}")
 
         if 'AVERAGE' in table.desc:
             vtype = TYPE_DECIMAL
         else:
             vtype = TYPE_NUMBER
 
-        table.add_variable( Variable(name   = var_name,
-                                     desc   = var_desc,
-                                     field  = field_number,
-                                     width  = var_maxsize,
-                                     vtype  = vtype) )
+        v = Variable(name   = var_name,
+                     desc   = var_desc,
+                     field  = field_number,
+                     width  = var_maxsize,
+                     vtype  = vtype)
+
+        ### Patch as necessary
+
+        # OCR put table definition for table P35G before variable definition for P35F001
+        if year==2010 and product==c.SF1 and tnfv=='P35F':
+            schema.get_table('P35F').add_variable( v )
+            v = None
+
+        if v is not None:
+            if debug:
+                print(f"Adding variable {var_name} to {table}")
+
+            if (tnfv is not None) and (table.name != tnfv):
+                raise RuntimeError(f"Extracted table name {tnfv} from variable {var_name} but current table is {table}")
+
+            table.add_variable( v )
 
         field_number += 1        # Go to the next field
-
-        # If VSN is 001 and the first 
 
     ###
     ### Validate the learned schema
@@ -452,12 +488,15 @@ class DecennialData:
         self.schema = schema_for_spec( self.specfile, year=year, product=product, debug=debug)
 
         ### Get the data files
+        if dataroot=="":
+            raise RuntimeError(f"dataroot is ''")
+
         # files is an array of dictionaries which list every file under the dataroot
         self.files     = []
         for path in dataroot.split(";"):
             self.find_files(path)
         if len(self.files)==0:
-            raise RuntimeError(f"No data files found in dataroot: {dataroot}")
+            raise FileNotFoundError(f"No data files found in dataroot: {dataroot}")
 
 
     def get_table(self,tableName):
@@ -478,7 +517,6 @@ class DecennialData:
 
     def register_file(self,path):
         """Files have a pattern:  {state}{section}{year}.{product}"""
-        print(f"register_file({path})")
         filename = os.path.basename(path)
         if filename.endswith(".sf1"):
             state = filename[0:2]
@@ -546,7 +584,9 @@ class DecennialData:
         raise KeyError(f"variable {name} not found in any table in schema")
 
     def print_legend(self,df,*,printHeading=True,file=sys.stdout):
-        """Print the legend for the columns in the dataframe. Takes advantage of the fact that all column names are unique with the Census Bureau."""
+        """Print the legend for the columns in the dataframe. 
+        Takes advantage of the fact that all column names are unique with the Census Bureau."""
+
         if printHeading:
             print("Legend:")
         rows = []

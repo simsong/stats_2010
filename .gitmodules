@@ -1,6 +1,3 @@
 [submodule "ctools"]
 	path = ctools
 	url = git@github.com:dpcomp-org/ctools.git
-[submodule "census_etl"]
-	path = census_etl
-	url = git@github.com:dpcomp-org/census_etl.git

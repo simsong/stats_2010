@@ -40,7 +40,7 @@ import sys
 # File locations
 
 from urllib.parse import urlparse
-import constants as c
+import constants as C
 
 import ctools
 import ctools.tydoc as tydoc
@@ -69,7 +69,7 @@ REQUIRED_GEO_VARS =  ['FILEID', 'STUSAB', 'SUMLEV', 'LOGRECNO', 'STATE', 'COUNTY
 # Regular expression for parsing file section
 CHAPTER_RE    = re.compile(r"^Chapter (\d+)\.")
 DATA_DICTIONARY_RE = re.compile(r"^Data.Dictionary")
-FILE_START_RE = re.compile(r"^File (\d+)")
+SEGMENT_START_RE = re.compile(r"^File (\d+)")
 TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
 VAR_RE        = re.compile(r"^("
                            r"(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
@@ -91,18 +91,24 @@ VAR_PREFIX_RE = re.compile(r"^(?P<prefix>[A-Z]+)")
 ## Typo in 2010 SF1 specification. A few variables are mentioned twice; ignore it the second time.
 DUPLICATE_VARIABLES = set(['P027E003', # 2000 SF1
                            'PCT0200001', # 2010 SF1
-
                            ])
+
+## Typo in 2010 SF1 page 348: Segment 48 is missing the linkage variables
+MISSING_SEGMENT_STARTS = [{C.YEAR:2010, C.PRODUCT: C.SF1, C.TABLE: 'PCT23', C.SEGMENT:48}]
+# 2010 SF1: OCR puts the table definition for PCT12G at the bottom of page 6-213
+MISSING_TABLE_STARTS   = [{C.YEAR:2010, C.PRODUCT: C.SF1, C.VARIABLE:'PCT012G001', C.TABLE:'PCT12G', C.DESC: "SEX BY AGE (TWO OR MORE RACES)"}]
+
+
 
 def open_decennial(ypss):
     """Return an IO object that reads from the specified ZIP file in Unicode.
     This avoids the need to unzip the files.
     """
 
-    with zipfile.ZipFile( c.zipfile_name( ypss ) ) as zip_file:
+    with zipfile.ZipFile( C.zipfile_name( ypss ) ) as zip_file:
         # Note: You cannot use a with() on the one below:
         try:
-            zf = zip_file.open( c.segmentfile_name( ypss ), 'r')
+            zf = zip_file.open( C.segmentfile_name( ypss ), 'r')
             return io.TextIOWrapper(zf, encoding='latin1')
         except KeyError as f:
             print(str(f))
@@ -127,11 +133,16 @@ def variable_prefix(name):
 
 def parse_table_name(line):
     """If line describes a table, return (table_number,table_description)"""
+    # ignore continuation lines
+    if line.endswith("Con."):
+        return (None, None)
     m = TABLE_RE.search( line )
     if m:
         (table,title) = m.group('table','title')
-        return (table.strip(), title.strip())
-    return None
+        table = table.strip()
+        title = title.strip()
+        return (table, title)
+    return (None, None)
 
 def parse_linkage_desc(line):
     """If @line describes a linkage field, return
@@ -167,8 +178,7 @@ def parse_variable_desc(line):
         except ValueError as e:
             return False
 
-        print(segment,maxsize)
-        if (1 <= segment <= c.MAX_CIFSN) and (1 <= maxsize <= 9):
+        if (1 <= segment <= C.MAX_CIFSN) and (1 <= maxsize <= 9):
             if desc[-1:]==':':
                 desc = desc[0:-1]
             return (name,desc,segment,maxsize)
@@ -214,9 +224,8 @@ def csvspec_lines(fname):
         for line in f:
             yield csvspec_prepare_csv_line(line)
     
-def add_named_table(schema, tn, linkage_vars, file_number):
+def add_named_table(schema, table_name, table_desc, linkage_vars, file_number):
     """Add the named table to the schema, and add the linkage variables to the table. """
-    (table_name, table_desc) = tn
     if not schema.has_table(table_name):
         # New table! Create it and add the linkage variables if we have any
 
@@ -225,7 +234,7 @@ def add_named_table(schema, tn, linkage_vars, file_number):
         table = schema.add_table_named(name=table_name, 
                                        desc=table_desc,
                                        delimiter=',',
-                                       attrib = {c.CIFSN:file_number} )
+                                       attrib = {C.CIFSN:file_number} )
 
         # Add any memorized linkage variables. 
         for var in linkage_vars:
@@ -261,12 +270,12 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     year and product are provided so that patches can be applied.
     """
     schema          = Schema()
-    geotable        = schema.add_table_named( name=c.GEO_TABLE, attrib = {c.CIFSN:c.CIFSN_GEO} )
+    geotable        = schema.add_table_named( name=C.GEO_TABLE, attrib = {C.CIFSN:C.CIFSN_GEO} )
 
     ## Patch as necessary
-    if year==2010 and product==c.PL94:
+    if year==2010 and product==C.PL94:
         geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))        
-    if year==2010 and product==c.SF1:
+    if year==2010 and product==C.SF1:
         geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))
 
     linkage_vars    = []
@@ -278,10 +287,6 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     last_line       = ""
 
     for (ll,line) in enumerate(csvspec_lines(csv_filename),1):
-        if "P35" in line:
-            print(f"{ll}:{line}")
-            print(f"table: {table} ")
-            print("---------------------------------------")
         if not in_data_dictionary:
             # Look for the data dictionary chapter
             if is_data_dictionary_line(line) and is_chapter_line(last_line):
@@ -290,20 +295,20 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             last_line = line
             continue
             
-        m = FILE_START_RE.search(line)
+        m = SEGMENT_START_RE.search(line)
         if m:
-            # New file. Note the file number we are in and copy over the linkage variables if we have any.
-            # Make sure that the file number increased. 
-            # Tables do not cross files, so reset the current table and field number
+            # New segment. Note the segment number we are in and copy over the linkage variables if we have any.
+            # Make sure that the segment number increased. 
+            # Tables do not cross segments, so reset the current table and field number
             # 
-            old_segment_number = segment_number
-            segment_number     = int(m.group(1))
-            if segment_number == 1:
-                field_number = 0
+            new_segment_number     = int(m.group(1))
+            if new_segment_number == 1:
+                segment_field_number = 0
             else:
-                assert old_segment_number + 1 == segment_number
+                assert segment_number + 1 == new_segment_number
                 # use memorized linkage variables
-                field_number = len(linkage_vars)    
+                segment_field_number = len(linkage_vars)    
+            segment_number  = new_segment_number
             table           = None
             continue
         
@@ -332,41 +337,47 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         # If this is the first segment, learn the linkage variables from the it
         if segment_number == 1:
             lnk = parse_linkage_desc(line)
-            if lnk and lnk[0] in c.LINKAGE_VARIABLES:
+            if lnk and lnk[0] in C.LINKAGE_VARIABLES:
                 (lnk_name, lnk_desc, lnk_cifsn, lnk_maxsize) = lnk
                 if debug:
                     print(f"Discovered linkage variable {lnk_name}")
                 linkage_vars.append( Variable(name  = lnk_name, 
                                               desc  = lnk_desc, 
-                                              field = field_number,
+                                              field = segment_field_number,
                                               width = lnk_maxsize,
                                               vtype = TYPE_VARCHAR) )
-                field_number += 1
+                segment_field_number += 1
                 continue
 
         # Check for start of a new table, as indicated by table name.
-        table_name = parse_table_name(line)
-        if table_name:
-            table = add_named_table(schema, table_name, linkage_vars, segment_number)
+        (new_table_name,new_table_desc) = parse_table_name(line)
+
+        if new_table_name:
+            ### Patch as necessary for missing segment starts
+            for mss in MISSING_SEGMENT_STARTS:
+                if mss[C.YEAR]==year and mss[C.PRODUCT] == product and mss[C.TABLE] == new_table_name:
+                    segment_number = mss[C.SEGMENT]
+                    segment_field_number   = len(linkage_vars)
+                    table          = None
+            ### End patching
+
+            table = add_named_table(schema, new_table_name, new_table_desc, linkage_vars, segment_number)
 
         # Can we parse variables?
         var = parse_variable_desc(line)
-        if not var or var[0] in c.LINKAGE_VARIABLES:
+        if not var or var[0] in C.LINKAGE_VARIABLES:
             continue
         
         # We found a variable that we can process. 
         (var_name, var_desc, var_cifsn, var_maxsize) = var
 
-        # Make sure variable is for the correct segment
-        assert segment_number == var_cifsn
-
         ###
         ### HANDLE ERRORS IN PDF AND OCR
         ###
 
-        # 2010 SF1: OCR puts the table definition for PCT12G at the bottom of page 6-213
-        if var_name=='PCT012G001':
-            table = add_named_table(schema, ["PCT12G","SEX BY AGE (TWO OR MORE RACES)"], linkage_vars, segment_number)
+        for mts in MISSING_TABLE_STARTS:
+            if mts[C.YEAR]==year and mts[C.PRODUCT] == product and mts[C.VARIABLE] == var_name:
+                table = add_named_table(schema, mts[C.TABLE], mts[C.DESC], linkage_vars, segment_number)
 
         ###
         ### VALIDATE THE VARIABLE. (THIS ALSO VALIDATES OUR PARSING)
@@ -374,6 +385,10 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
 
         if table is None:
             raise RuntimeError(f"Line {ll} we should have a table description. var: {var}")
+
+        # Make sure variable is for the correct segment
+        if segment_number != var_cifsn:
+            raise RuntimeError(f"segment number mismatch: {segment_number} != {var_cifsn} for variable {var_name} in '{line}'")
 
         # Check for duplicate variable name (ignoring errors we know of)
         if var_name in table.varnames():
@@ -394,7 +409,6 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             # if vsn=1 and the vtable hasn't changed, make sure that the vseries has increased
             num = m.group('number')
             if ( prev_var_m.group('tablenumber') == m.group('tablenumber') and num==1 ):
-
                 expected_sequence = chr(ord(prev_var.m.group('sequence'))+1)
                 if expected_sequence != m.group('sequence'):
                     raise ValueError(f"line {ll}: found VSERIES {vseries} for variable {var_name}; "
@@ -420,27 +434,25 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
 
         v = Variable(name   = var_name,
                      desc   = var_desc,
-                     field  = field_number,
+                     field  = segment_field_number,
                      width  = var_maxsize,
                      vtype  = vtype)
 
-        ### Patch as necessary
+            
 
-        # OCR put table definition for table P35G before variable definition for P35F001
-        if year==2010 and product==c.SF1 and tnfv=='P35F':
+        # OCR ERROR: table definition for table P35G before variable definition for P35F001
+        if year==2010 and product==C.SF1 and tnfv=='P35F':
             schema.get_table('P35F').add_variable( v )
-            v = None
 
-        if v is not None:
-            if debug:
-                print(f"Adding variable {var_name} to {table}")
-
+        else:
             if (tnfv is not None) and (table.name != tnfv):
                 raise RuntimeError(f"Extracted table name {tnfv} from variable {var_name} but current table is {table}")
 
+            if debug:
+                print(f"Adding variable {var_name} to {table}")
             table.add_variable( v )
 
-        field_number += 1        # Go to the next field
+        segment_field_number += 1        # Go to the next field
 
     ###
     ### Validate the learned schema
@@ -467,7 +479,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
 
 def get_cvsspec(*,year,product):
     checked = []
-    for filename_fmt in c.SPEC_FILES:
+    for filename_fmt in C.SPEC_FILES:
         filename = filename_fmt.format(year=year, product=product)
         if os.path.exists(filename):
             return filename
@@ -523,16 +535,16 @@ class DecennialData:
             try:
                 if len(filename)==13 and filename[2:5]=='geo':
                     self.files.append({'path':path,
-                                       c.STATE:state,
-                                       c.CIFSN:c.CIFSN_GEO,
-                                       c.YEAR:int(filename[5:9]),
-                                       c.PRODUCT:c.SF1})
+                                       C.STATE:state,
+                                       C.CIFSN:C.CIFSN_GEO,
+                                       C.YEAR:int(filename[5:9]),
+                                       C.PRODUCT:C.SF1})
                 if len(filename)==15:
                     self.files.append({'path':path,
-                                       c.STATE:state,
-                                       c.CIFSN:int(filename[2:7]),
-                                       c.YEAR:int(filename[7:11]),
-                                       c.PRODUCT:c.SF1})
+                                       C.STATE:state,
+                                       C.CIFSN:int(filename[2:7]),
+                                       C.YEAR:int(filename[7:11]),
+                                       C.PRODUCT:C.SF1})
             except ValueError as e:
                 if debug:
                     print("bad filename:",path)
@@ -546,14 +558,14 @@ class DecennialData:
         """
         # Get a list of all the matching files
         table = self.schema.get_table(tableName)
-        if tableName == c.GEO_TABLE:
-            cifsn = c.CIFSN_GEO
+        if tableName == C.GEO_TABLE:
+            cifsn = C.CIFSN_GEO
         else:
-            cifsn = table.attrib[c.CIFSN]
+            cifsn = table.attrib[C.CIFSN]
 
         # Find the files
         paths = [ obj['path'] for obj in self.files if
-                  (obj['year']==self.year and obj['product']==self.product) and obj[c.CIFSN]==cifsn]
+                  (obj['year']==self.year and obj['product']==self.product) and obj[C.CIFSN]==cifsn]
 
         if len(paths)==0:
             print("No file found. Available data files:")
@@ -620,12 +632,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    specfile = c.CSVSPEC_CSV_FILES.format(year=args.year,product=args.product)
+    specfile = C.CSVSPEC_CSV_FILES.format(year=args.year,product=args.product)
     schema  = schema_for_spec(specfile, year=year, product=product, debug=args.debug)
     schema.dump()
 
     if args.geodump:
-        geotable = schema.get_table(c.GEO_TABLE)
+        geotable = schema.get_table(C.GEO_TABLE)
         tt = tydoc.tytable()
         tt.add_head(['LOGRECNO','SUMLEV','STATE','COUNTY','TRACT','BLOCK'])
         rows = 0
@@ -644,7 +656,7 @@ if __name__ == "__main__":
 
     if args.segment:
         for table in schema.tables():
-            if table.attrib[c.CIFSN]==args.segment:
+            if table.attrib[C.CIFSN]==args.segment:
                 table.dump()
     else:
         schema.dump()

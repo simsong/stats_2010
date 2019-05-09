@@ -158,6 +158,11 @@ DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
 DEST_ZIPFILE_DIR    = {2000:ROOT_DIR+'/data/{year}_{product}/dist/{state}',
                        2010:ROOT_DIR+'/data/{year}_{product}/dist'}
 
+TABLE='TABLE'
+VARIABLE='VARIABLE'
+DESC='DESC'
+SEGMENT='SEGMENT'
+
 # linkage variables
 FILEID='FILEID'
 STUSAB='STUSAB'

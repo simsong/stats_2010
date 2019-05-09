@@ -657,7 +657,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
 
-    specfile = C.CSVSPEC_CSV_FILES.format(year=args.year,product=args.product)
+    specfile = get_cvsspec(year=args.year,product=args.product)
     schema  = schema_for_spec(specfile, year=year, product=product, debug=args.debug)
     schema.dump()
 

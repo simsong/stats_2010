@@ -218,15 +218,14 @@ def test_spottest_2010_sf1():
 
     
 TEST_STATE = 'ak'
-TEST_YEAR_PRODUCTS = [(2010,SF1)]
+TEST_YEAR_PRODUCTS = [(2010,PL94),(2010,SF1)]
 def test_parsed_spec_fields_correct():
     """For the each of the years and products, look at the ak files and make sure that we can account for every column.
     Eventually we will want to verify that a line read with the spec scanner from various files match as well.
     """
     errors = 0
     for year,product in TEST_YEAR_PRODUCTS:
-        if product==SF1:
-            chariter = '000'
+        chariter = '000'
         specfile = get_cvsspec(year=year,product=product)
         assert os.path.exists(specfile)
         schema = schema_for_spec(specfile, year=year, product=product)

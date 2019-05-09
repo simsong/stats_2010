@@ -67,7 +67,10 @@ MAX_CIFSN = 48                # highest anywhere
 
 # For self-check, each year/product has a prefix at the beginning of each line
 FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
-                      2010 : {SF1: "SF1ST"}}
+                      2010 : {PL94: "PLST",
+                              SF1: "SF1ST",
+                              SF2: "SF2ST",
+                              AIANSF: "AIANSF" }}
 
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary. In some cases, we have just it

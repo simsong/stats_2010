@@ -61,7 +61,8 @@ Also consistent were the variable names.
 # Currently we don't parse them all due to inconsistencies in the PDF
 # Generate an error if REQUIED_GEO_VARS are not present
 # Note that we have several dashes below
-GEO_VAR_RE   = re.compile(r"^(?P<desc>[A-Z][\-\–\—A-Za-z0-9 ()/.]+) (?P<name>[A-Z]{1,13}) (?P<width>\d{1,2}) (?P<column>\d{1,3}) (?P<datatype>(A|A/N|N))$")
+GEO_VAR_RE   = re.compile(r"^(?P<desc>[A-Z][\-\–\—A-Za-z0-9 ()/.]+) "
+                          r"(?P<name>[A-Z]{1,13}) (?P<width>\d{1,2}) (?P<column>\d{1,3}) (?P<datatype>(A|A/N|N))$")
 
 REQUIRED_GEO_VARS =  ['FILEID', 'STUSAB', 'SUMLEV', 'LOGRECNO', 'STATE', 'COUNTY', 'PLACE', 'TRACT', 'BLKGRP', 'BLOCK' ]
 
@@ -70,7 +71,7 @@ REQUIRED_GEO_VARS =  ['FILEID', 'STUSAB', 'SUMLEV', 'LOGRECNO', 'STATE', 'COUNTY
 CHAPTER_RE    = re.compile(r"^Chapter (\d+)\.")
 DATA_DICTIONARY_RE = re.compile(r"^Data.Dictionary")
 SEGMENT_START_RE = re.compile(r"^File (\d+)")
-TABLE_RE      = re.compile(r"(?P<table>(P|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
+TABLE_RE      = re.compile(r"(?P<table>(P|PL|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
 VAR_RE        = re.compile(r"^("
                            r"(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
                            r"([PH]\d{7,8})|"
@@ -92,6 +93,13 @@ VAR_PREFIX_RE = re.compile(r"^(?P<prefix>[A-Z]+)")
 DUPLICATE_VARIABLES = set(['P027E003', # 2000 SF1
                            'PCT0200001', # 2010 SF1
                            ])
+
+## Missing Geovariables
+place = Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR)
+MISSING_GEOVARIABLES = [{C.YEAR:2000, C.PRODUCT: C.PL94, C.VARIABLE: place},
+                        {C.YEAR:2010, C.PRODUCT: C.PL94, C.VARIABLE: place},
+                        {C.YEAR:2010, C.PRODUCT: C.SF1, C.VARIABLE: place}]
+                        
 
 ## If there are tables that start a segment but there are no corresponding segment starts, put them here.
 MISSING_SEGMENT_STARTS = []
@@ -282,13 +290,12 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     geotable        = schema.add_table_named( name=C.GEO_TABLE, attrib = {C.CIFSN:C.CIFSN_GEO} )
 
     ## Patch as necessary
-    if year==2010 and product==C.PL94:
-        geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))        
-    if year==2010 and product==C.SF1:
-        geotable.add_variable( Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR))
+    for mgv in MISSING_GEOVARIABLES:
+        if mgv[C.YEAR]==year and mgv[C.PRODUCT]==product:
+            geotable.add_variable( mgv[C.VARIABLE] )
 
     linkage_vars    = []
-    cifsn     = False
+    cifsn           = False
     prev_var_m      = None      # previous variable match
     geo_columns     = set()     # track the columns we have used
     table           = None
@@ -452,15 +459,17 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                      width  = var_maxsize,
                      vtype  = vtype)
 
-            
-
         # OCR ERROR: table definition for table P35G before variable definition for P35F001
         if year==2010 and product==C.SF1 and tnfv=='P35F':
             schema.get_table('P35F').add_variable( v )
 
         else:
-            if (tnfv is not None) and (table.name != tnfv):
-                raise RuntimeError(f"Extracted table name {tnfv} from variable {var_name} but current table is {table}")
+            if tnfv is not None:
+                # SPEC ERROR: Year 200 PL94 tables all start PL but the variables all start P
+                if year==2000 and product==C.PL94 and tnfv[0]=='P':
+                    tnfv = tnfv.replace("P","PL")
+                if table.name != tnfv:
+                    raise RuntimeError(f"Extracted table name {tnfv} from variable {var_name} but current table is {table}")
 
             if debug:
                 print(f"Adding variable {var_name} to {table}")
@@ -484,7 +493,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         
     for varname in REQUIRED_GEO_VARS:
         if varname not in geotable.varnames():
-            raise RuntimeError(f"Parser did not find geovariable {varname} in geoheader")
+            raise RuntimeError(f"Parser did not find geovariable {varname} in geoheader for {year} {product}")
 
     for table in schema.tables():
         if len(table.vars()) <= len(linkage_vars):

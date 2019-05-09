@@ -218,7 +218,10 @@ def test_spottest_2010_sf1():
 
     
 TEST_STATE = 'ak'
-TEST_YEAR_PRODUCTS = [(2010,PL94),(2010,SF1)]
+TEST_YEAR_PRODUCTS = [(2000,PL94),
+                      (2010,PL94),
+                      (2010,SF1)]
+
 def test_parsed_spec_fields_correct():
     """For the each of the years and products, look at the ak files and make sure that we can account for every column.
     Eventually we will want to verify that a line read with the spec scanner from various files match as well.
@@ -229,15 +232,15 @@ def test_parsed_spec_fields_correct():
         specfile = get_cvsspec(year=year,product=product)
         assert os.path.exists(specfile)
         schema = schema_for_spec(specfile, year=year, product=product)
-        for file_number in range(1,SEGMENTS_FOR_YEAR_PRODUCT[year][product]+1):
+        for cifsn in range(1,SEGMENTS_FOR_YEAR_PRODUCT[year][product]+1):
             state = TEST_STATE
-            ypss = YPSS(year, product, state, file_number)
+            ypss = YPSS(year, product, state, cifsn)
             for line in open_decennial( ypss ):
                 fields = line.split(",")
                 assert fields[0] == FILE_LINE_PREFIXES[year][product] # FILEID
                 assert fields[1].lower() == state                     # STUSAB
                 assert fields[2] == chariter                          # CHARITER
-                assert int(fields[3]) == file_number                  # CIFSN
+                assert int(fields[3]) == cifsn                  # CIFSN
                 assert int(fields[4]) == 1                            # LOGRECNO
 
                 # make sure that the total number of fields matches those for our spec.
@@ -246,19 +249,19 @@ def test_parsed_spec_fields_correct():
                 total_fields = 0
                 tables_in_this_file = []
                 for table in schema.tables():
-                    if table.attrib['CIFSN']==file_number:
+                    if table.attrib['CIFSN']==cifsn:
                         tables_in_this_file.append(table)
                         if total_fields==0:
                             total_fields += len(table.vars())
                         else:
                             total_fields += len(table.vars()) - 5 # we only have these five fields on the first table
                 if len(fields) != total_fields:
-                    print(f"File {file_number} Found {len(fields)} values in the file; expected {total_fields}")
+                    print(f"File {cifsn} Found {len(fields)} values in the file; expected {total_fields}")
                     print(f"Tables found:")
                     for table in tables_in_this_file:
                         print(f"{table.name} has {len(table.varnames())} variables according to the specification.")
                     print()
-                    print(f"First line of {TEST_STATE} file part {file_number}:")
+                    print(f"First line of {TEST_STATE} file part {cifsn}:")
                     print(line)
                     # Make a list of all the variables I think I have, and the value I found
                     file_vars = []
@@ -274,7 +277,7 @@ def test_parsed_spec_fields_correct():
                     for (i,(a,b)) in enumerate(zip(file_vars,fields),1):
                         if a[-3:]=='001':
                             print()
-                        print(f"file {file_number} field {i}  {a}   {b}")
+                        print(f"file {cifsn} field {i}  {a}   {b}")
                     errors += 1
                 # Only look at the first line:
                 break

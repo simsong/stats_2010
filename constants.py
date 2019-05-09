@@ -66,7 +66,8 @@ SEGMENTS_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
 MAX_CIFSN = 48                # highest anywhere
 
 # For self-check, each year/product has a prefix at the beginning of each line
-FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
+FILE_LINE_PREFIXES = {2000 : {PL94: "uPL",
+                              SF1: "uSF1,"},
                       2010 : {PL94: "PLST",
                               SF1: "SF1ST",
                               SF2: "SF2ST",
@@ -123,7 +124,7 @@ yy is the number of the file
 # - In 2010, each ZIP file contains *all* of the state's segments.
 
 WWW_SERVER_2000 = "https://www2.census.gov/census_2000/datasets/"
-URL_2000_PL94   = WWW_SERVER_2000 + "redistricting_file--pl_94-171/{state_name}/{state}{segment}.upl.zip"
+URL_2000_PL94   = WWW_SERVER_2000 + "redistricting_file--pl_94-171/{state_name}/{state}000{segment}.upl.zip"
 URL_2000_SF1    = WWW_SERVER_2000 + "Summary_File_1/{state_name}/{state}{segment}_uf1.zip"
 URL_2000_SF2    = WWW_SERVER_2000 + "Summary_File_2/{state_name}/{state}{segment}_uf2.zip"
                       
@@ -214,11 +215,15 @@ def zipfile_name(ypss):
 
 def segmentfile_name(ypss):
     """The name within the zipfile of the requested segment"""
-    ext = PRODUCT_EXTS[ypss.product]
-    return "{state:2}{chariter:03}{segment:02}{year:04}.{ext}".format(
-        state=ypss.state,
-        chariter=int(ypss.chariter),
-        segment=int(ypss.segment),
-        year=int(ypss.year),
-        ext = ext)
+    if ypss.year==2000 and ypss.product==PL94:
+        return "{state:2}000{segment:02}.upl".format(state=ypss.state,
+                                                     segment=int(ypss.segment))
+    if ypss.year==2010:
+        ext = PRODUCT_EXTS[ypss.product]
+        return "{state:2}{chariter:03}{segment:02}{year:04}.{ext}".format(
+            state=ypss.state,
+            chariter=int(ypss.chariter),
+            segment=int(ypss.segment),
+            year=int(ypss.year),
+            ext = ext)
 

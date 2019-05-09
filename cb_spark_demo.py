@@ -103,12 +103,12 @@ if __name__=="__main__":
                 #for obj in ypfiles:
                 #    print(obj)
                 for state in STATES:
-                    for file_number in range(SEGMENTS_PER_PRODUCT[year][product]):
-                        objs = [obj for obj in ypfiles if obj[STATE]==state and obj[CIFSN]==file_number]
+                    for cifsn in range(SEGMENTS_FOR_YEAR_PRODUCT[year][product]):
+                        objs = [obj for obj in ypfiles if obj[STATE]==state and obj[CIFSN]==cifsn]
                         if len(objs)==0:
-                            print(f"** error. no files for {product} {year} {state} file number {file_number}")
+                            print(f"** error. no files for {product} {year} {state} cifsn {cifsn}")
                         elif len(objs)>1:
-                            print(f"** error. too many files for {product} {year} {state} file number {file_number}:")
+                            print(f"** error. too many files for {product} {year} {state} cifsn {cifsn}:")
                             for obj in objs:
                                 print(obj)
                             

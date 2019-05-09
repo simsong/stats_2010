@@ -20,8 +20,8 @@ multiple files for each state are called "segments" and sometimes they
 are called "files". 
 
 We try to consistently use the term:
-  - "file_number" to describe the numbers that go from 1..N. 
-  - segment to describe the name "geo" and the zero-filed representation of the file_number, 
+  - "cifsn" to describe the numbers that go from 1..N. 
+  - segment to describe the name "geo" and the zero-filed representation of the cifsn, 
     which seems to be numbers 00000 through {N:05d}
 """
 
@@ -52,7 +52,7 @@ PRODUCT_EXTS = { PL94:'pl',
                  SF4:'sf4'}
                     
 # Number of files per data product
-FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
+SEGMENTS_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
                                  SF1 : 39,
                                  SF2 : -1, 
                                  SF3 : -1,
@@ -102,7 +102,7 @@ SEGMENT_FORMAT="{segment_number:05d}"
 GEO="geo"
 GEO_TABLE='geo'
 
-FILENAME_2000_SF2 = "{state}{characteristic_iteration}{file_number}_uf2.zip"
+FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
 """
 Naming convention for SF2 data files is ssiiiyy_uf2.zip. 
 iii is the characteristic iteration (total population, race groups, American Indian and Alaska 
@@ -131,14 +131,7 @@ URL_2010_SF2  = WWW_SERVER_2010+'/05-Summary_File_2/{state_name}/{state}2010.sf2
 
 ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
 
-SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
-                               SF1 : 40},
-                        2010: {PL94: 3,
-                               SF1 : 48}}
-
-
-
-# SEGMENTS_PER_PRODUCT includes the 'geo' segment, so add 1 to the largest segment number
+# Census 2000 and 2010 packaged differently
 DOWNLOAD_SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
                                         SF1 : 40},
                                  2010: {PL94: 1,

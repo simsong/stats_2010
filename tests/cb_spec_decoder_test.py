@@ -84,23 +84,19 @@ def test_line_13306():
     assert segment==48
 
 
-SF1_LINE_7837='PCT12G.   SEX BY AGE (TWO OR MORE RACES) [209]\227Con.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
-def test_line_7837():
-    tn = parse_table_name( csvspec_prepare_csv_line( SF1_LINE_7837 ))
-    assert tn[0]=='PCT12G'
-    assert tn[1]=='SEX BY AGE (TWO OR MORE RACES)'
-
 SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 def test_parse_table_name():
-    assert parse_table_name(csvspec_prepare_csv_line(SF1_H22_LINE))
+    (table,title) = parse_table_name(csvspec_prepare_csv_line(SF1_H22_LINE))
+    assert table=='H22'
+    assert title=='ALLOCATION OF TENURE'
 
 def test_H22_LINE_parses_chapter6():
     for line in csvspec_lines(SF1_CHAPTER6_CSV):
         if line.strip().startswith("H22."):
             # I have the line. Make sure we find the tables in it.
-            tn = parse_table_name(line)
-            assert tn[0]=='H22'
-            assert tn[1]=='ALLOCATION OF TENURE'
+            (table,title) = parse_table_name(line)
+            assert table=='H22'
+            assert title=='ALLOCATION OF TENURE'
             return True
     raise RuntimeError(f"SF1_H22_LINE not found in {SF1_CHAPTER6_CSV}")
     
@@ -115,9 +111,9 @@ def tables_in_file(fname):
     """Give a chapter6 CSV file, return all of the tables in it."""
     tables = {}
     for line in csvspec_lines(fname):
-        tn = parse_table_name(line)
-        if tn is not None:
-            tables[tn[0]] = tn[1]
+        (table,title) = parse_table_name(line)
+        if table:
+            tables[table] = title
     return tables
 
 def test_tables_in_sf1():
@@ -130,7 +126,9 @@ def test_tables_in_sf1():
         assert f"PCT{pct}" in tables
     for i in range(ord('A'),ord('O')+1):
         ch = chr(i)
-        assert f"PCT12{ch}" in tables
+        # We don't parse PCT12G because it OCRs badly
+        if ch!='G':
+            assert f"PCT12{ch}" in tables
     for h in range(1,23):
         assert f"H{h}" in tables
     for i in range(ord('A'),ord('I')+1):
@@ -220,7 +218,6 @@ def test_spottest_2010_sf1():
 
     
 TEST_STATE = 'de'
-IGNORE_FILE_NUMBERS = [12]
 def test_parsed_spec_fields_correct():
     """For the each of the years and products, look at the ak files and make sure that we can account for every column.
     Eventually we will want to verify that a line read with the spec scanner from various files match as well.
@@ -233,9 +230,7 @@ def test_parsed_spec_fields_correct():
             ch6file = CHAPTER6_CSV_FILE.format(year=year,product=product)
             assert os.path.exists(ch6file)
             schema = schema_for_spec(ch6file, year=year, product=product)
-            for file_number in range(1,FILES_FOR_YEAR_PRODUCT[year][product]+1):
-                if file_number in IGNORE_FILE_NUMBERS:
-                    continue
+            for file_number in range(1,SEGMENTS_FOR_YEAR_PRODUCT[year][product]+1):
                 state = TEST_STATE
                 ypss = YPSS(year, product, state, file_number)
                 for line in open_decennial( ypss ):
@@ -304,23 +299,22 @@ def test_find_data_dictionary():
     assert is_data_dictionary_line(AINSF_LINE_3376)
     
 def test_find_all_data_dictionaries():
-    for year in YEARS:
-        for product in PRODUCTS:
-            filename = get_cvsspec(year=year, product=product)
-            print(filename)
-            last_line = ""
-            found = False
-            if not any( (is_chapter_line( line) for line in csvspec_lines(filename))) :
-                raise RuntimeError(f"{filename} has no chapter lines in it")
+    for (year, product) in year_product_iterator():
+        filename = get_cvsspec(year=year, product=product)
+        print(filename)
+        last_line = ""
+        found = False
+        if not any( (is_chapter_line( line) for line in csvspec_lines(filename))) :
+            raise RuntimeError(f"{filename} has no chapter lines in it")
 
-            if not any( (is_data_dictionary_line(line) for line in csvspec_lines(filename))) :
-                raise RuntimeError(f"{filename} has no data dictionary lines in it")
+        if not any( (is_data_dictionary_line(line) for line in csvspec_lines(filename))) :
+            raise RuntimeError(f"{filename} has no data dictionary lines in it")
 
-            for line in csvspec_lines(filename):
-                if is_chapter_line(last_line) and is_data_dictionary_line(line):
-                    found = True
-                    break
-                last_line = line
-            if not found:
-                raise RuntimeError(f"{filename} does not appear to have a data dictionary")
-            print("---")
+        for line in csvspec_lines(filename):
+            if is_chapter_line(last_line) and is_data_dictionary_line(line):
+                found = True
+                break
+            last_line = line
+        if not found:
+            raise RuntimeError(f"{filename} does not appear to have a data dictionary")
+        print("---")

@@ -36,6 +36,7 @@ import re
 import zipfile
 import io
 import sys
+import copy
 
 # File locations
 
@@ -95,10 +96,12 @@ DUPLICATE_VARIABLES = set(['P027E003', # 2000 SF1
                            ])
 
 ## Missing Geovariables
-place = Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR)
-MISSING_GEOVARIABLES = [{C.YEAR:2000, C.PRODUCT: C.PL94, C.VARIABLE: place},
-                        {C.YEAR:2010, C.PRODUCT: C.PL94, C.VARIABLE: place},
-                        {C.YEAR:2010, C.PRODUCT: C.SF1, C.VARIABLE: place}]
+chariter_var = Variable(name = 'CHARITER', column = (14-1), width=3, vtype=TYPE_INTEGER)
+place_var = Variable(name = 'PLACE', column = (46-1), width=5, vtype=TYPE_VARCHAR)
+MISSING_GEOVARIABLES = [{C.YEAR:2000, C.PRODUCT: C.PL94, C.VARIABLE: place_var},
+                        {C.YEAR:2000, C.PRODUCT: C.PL94, C.VARIABLE: chariter_var},
+                        {C.YEAR:2010, C.PRODUCT: C.PL94, C.VARIABLE: place_var},
+                        {C.YEAR:2010, C.PRODUCT: C.SF1, C.VARIABLE: place_var}]
                         
 
 ## If there are tables that start a segment but there are no corresponding segment starts, put them here.
@@ -287,13 +290,6 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     year and product are provided so that patches can be applied.
     """
     schema          = Schema()
-    geotable        = schema.add_table_named( name=C.GEO_TABLE, attrib = {C.CIFSN:C.CIFSN_GEO} )
-
-    ## Patch as necessary
-    for mgv in MISSING_GEOVARIABLES:
-        if mgv[C.YEAR]==year and mgv[C.PRODUCT]==product:
-            geotable.add_variable( mgv[C.VARIABLE] )
-
     linkage_vars    = []
     cifsn           = False
     prev_var_m      = None      # previous variable match
@@ -301,6 +297,16 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     table           = None
     in_data_dictionary = False
     last_line       = ""
+
+    ### Read the geography header specification
+
+    geotable        = schema.add_table_named( name=C.GEO_TABLE, attrib = {C.CIFSN:C.CIFSN_GEO} )
+
+    ### Patch geo specification necessary
+    for mgv in MISSING_GEOVARIABLES:
+        if mgv[C.YEAR]==year and mgv[C.PRODUCT]==product:
+            geotable.add_variable( mgv[C.VARIABLE] )
+
 
     for (ll,line) in enumerate(csvspec_lines(csv_filename),1):
         if not in_data_dictionary:
@@ -313,9 +319,10 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             
         m = SEGMENT_START_RE.search(line)
         if m:
-            # New segment. Note the segment number we are in and copy over the linkage variables if we have any.
-            # Make sure that the segment number increased. 
-            # Tables do not cross segments, so reset the current table and field number
+            # New segment. Note the segment number we are in and copy
+            # over the linkage variables if we have any.  Make sure
+            # that the segment number increased.  Tables do not cross
+            # segments, so reset the current table and field number
             # 
             new_cifsn     = int(m.group(1))
             if new_cifsn == 1:
@@ -353,7 +360,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         # If this is the first segment, learn the linkage variables from the it
         if cifsn == 1:
             lnk = parse_linkage_desc(line)
-            if lnk and lnk[0] in C.LINKAGE_VARIABLES:
+            if lnk and lnk[0] in C.LINKAGE_VARIABLE_NAMES:
                 (lnk_name, lnk_desc, lnk_cifsn, lnk_maxsize) = lnk
                 if debug:
                     print(f"Discovered linkage variable {lnk_name}")
@@ -375,13 +382,28 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                     cifsn = mss[C.SEGMENT]
                     segment_field_number   = len(linkage_vars)
                     table          = None
+
+            ### If this is the PL94 for 2000, manually add the linkage variables
+            if year==2000 and product==C.PL94 and len(linkage_vars)==0:
+                for varname in C.LINKAGE_VARIABLE_NAMES:
+                    try:
+                        var = copy.deepcopy(geotable.get_variable( varname ))
+                        var.field = segment_field_number
+                        segment_field_number += 1
+                        linkage_vars.append( var )
+                    except KeyError:
+                        print("geotable:")
+                        geotable.dump()
+                        raise RuntimeError(f"Cannot find {varname}")
+                    
+
             ### End patching
 
             table = add_named_table(schema, new_table_name, new_table_desc, linkage_vars, cifsn)
 
         # Can we parse variables?
         var = parse_variable_desc(line)
-        if not var or var[0] in C.LINKAGE_VARIABLES:
+        if not var or var[0] in C.LINKAGE_VARIABLE_NAMES:
             continue
         
         # We found a variable that we can process. 

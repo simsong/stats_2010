@@ -1,0 +1,378 @@
+bplist00�_WebMainResource�	
+_WebResourceMIMEType_WebResourceTextEncodingName^WebResourceURL_WebResourceFrameName_WebResourceDataZtext/plainUUTF-8_Khttps://www2.census.gov/census_2000/datasets/Summary_File_2/0README_SF2.txtPO+'<html><head></head><body><pre style="word-wrap: break-word; white-space: pre-wrap;">	README 
+	Census 2000 Summary File 2 Delivered via FTP
+	
+Contents
+About the FTP Application            
+Other Sources of the Data
+File Naming Convention
+Technical Documentation
+Data Records and  Segmentation
+File Record Layout
+FTP File Transfer
+UnZipping the Files
+Spreadsheet and Data Base Aids
+Maximum File Sizes
+
+  
+¦  For step-by-step instructions for moving the data and the structure into a spreadsheet  (including    
+      screen shots), please see  www.census.gov/support/SF2ASCII.html .  
+
+¦  Structure files in Access97 and other formats are available at                                                             
+        http://www.census.gov/support/2000/SF2/ .
+
+¦ We are unable to provide one-on-one support for applications of the data to specific 
+        spreadsheets or data base software.
+
+ 
+
+	About the FTP Application
+
+¦	  The application is intended for experienced users of census data, compressed files, and   
+spreadsheet/database software. 
+
+¦	  FTP users should have a fast file transfer capability. 
+
+¦	  Users of the FTP application need to unzip the compressed file after downloading, then import it 
+into the spreadsheet/database software of their choice for data analysis and      table presentation.
+
+	Other Sources of the Data
+
+¦	American FactFinder at factfinder.census.gov .
+
+	¦  This system provides Internet access to all tables plus additional derived tables called Quick 
+Tables and Geographic Comparison Tables.
+
+¦	The system can create thematic maps on various data items.
+
+¦	The system can create reference maps defining the geographic area.
+
+¦	Tables are available on American FactFinder on the morning of public release. 
+
+
+¦	DVD/CD-ROM 
+
+	¦  CD-ROMs with software are available for individual states on or shortly after the public 
+release date. 
+
+¦	DVDs are created after all states are released.
+
+¦	They can be purchased online ($50 for CD-ROM; $70 for DVD)  from the Census    Catalog  
+(www.census.gov, select Census Catalog from left sidebar)  or ordered by telephone from the 
+Customer Services Center (301-457-INFO.
+
+¦	DVDs and CD-ROMs contain the same software.   
+
+¦	Software is  proprietary but are in a format the can easily be imported into data    bases or      
+spreadsheets.
+
+¦	CD-ROMs with software are available for individual states on or shortly after the public 
+release date.  
+
+	File Naming Conventions
+
+¦	 The naming convention for geographic header files is ssgeo_uf2.zip
+
+¦	ss is USPS state abbreviation
+
+	¦  The codes are in technical documentation on page 7-1, located at                    
+http://www.census.gov/prod/cen2000/doc/sf2.pdf
+
+¦	geo_uf2.zip is a constant across SF2 geographic header names.
+
+¦	Naming convention for SF2 data files is ssiiiyy_uf2.zip. 
+
+¦	ss is USPS state abbreviation
+
+¦	iii is the characteristic iteration (total population, race groups, American Indian and Alaska 
+Native tribes, and Hispanic/Latino groups)
+
+	¦  Characteristic iteration codes are in the Appendix H of the technical documentation, 
+which is available at http://www.census.gov/prod/cen2000/docs/sf2.pdf - page=278.	
+		
+¦	yy is the number of the file
+
+	¦  Valid codes are 01 through 04.  See below for distribution of tables across files.
+
+¦	_uf2.zip is a constant across SF2 data file names
+
+	Technical Documentation
+
+¦	  The complete technical documentation for SF2 is available at                     
+	http://www.census.gov/prod/cen2000/doc/sf2.pdf .
+
+	Data Records and Segmentation
+
+¦   If the total population (iteration 001) for a geographic entity is less than 100, there will be no 
+geographic header record and no data records for that area.  
+
+	¦    Example:  The population of One Road township, Roberts County, South Dakota is 54.  There will 
+        be no records, either geographic header or data, for this area.  
+
+¦    If the population for a race, tribe, or Hispanic/Latino group (iterations 002-463) within a            
+geographic entity is 100 or greater, geographic header and data records will be present for the 
+group.  
+
+	¦  Example:  The Black or African American alone population for Bremer County, Iowa is 110.  There 
+     will be a geographic header record and data records for the Black/African American iteration            
+     (iteration 004) for this area.  
+
+¦	If the population for a race, tribe, or Hispanic/Latino group (iterations 002-463) within a 
+geographic entity is less than 100, geographic header and data records will not be present 
+for that group.  
+
+	¦  Example:  The Hispanic/Latino population for South Harding CCD, Harding County, 
+New Mexico is 19.  There will be no data records for the Hispanic/Latino iteration 
+(iteration 400) for this area.  
+
+
+¦	Table distribution across data files is as follows:
+
+		
+	File name			Number 			Starting 		Ending
+				of data 			matrix		matrix
+				items			 number		number 
+	
+	
+	ssiii01_uf2		219			PCT1		PCT4
+									
+	ssiii02_uf2		236			PCT5		PCT19	
+				
+	ssiii03_uf2		174			PCT20		PCT36
+
+	ssiii04_uf2		137			HCT1		HCT11
+
+
+¦	Five fields are carried over from the geographic header file into each data file. 
+
+¦	These fields are file identification (FILEID), state abbreviation (STUSAB),        
+characteristic iteration (CHARITER), characteristic iteration file sequence           number 
+(CIFSN) and logical record number (LOGRECNO). 
+
+	¦  These five fields appear in the geographic header record are in a fixed field format.  
+
+¦	These five fields appear in the four data files in a comma delimited format.  
+
+¦	These fields are used to "match" records in the four data files for a particular      
+characteristic iteration to the geographic information in the geoheader.  
+
+¦	A file set structure schematic appears in the technical documentation (page 2-4)  which is 
+located at http://www.census.gov/prod/cen2000/doc/sf2.pdf
+
+	File Record Layout
+	
+¦  For a layout of the individual tables for each file, see the technical documentation at 
+www.census.gov/prod/cen2000/doc/sf2.pdf .  Select Chapter 6, Summary Table Outlines.  
+
+FTP File Transfer
+
+¦	Summary File 2 (SF2) FTP directory is at ftp2.census.gov/census_2000/datasets/Summary_File_2 . 
+
+¦	 Each state directory provides all files available for the identified state. 
+
+¦	 The directory for each state has a geographic header file and four files for each   iteration 
+(total population, race, tribe, or Hispanic/Latino group) having a population of 100 or 
+more.
+
+¦	 There is a potential (but not likely) for 1,000 files for each state—one geographic header 
+file and four data for each of the 250 iterations. This occurs only when each of the 250 
+groups has a population of 100 or more.  
+
+¦	The chart on page 3 of this document lists the table numbers available in each of the four 
+files.  
+
+¦	Once uncompressed, the files are in a flat ASCII format.
+
+¦	No software is provided.
+
+¦	Downloading multiple files
+
+¦	UNIX environment—"mget" subcommand allows transfer of multiple files using the 
+wildcard character.  
+	¦  Example:  ftp&gt; prompt off
+ftp&gt;mget ne*  (for this example, Nebraska is selected). 
+
+¦	Windows Environment—many FTP products have been developed which have the 
+capability to download multiple files with a single command.  
+
+¦	We used the ws_ftp product in testing the download.
+
+	¦  A demonstration copy is available at http://www.ipswitch.com/  .                      
+     
+¦	An Internet search using the term "download multiple files" yielded other similar 
+products.  
+
+¦	For step-by-step instructions with screen shots, please see 
+http://www.census.gov/support/2000/SF2/  ..
+
+	Unzipping the Files	
+
+¦	Files compress at approximately 95% compression.
+
+¦	Any standard UnZIP software package can be used.
+
+¦	In testing we used PKZIP for Windows.  It's available at www.pkware.com. .
+
+¦	Unzipped file is in flat ASCII format.
+
+¦	For step-by-step instructions with screen shots, please see 
+http://www.census.gov/support/2000/SF2/  .
+
+
+	Unzipped Files
+
+¦	  Geographic header file has fixed fields.
+
+¦	  File data dictionary is at  http://www.census.gov/prod/cen2000/doc/sf2.pdf . See chapter 7 for the 
+data dictionary.  
+
+¦	 Data files (files 01-04) have comma delimited fields
+
+¦	Fields from the geographic header file carried over to the data files are comma   
+delimited in the data files .
+
+	Spreadsheet and Data Base Aids
+
+¦	 For step-by-step instructions with screen shots for moving the data and structure to a spreadsheet, 
+please see www.census.gov/support/SF2ASCII.html .  
+
+¦	Structure files in Access97 and other formats are available at 
+http://www.census.gov/support/2000/SF2/ .  
+
+¦	We are unable to provide one-on-one support for applications of the data to specific       
+spreadsheets or data base software.
+
+	Maximum File Sizes
+
+¦	The figures below are the maximum file sizes for SF2 and are identical to the sizes for   SF1.  
+
+¦	Size of state files will vary considerably from these figures, depending on the number of  total 
+population, race, tribe, or Hispanic/Latino groups within the state having a population of 100 or 
+over.  
+
+¦	As state tables are run, we will update this listing.  
+
+
+		     	         SF2
+
+	GeoHeader and File01-File04
+	        Maximum File Sizes
+	
+					unzipped	                  zipped
+
+	State		
+
+	Alabama				1.7G		87M								
+
+	Alaska				.3G		11.7M						
+
+	Arizona				1.5G		51M		
+
+	Arkansas				1.5G		35M
+
+	California				5.1G	    	  260M			
+
+	Colorado				1.5G		75M	
+
+	Connecticut			  .6G		28M			
+
+	Delaware			         	 .2G		7.8M	
+
+	District of 
+	  Columbia			  .6G		4.6M
+
+	Florida				3.4G	      170M
+
+	Georgia				2.3G	      110M
+
+	Hawaii 			  	  .2G     	      27.8M		
+
+	Idaho			    	 .9G	       12.5M
+
+	Illinois				4.1G	         209M
+
+	Indiana				2.1G	          108M
+
+	Iowa				1.7G		37M
+
+	Kansas				1.7G		88M		
+
+	Kentucky				1.1G		58M
+
+	Louisiana				1.5G		77M		
+
+	Maine				.5G		  10M
+
+	Maryland				.9G		   54M			
+
+	Massachusetts			1.2G		58M		
+
+	Michigan				2.7G		136M
+
+	Minnesota		         	  2G	      	 105M		
+
+	Mississippi			1.4G		 33.5M		
+
+	Missouri				2.5G		125M	
+
+	Montana				   .9G		12M
+
+	Nebraska				1.4G		21M		
+
+	Nevada				   .7G		23M		
+
+	New     
+	Hampshire		  	   .3G		8M		
+
+	New Jersey			 1.7G		82M	
+
+	New Mexico		  	1.4G		26M	
+
+	New York				3.6G		180M		
+
+	North Carolina			2.5G		123M		
+
+	North Dakota		     	  .9G	    	  8M
+
+	Ohio				2.8G		138M			
+
+	Oklahoma			1.8G		  90M	
+
+	Oregon				1.4G		 71M		
+
+	Pennsylvania	                                        3.5G		174M		
+
+	Rhode Island			.24G		  12M	
+
+	South Carolina			1.5G		  35M		
+
+	South Dakota			.8G		  12M	
+
+	Tennessee			1.9G	                      42M		
+
+	Texas				6.8G	                     198M		
+
+	Utah				 .8G	                   21M			
+
+	Vermont				.25G	       	    8M		
+
+	Virginia				1.5G	     	      64M		
+
+	Washington			   2G		  100M		
+
+	West Virginia	  	   	  .9G		 18M				
+
+	Wisconsin			   2G		  100M
+
+	Wyoming			 	   7G	       	     6M
+
+	Puerto Rico			  .8G		    35M		
+ 
+
+ 
+ 
+
+
+1
+
+</pre></body></html>    ( > \ k � � � � � �                           ,

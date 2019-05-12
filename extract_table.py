@@ -20,6 +20,8 @@ def extract_table(state,sumlev,table):
 # 3 - CIFSN
 # 4 - LOGRECNO
 
+GEOCODE="{state_fips:02d}{county:03d}{tract:06}{block:04d}"
+
 
 if __name__=='__main__':
     conn = dbload.db_connection()
@@ -31,7 +33,7 @@ if __name__=='__main__':
         (a,b) = c.fetchall()[0]
         print("Minimum tract: {}  maximum tract: {}".format(a,b))
         c.execute("SELECT logrecno,county,tract,block FROM blocks where STATE=?",(state.upper(),))
-        block_geocodes = {row[0]:"{state_fips:02d}{county:03d}{tract:05d}{block:04d}".format(state_fips=fips,county=row[1],tract=row[2],block=row[3])
+        block_geocodes = {row[0]:GEOCODE.format(state_fips=fips,county=row[1],tract=row[2],block=row[3])
                           for row in c.fetchall()}
         print(f" {state} number of blocks: {len(block_geocodes)}")
         for part in [1,2]:

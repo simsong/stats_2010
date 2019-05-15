@@ -26,9 +26,13 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 import dbrecon
 from ctools.timer import Timer
 
+def sf1_zipfilename(state_abbr):
+    return dbrecon.dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip")
+
 def open_segment(state_abbr,segment):
     """ Given a state abbreviation and a segment number, open it"""
-
+    sf1_input_file = f"{state_abbr}{segment:05d}2010.sf1"
+    return dbrecon.dopen(sf1_input_file, zipfilename=sf1_zipfilename(state_abbr), encoding='latin1')
 
 def process_state(state_abbr):
     logging.info(f"{state_abbr}: building data frame with all SF1 measurements")
@@ -40,9 +44,27 @@ def process_state(state_abbr):
         # the order of the layout to read the csv.
 
         layout           = json.load(dbrecon.dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
-        sf1_zipfilename  = dbrecon.dpath_expand("$SF1_DIST/{state_abbr}2010.sf1.zip").format(state_abbr=state_abbr)
         geo_filename     = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
         done_filename    = f"$ROOT/{state_abbr}/completed_{state_abbr}_02"
+
+        # Generate the CSV header that the original code used
+        # This looks weird, but we are trying to match the original files exactly.
+        fields = ['']
+        xy = 'x'
+        for i in range(1,48):
+            try:
+                heads = layout[f"SF1_{i:05d}.xsd"]
+                [fields.append(head+"_"+xy) for head in heads[0:4]]
+                if i==1:
+                    assert heads[4]=='LOGRECNO'
+                    fields.append(heads[4])
+                [fields.append(head) for head in heads[5:]]
+                xy = 'y' if xy=='x' else 'x'
+            except KeyError as e:
+                pass
+        [fields.append(head) for head in "STATE,COUNTY,TRACT,BLOCK,BLKGRP,SUMLEV,geoid".split(",")]
+        print(",".join(fields))
+        exit(0)
 
         # done_filename is created when files are generated
         # If there are no county directories, delete the done file.

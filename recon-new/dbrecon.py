@@ -25,8 +25,6 @@ import socket
 import pickle
 import xml.etree.ElementTree as ET
 
-sys.path.append( os.path.join(os.path.dirname(__file__) , "..") )
-
 import ctools.s3 as s3
 from dfxml.python.dfxml.writer import DFXMLWriter
 from total_size import total_size

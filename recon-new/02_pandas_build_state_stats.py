@@ -166,7 +166,7 @@ def process_state(state_abbr):
     if not dpath_exists(f"$SRC/layouts/layouts.json"):
         raise FileNotFoundError("Cannot access layouts.json")
     if not dpath_exists(f"$SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv"):
-        raise FileNotFoundError("Cannot access DATA_FIELD_DESCRIPTORS_classified.csv")
+        raise FileNotFoundError("Cannot access $SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv")
 
     sf1_zipfilename  = SF1_ZIP_FILE(state_abbr=state_abbr)
     geo_filename     = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"

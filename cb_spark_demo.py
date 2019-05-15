@@ -13,7 +13,7 @@ import os
 import sys
 
 from constants import *
-from decennial_df import DecennialDF,files,register_files,unique_selector
+#from decennial_df import DecennialDF,files,register_files,unique_selector
 
 import cb_spec_decoder
 import ctools.cspark as cspark

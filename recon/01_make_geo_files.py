@@ -78,7 +78,7 @@ def make_county_list(state_abbr:str):
     #
     #
     #
-    print("Creating {state_county_list_filename}")
+    print(f"Creating {state_county_list_filename}")
     geo = csv.DictReader(dopen(geo_filename, 'r', encoding='latin1'))
     state_abbr_dict={}
     for s in dbrecon.STATES:
@@ -104,21 +104,21 @@ if __name__=="__main__":
     parser.add_argument("--config", help="config file")
     parser.add_argument("--showcounties", help="Display all counties for state frmo files that were created", action='store_true')
     parser.add_argument("state_abbr", nargs='*')
-    parser.add_argument("--all", help="Do all states", action='store_true')
     dbrecon.argparse_add_logging(parser)
-    args = parser.parse_args()
-    config = dbrecon.get_config(filename=args.config)
-    dbrecon.setup_logging(config=config,loglevel=args.loglevel,prefix="01geo")
-    logfname = logging.getLogger().handlers[0].baseFilename
+    args     = parser.parse_args()
+    config   = dbrecon.setup_logging_and_get_config(args,prefix="01mak")
 
-    if args.all:
-        states = dbrecon.all_state_abbrs()
-    else:
+    if args.state_abbr:
         states = args.state_abbr
+    else:
+        states = dbrecon.all_state_abbrs()
               
+    # Make sure the output directory for the layouts exists
+
     for state_abbr in states:
         if args.showcounties:
             print(dbrecon.counties_for_state(state_abbr))
         else:
             make_county_list(state_abbr)
 
+    print("Made geofiles for: {}".format(" ".join(states)))

@@ -6,6 +6,7 @@
 
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists
 import dbrecon
+from dfxml.python.dfxml.writer import DFXMLWriter
 from math import floor
 import csv
 import time
@@ -34,7 +35,8 @@ GUROBI_STATUS_CODES={2:"optimal", 3:"infeasible"}
 
 # Details on Gurobi output:
 # http://www.gurobi.com/documentation/8.1/refman/mip_logging.html
-GUROBI_THREADS=16
+GUROBI_MAX_SOLVES=16
+GUROBI_MAX_THREADS=8
 
 
 ##function for timing later
@@ -56,6 +58,9 @@ class RunGurobi:
 
     def sol_filename(self):
         return dbrecon.dpath_expand(dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=self.tract_code))
+
+    def sol_exists(self):
+        return dpath_exists(self.sol_filename())
 
     def get_model(self):
         if not dbrecon.dpath_exists(self.lp_filename):
@@ -82,8 +87,8 @@ class RunGurobi:
             raise RuntimeError("Don't know how to read model from {}".format(self.lp_filename))
 
     def run_model(self):
-        with tempfile.NamedTemporaryFile(suffix='.log',encoding='utf-8') as tf:
-            self.model.setParam("Threads",GUROBI_THREADS)
+        with tempfile.NamedTemporaryFile(suffix='.log',encoding='utf-8',mode='w+') as tf:
+            self.model.setParam("Threads",args.j2)
             print("tf.name:",tf.name,type(tf.name))
             self.model.setParam("LogFile",tf.name)
 
@@ -111,7 +116,7 @@ class RunGurobi:
             # Save the results of the log 
             tf.seek(0)
             for line in tf:
-                logging.info(line)
+                logging.info(line[0:-1]) # remove the end of line
             tf.seek(0)
             
                 
@@ -122,10 +127,13 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
     assert len(tract)==6
     lp_filename = dbrecon.find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
     if not lp_filename:
-        logging.info(f"no LP file for {state_abbr} {county} {tract}")
+        logging.error(f"no LP file for {state_abbr} {county} {tract}")
         return
 
     r = RunGurobi(state_abbr, county, tract, lp_filename)
+    if r.sol_exists():
+        logging.info(f"sol file for {state_abbr} {county} {tract} exists. Will not rerun")
+        return
     r.get_model()
     if args.dry_run:
         print(f"MODEL FOR {state_abbr} {county} {tract} ")
@@ -135,6 +143,12 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         r.run_model()
     del r
 
+
+
+def run_gurobi_tuple(tt):
+    """Unpack the tuple and run gurobi. Cannot be made a sub function due to pickling"""
+    run_gurobi_for_county_tract(tt[0], tt[1], tt[2])
+
 def run_gurobi_for_county(state_abbr, county):
     logging.info(f"run_gurobi_for_county({state_abbr},{county})")
     if not args.tracts or args.tracts==['all']:
@@ -142,13 +156,10 @@ def run_gurobi_for_county(state_abbr, county):
     else:
         tracts = args.tracts
 
-    def run_gurobi_tuple(tt):
-        run_gurobi_for_county_tract(tt[0], tt[1], tt[2])
-
     tracttuples = [(state_abbr, county, tract) for tract in tracts]
-    if args.j>1:
+    if args.j1>1:
         from multiprocessing import Pool
-        with Pool(args.j) as p:
+        with Pool(args.j1) as p:
             p.map(run_gurobi_tuple, tracttuples)
     else:
         for tt in tracttuples:
@@ -158,14 +169,20 @@ def make_csv_file(state_abbr, county):
     # Make sure we have a solution file for every tract
     state_code = dbrecon.state_fips(state_abbr)
     tracts     = dbrecon.tracts_for_state_county(state_abbr=state_abbr, county=county)
-    missing = 0
+    missing_tracts = []
+    solfiles = []
     for tract_code in tracts:
         solfile = dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract_code)
-        if not dpath_exists(solfile):
-            logging.error("No solution file for: {}".format(solfile))
-            missing += 1
-    if missing:
-        raise RuntimeError("Missing tracts. Stop")
+        if dpath_exists(solfile):
+            solfiles.append(solfile)
+        else:
+            if tract_code[0]=='9':
+                logging.info("No solution file for tract {} (fname: {}) but it starts with a 9".format(tract_code,solfile))
+            else:
+                logging.error("No solution file for tract {} (fname: {})".format(tract_code,solfile))
+                missing_tracts.append(tract_code)
+    if missing_tracts:
+        raise RuntimeError("Missing tracts: {} Stop".format(' '.join(missing_tracts)))
 
     county_csv_filename = dbrecon.COUNTY_CSV_FILENAME(state_abbr=state_abbr, county=county)
     county_csv_filename_done = county_csv_filename+"-done"
@@ -173,26 +190,27 @@ def make_csv_file(state_abbr, county):
         logging.info(f"{county_csv_filename_done} already exists")
         return
 
+    # TODO: Verify that the number of people in each tract matches the counts in SF1
+
     with dopen(county_csv_filename,"w") as outfile:
         w = csv.writer(outfile)
         w.writerow(['geoid_tract','geoid_block','sex','age','white','black','aian','asian','nhopi','sor','hisp'])
-        for tract_code in tracts:
-            logging.info("Starting tract "+tract_code)
-            with dopen(dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract_code),"r") as infile:
-                for line in infile:
-                    if line[0:2]=='C_': # oldstyle variable
-                        (var,count) = line.strip().split(" ")
+        for solfile in solfiles:
+            logging.info("Reading {}".format(solfile))
+            for line in dopen(solfile,"r"):
+                # Check for oldstyle variable
+                if line[0:2]=='C_': 
+                    (var,count) = line.strip().split(" ")
 
-                        # don't count the zeros
-                        if count=="0":
-                            continue 
-                        c = var.split("_")
-                        tract = c[1][5:11]
-                        if tract_code != tract:
-                            raise RuntimeError(f"{infile.name}: Expecting tract {tract_code} read {tract}")
-                        geoid_tract = state_code + county + tract
-                        w.writerow([geoid_tract, c[1], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13]])
+                    # don't count the zeros
+                    if count=="0":
+                        continue 
+                    c = var.split("_")
+                    tract = c[1][5:11]
+                    geoid_tract = state_code + county + tract
+                    w.writerow([geoid_tract, c[1], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13]])
             logging.info("Ending tract "+tract_code)
+    # write output
     with dopen(county_csv_filename_done,"w") as outfile:
         outfile.write(time.asctime()+"\n")
 
@@ -206,17 +224,23 @@ if __name__=="__main__":
     parser.add_argument("state_abbr", help="2-character state abbreviation")
     parser.add_argument("county", help="3-digit county code")
     parser.add_argument("tracts", help="4-digit tract code[s]; can be 'all'",nargs="*")
-    parser.add_argument("--j", help="Specify number of threads", default=1, type=int)
+    parser.add_argument("--j1", help="Specify number of parallel solves", default=GUROBI_MAX_SOLVES, type=int)
+    parser.add_argument("--j2", help="Specify max number of threads per solve", default=GUROBI_MAX_THREADS, type=int)
     parser.add_argument("--config", help="config file")
     parser.add_argument("--dry-run", help="do not run gurobi; just print model stats", action="store_true")
     parser.add_argument("--justcsv", help="Just make the CSV file from the solutions", action='store_true')
 
     
-    args       = parser.parse_args()
-    config     = dbrecon.setup_logging_and_get_config(args,prefix="02bld")
+    args = parser.parse_args()
+    config = dbrecon.get_config(filename=args.config)
+    dbrecon.setup_logging(config=config,args=args,prefix="04grb")
+    logfname = logging.getLogger().handlers[0].baseFilename
+    dfxml = DFXMLWriter(logger=logging.info,
+                        filename=logfname.replace(".log",".dfxml"),
+                        prettyprint=True)
 
-    state_abbr = dbrecon.state_abbr(args.state_abbr).lower()
-    county     = args.county
+    state_abbr  = dbrecon.state_abbr(args.state_abbr).lower()
+    county = args.county
 
     if not args.justcsv:
         if 'GUROBI_HOME' not in os.environ:

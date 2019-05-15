@@ -27,27 +27,31 @@ all of the paths are good for your system! Then follow these steps:
    STEP 4 - Solve the LP files and produce the microdata
 
 
-0. Download the SF1 data from the Census Bureau's website
+## Step 0 - Download the files
+
+Download the SF1 data from the Census Bureau's website
 http://www2.census.gov/ using the program `00_download_data.py`. This
 program does not parallelize, but it does check to see if the file you
 are trying to download has already been downloaded.
 
     python3 00_download_data.py --all
 
-1. Extract and lightly process the geography information from each SF1
+## Step 1 - Extract the geography information
+
+Extract and lightly process the geography information from each SF1
 file. (It's not clear why we don't use the the original geography
 files, but we don't. This may be changed before the final public
 release.) This is fast, so it is not parallelized.
 
     python3 01_make_geo_files.py --all
 
-2. Extract the summary level for STATE, COUNTY, TRACT, BLOCK_GRP,
+## Step 2 - Create CSV files associated with each state
+
+Extract the summary level for STATE, COUNTY, TRACT, BLOCK_GRP,
 BLOCK, SUMLEVEL and LOGRECNO and a data frame with all of the SF1
-measurements. 
-
-The time and memory that this process requires is proportional to the number of census tracts and blocks. We have provided two implementations:
-
-Pandas Implementation --- 02_pandas_build_state_stats.py.  This implementation is single-threaded. It requires roughly 59GB of RAM to process TX and 49GB of RAM to process CA; other states take less. Time on our high-performance server is
+measurements. This uses pandas and is **the current implementation is memory heavy,** especially for the
+larger states. (CA takes 100GB). The program is multithreaded using
+Python's multiprocessing module, which means that once each state is computed as a whole, each Census county is output. **This should be rewritten so that it is done county-by-county, which will be less efficient, but will not need nearly so much memory.**
 
 The file `$ROOT/{state_abbr}/completed_{state_abbr}_02` is created when each
 state is completed. (This would take less memory, and be faster, if a
@@ -56,6 +60,11 @@ state.) On our machine the Deleware completed in just 630 seconds (10
 minutes), but CA took 14844.2 seconds (4.12 hours)
 
     python3 02_build_state_stats.py --all
+
+This program is multi-threaded. To use multiple cores, try:
+
+    python3 02_build_state_stats.py --j1=64 --j2=1 --all
+
 
 3. Create the LP files. There is 1 LP file for every census tract. The
 LP files are very large. The model to create the tract-level files are

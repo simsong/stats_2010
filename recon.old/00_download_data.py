@@ -81,7 +81,6 @@ if __name__=="__main__":
 
     ## Make sure we have a directory for the state
     sf1_dist_dir = dbrecon.dpath_expand("$SF1_DIST")
-
     print(f"Downloading to {sf1_dist_dir}")
     dmakedirs(sf1_dist_dir)
 

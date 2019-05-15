@@ -12,6 +12,7 @@ import os.path
 import logging
 import logging.handlers
 import datetime
+import time
 import argparse
 import csv
 import zipfile
@@ -21,8 +22,12 @@ import sys
 import atexit
 import re
 import socket
-import s3
 import pickle
+import xml.etree.ElementTree as ET
+
+import ctools.s3 as s3
+from dfxml.python.dfxml.writer import DFXMLWriter
+from total_size import total_size
 
 
 ##
@@ -32,6 +37,18 @@ import pickle
 SF1_DIR           = "$SF1DATA_ROOT/{state_abbr}/{state_code}{county}"
 SF1_RACE_BINARIES = '$SRC/layouts/sf1_vars_race_binaries.csv'
 
+
+global dfxml_writer
+dfxml_writer = None
+
+t0 = time.time()
+
+
+def SF1_ZIP_FILE(*,state_abbr):
+    return f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr)
+
+def STEP02_DONE_FILE(*,state_abbr):
+    return f'$ROOT/{state_abbr}/completed_{state_abbr}_02'
 
 def SF1_BLOCK_DATA_FILE(*,state_abbr,county):
     state_code = state_fips(state_abbr)
@@ -166,7 +183,8 @@ def get_config(pathname=None,filename=None):
             if not filename:
                 filename = CONFIG_FILENAME
             pathname = os.path.join(SRC_DIRECTORY, filename ) 
-        assert os.path.exists(pathname)
+        if not os.path.exists(pathname):
+            raise FileNotFoundError(pathname)
         config_file = ConfigParser()
         config_file.read(pathname)
         # Add our source directory to the paths
@@ -188,7 +206,7 @@ def state_fips(key):
 
 def state_abbr(key):
     """Convert state FIPS code to the appreviation"""
-    return state_rec(key)['state_abbr'].lower()
+    return state_rec(key)['state_abbr']
 
 def all_state_abbrs():
     # Return a list of all the states 
@@ -257,85 +275,114 @@ def tracts_with_files(state_abbr,county, filetype='lp'):
             ret.append(tract)
     return ret
 
-def state_county_tract_has_file(state, county_code, tract_code, filetype='lp'):
-    sabbr = state_abbr(state)
-    scode = state_fips(state)
-    path = f'$LPROOT/{sabbr}/{scode}{county_code}/{filetype}/'
-    files = list(dlistdir(path))
-    return f"model_{scode}{county_code}{tract_code}.{filetype}" in files
+def valid_state_code(code):
+    return len(state)==2 and all(ch.isdigit() for ch in code)
 
-def state_county_has_any_files(state, county_code, filetype='lp'):
-    sabbr = state_abbr(state)
-    scode = state_fips(state)
-    path = f'$LPROOT/{sabbr}/{scode}{county_code}/{filetype}/'
-    files = dlistdir(path)
+def valid_county_code(code):
+    return len(code)==3 and all(ch.isdigit() for ch in code)
+
+def state_county_tract_has_file(state_abbr, county_code, tract_code, filetype='lp'):
+    state_code = state_fips(state_abbr)
+    files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
+    return f"model_{state_code}{county_code}{tract_code}.{filetype}" in files
+
+def state_county_has_any_files(state_abbr, county_code, filetype='lp'):
+    state_code = state_fips(state_abbr)
+    files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
     return any([fn.endswith("."+filetype) for fn in files])
 
-def state_has_any_files(state, county_code, filetype='lp'):
-    sabbr = state_abbr(state)
-    scode = state_fips(state)
-    counties   = counties_for_state(state)
+def state_has_any_files(state_abbr, county_code, filetype='lp'):
+    state_code = state_fips(state_abbr)
+    counties   = counties_for_state(state_abbr)
     for county_code in counties:
-        if state_county_has_any_files(state, county_code, filetype=filetype):
+        if state_county_has_any_files(state_abbr, county_code, filetype=filetype):
             return True
 
 
 # Our generic setup routine
 # https://stackoverflow.com/questions/8632354/python-argparse-custom-actions-with-additional-arguments-passed
 def argparse_add_logging(parser):
+    parser.add_argument("--mem", action='store_true',
+                        help="enable memory debugging. Print memory usage. "
+                        "Write output to temp file and compare with correct file.")
     parser.add_argument('--loglevel', help='Set logging level',
                         choices=['CRITICAL','ERROR','WARNING','INFO','DEBUG'],
                         default='INFO')    
     parser.add_argument("--stdout", help="Also log to stdout", action='store_true')
 
 
-def setup_logging(*,config,loglevel=None,logdir="logs",prefix=None,stdout=None,args=None):
+LOG_FORMAT="%(asctime)s %(filename)s:%(lineno)d %(levelname)s (%(funcName)s) %(message)s"
+def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None):
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
 
-    if args:
-        if not loglevel:
-            loglevel = args.loglevel
-        if not stdout:
-            stdout = args.stdout
-        
-    logfname = "{}/{}-{}-{:06}.log".format(logdir,prefix,datetime.datetime.now().isoformat()[0:19],os.getpid())
-    if not os.path.exists(os.path.dirname(logfname)):
-        os.mkdir(os.path.dirname(logfname))
+    if args and args.loglevel:
+        loglevel = args.loglevel
+    if args and args.stdout:
+        stdout = args.stdout
+    if args and args.mem:
+        stdout = True
 
-    FORMAT="%(asctime)s %(filename)s:%(lineno)d (%(funcName)s) %(message)s"
-    formatter = logging.Formatter(FORMAT)
+    logger = logging.getLogger()
+    logger.setLevel(loglevel)
+
+    logfname = "{}/{}-{}-{:06}.log".format(logdir,prefix,datetime.datetime.now().isoformat()[0:19],os.getpid())
+    if not os.path.exists(logdir):
+        os.mkdir(logdir)
+
+    formatter = logging.Formatter(LOG_FORMAT)
     logging.basicConfig(filename=logfname, 
-                        format=FORMAT,
+                        format=LOG_FORMAT,
                         datefmt='%Y-%m-%dT%H:%M:%S',
                         level=logging.getLevelName(loglevel))
+
     # Make a second handler that logs to syslog
-    handler=logging.handlers.SysLogHandler(address="/dev/log",
+    syslog_handler=logging.handlers.SysLogHandler(address="/dev/log",
                                            facility=logging.handlers.SysLogHandler.LOG_LOCAL1)
 
-    logging.getLogger().addHandler(handler)
+    logger.addHandler(syslog_handler)
 
     # Log to stdout if requested
     if stdout:
-        print("will also log to stdout")
+        print("Logging to stdout ")
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.getLevelName(loglevel))
         handler.setFormatter(formatter)
-        logging.getLogger().addHandler(handler)
+        logger.addHandler(handler)
 
     # Log errors to stderr
-    ehandler = logging.StreamHandler(sys.stderr)
-    ehandler.setLevel(logging.ERROR)
-    ehandler.setFormatter(formatter)
-    logging.getLogger().addHandler(ehandler)
+    error_handler = logging.StreamHandler(sys.stderr)
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(formatter)
+    logger.addHandler(error_handler)
 
-    logging.info("START %s %s  log level: %s (%s)",sys.executable, " ".join(sys.argv), loglevel,loglevel)
+    # Log to DFXML
+    global dfxml_writer
+    dfxml_writer    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
+    dfxml_handler   = dfxml_writer.logHandler()
+    logger.addHandler(dfxml_handler)
+
+    # Log exit codes
     atexit.register(logging_exit)
+
+    # Finally, indicate that we have started up
+    logging.info("START %s %s  log level: %s (%s)",sys.executable, " ".join(sys.argv), loglevel,loglevel)
         
+def add_dfxml_tag(tag,text=None,attrs={}):
+    e = ET.SubElement(dfxml_writer.doc, tag, attrs)
+    if text:
+        e.text = text
+
+
 def logging_exit():
     if hasattr(sys,'last_value'):
         logging.error(sys.last_value)
 
+
+def setup_logging_and_get_config(args,*,prefix=''):
+    config = get_config(filename=args.config)
+    setup_logging(config=config,prefix=prefix,args=args)
+    return 
 
 var_re = re.compile(r"(\$[A-Z_][A-Z_0-9]*)")
 def dpath_expand(path):
@@ -403,7 +450,7 @@ def dlistdir(path):
 
 def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     """An open function that can open from S3 and from inside of zipfiles"""
-    logging.info("dopen: path:{} mode:{} encoding:{}".format(path,mode,encoding))
+    logging.info("  dopen(path={},mode={},encoding={})".format(path,mode,encoding))
     path = dpath_expand(path)
 
     if path[0:5]=='s3://':
@@ -426,9 +473,9 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
             if len(zipnames)==1:
                 zipfilename = zipnames[0]
         if zipfilename:
-            zip_file  = zipfile.ZipFile(zipfilename)
+            zip_file  = zipfile.ZipFile(dpath_expand(zipfilename))
             zf        = zip_file.open(filename, 'r')
-            logging.info("  ({} found in {})".format(filename,zipfilename))
+            logging.info("  ZIP: {} found in {}".format(filename,zipfilename))
             if encoding==None and ("b" not in mode):
                 encoding='utf-8'
             return io.TextIOWrapper(zf , encoding=encoding)
@@ -461,8 +508,40 @@ def dsystem(x):
         raise RuntimeError("{} RETURNED {}".format(x,r))
     return r
 
+################################################################
+##
+## memory profiling tools
+##
+
 def print_maxrss():
     import resource
     for who in ['RUSAGE_SELF','RUSAGE_CHILDREN']:
         rusage = resource.getrusage(getattr(resource,who))
         print(who,'utime:',rusage[0],'stime:',rusage[1],'maxrss:',rusage[2])
+
+def mem_info(what,df,dump=True):
+    import pandas as pd
+    print(f'mem_info {what} ({type(df)}):')
+    if type(df)!=pd.core.frame.DataFrame:
+        print("Total {} memory usage: {:}".format(what,total_size(df)))
+    else:
+        if dump:
+            pd.options.display.max_columns  = 240
+            pd.options.display.max_rows     = 5
+            pd.options.display.max_colwidth = 240
+            print(df)
+        for dtype in ['float','int','object']: 
+            selected_dtype = df.select_dtypes(include=[dtype])
+            mean_usage_b = selected_dtype.memory_usage(deep=True).mean()
+            mean_usage_mb = mean_usage_b / 1024 ** 2
+            print("Average {} memory usage for {} columns: {:03.2f} MB".format(what,dtype,mean_usage_mb))
+        for dt in ['object','int64']:
+            for c in df.columns:
+                try:
+                    if df[c].dtype==dt:
+                        print(f"{dt} column: {c}")
+                except AttributeError:
+                    pass
+        df.info(verbose=False,max_cols=160,memory_usage='deep',null_counts=True)
+    print("elapsed time at {}: {:.2f}".format(what,time.time() - t0))
+    print("==============================")

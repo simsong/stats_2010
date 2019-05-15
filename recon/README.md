@@ -27,23 +27,33 @@ all of the paths are good for your system! Then follow these steps:
    STEP 4 - Solve the LP files and produce the microdata
 
 
-0. Download the SF1 data from the Census Bureau's website
+## Step 0 - Download the files
+
+Download the SF1 data from the Census Bureau's website
 http://www2.census.gov/ using the program `00_download_data.py`. This
 program does not parallelize, but it does check to see if the file you
 are trying to download has already been downloaded.
 
     python3 00_download_data.py --all
 
-1. Extract and lightly process the geography information from each SF1
+## Step 1 - Extract the geography information
+
+Extract and lightly process the geography information from each SF1
 file. (It's not clear why we don't use the the original geography
 files, but we don't. This may be changed before the final public
 release.) This is fast, so it is not parallelized.
 
     python3 01_make_geo_files.py --all
 
-2. Extract the summary level for STATE, COUNTY, TRACT, BLOCK_GRP,
+## Step 2 - Create CSV files associated with each state
+
+Extract the summary level for STATE, COUNTY, TRACT, BLOCK_GRP,
 BLOCK, SUMLEVEL and LOGRECNO and a data frame with all of the SF1
-measurements. 
+measurements.
+
+This uses pandas and is **the current implementation is memory heavy,** especially for the
+larger states. (CA takes 100GB). The program is multithreaded using
+Python's multiprocessing module, which means that once each state is computed as a whole, each Census county is output. **This should be rewritten so that it is done county-by-county, which will be less efficient, but will not need nearly so much memory.**
 
 The time and memory that this process requires is proportional to the number of census tracts and blocks. We have provided two implementations:
 

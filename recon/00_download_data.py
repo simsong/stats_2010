@@ -9,14 +9,14 @@ import sys
 import os
 import os.path
 import dbrecon
-from dbrecon import dmakedirs
-from dbrecon import dopen,dpath_exists
 import logging
 import requests
 import time    
 import zipfile
 import glob
 
+from dbrecon import dmakedirs
+from dbrecon import dopen,dpath_exists
 
 ####Get input parameters
 

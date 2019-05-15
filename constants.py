@@ -131,6 +131,7 @@ URL_2000_SF2    = WWW_SERVER_2000 + "Summary_File_2/{state_name}/{state}{segment
 WWW_SERVER_2010='https://www2.census.gov/census_2010'
 URL_2010_PL94 = WWW_SERVER_2010+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip'
 URL_2010_SF1  = WWW_SERVER_2010+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip'
+URL_2010_SF1u = WWW_SERVER_2010+'/04-Summary_File_1/Urban_Rural_Update/{state_name}/{state}2010.ur1.zip'
 URL_2010_SF2  = WWW_SERVER_2010+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'
 
 ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
@@ -148,7 +149,7 @@ DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
                        SF1  : URL_2000_SF1,
                        SF2  : URL_2000_SF2},
                  2010:{PL94 : URL_2010_PL94,
-                       SF1  : URL_2010_SF1,
+                       SF1  : URL_2010_SF1u,
                        SF2  : URL_2010_SF2 } } 
                  
 # Specifies directory where a zip file is downloaded. The filename is kept from the original download URL

@@ -23,3 +23,6 @@ clean:
 setuptest:
 	mkdir -p /data/sf1/recon_test/al
 	cp /data/sf1/recon/al/*.csv /data/sf1/recon_test/al/
+
+tags:
+	etags *.py ../ctools/*.py

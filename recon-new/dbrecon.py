@@ -22,11 +22,15 @@ import sys
 import atexit
 import re
 import socket
-import s3
 import pickle
 import xml.etree.ElementTree as ET
+
+sys.path.append( os.path.join(os.path.dirname(__file__) , "..") )
+
+import ctools.s3 as s3
 from dfxml.python.dfxml.writer import DFXMLWriter
 from total_size import total_size
+
 
 ##
 ## Functions that return paths.
@@ -181,7 +185,8 @@ def get_config(pathname=None,filename=None):
             if not filename:
                 filename = CONFIG_FILENAME
             pathname = os.path.join(SRC_DIRECTORY, filename ) 
-        assert os.path.exists(pathname)
+        if not os.path.exists(pathname):
+            raise FileNotFoundError(pathname)
         config_file = ConfigParser()
         config_file.read(pathname)
         # Add our source directory to the paths
@@ -320,13 +325,12 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     if args and args.mem:
         stdout = True
 
-    print('stdout=',stdout)
     logger = logging.getLogger()
     logger.setLevel(loglevel)
 
     logfname = "{}/{}-{}-{:06}.log".format(logdir,prefix,datetime.datetime.now().isoformat()[0:19],os.getpid())
     if not os.path.exists(logdir):
-        os.mkdir(os.path.dirname(logdir))
+        os.mkdir(logdir)
 
     formatter = logging.Formatter(LOG_FORMAT)
     logging.basicConfig(filename=logfname, 

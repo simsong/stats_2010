@@ -31,7 +31,7 @@ logger.addHandler(h2)
 
 
 logger.info('a test at info')
-logger.warn('a test at warn')
+logger.warning('a test at warn')
 foo()
 
 print(xml.dom.minidom.parseString(ET.tostring(doc).decode('utf-8')).toprettyxml(indent='  '))

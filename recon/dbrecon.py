@@ -25,8 +25,10 @@ import socket
 import pickle
 import xml.etree.ElementTree as ET
 
+sys.path.append( os.path.join(os.path.dirname(__file__),".."))
+
 import ctools.s3 as s3
-from dfxml.python.dfxml.writer import DFXMLWriter
+import ctools.clogging as clogging
 from total_size import total_size
 
 
@@ -40,7 +42,6 @@ SF1_RACE_BINARIES = '$SRC/layouts/sf1_vars_race_binaries.csv'
 
 global dfxml_writer
 dfxml_writer = None
-
 t0 = time.time()
 
 
@@ -193,6 +194,7 @@ def get_config(pathname=None,filename=None):
 
 def state_rec(key):
     """Return the record in the state database for a key, where key is the state name, abbreviation, or FIPS code."""
+    assert isinstance(key,str)
     for rec in STATES:
         if (key.lower()==rec['state_name'].lower()
             or key.lower()==rec['state_abbr'].lower()
@@ -202,10 +204,12 @@ def state_rec(key):
 
 def state_fips(key):
     """Convert state name or abbreviation to FIPS code"""
+    assert isinstance(key,str)
     return state_rec(key)['fips_state']
 
 def state_abbr(key):
     """Convert state FIPS code to the appreviation"""
+    assert isinstance(key,str)
     return state_rec(key)['state_abbr']
 
 def all_state_abbrs():
@@ -213,12 +217,14 @@ def all_state_abbrs():
     return [rec['state_abbr'].lower() for rec in STATES]
 
 def parse_state_abbrs(statelist):
-    # Turn a list of states into an array of all state abbreviations.
+    # Turn a comman-separated list of states into an array of all state abbreviations.
     # also accepts state numbers
+    assert isinstance(statelist,str)
     return [state_rec(key)['state_abbr'].lower() for key in statelist.split(",")]
     
 
 def counties_for_state(state_abbr):
+    assert isinstance(state_abbr,str)
     fips = state_fips(state_abbr)
     counties = []
     with dopen(STATE_COUNTY_LIST(state_abbr=state_abbr,fips=fips)) as f:
@@ -231,7 +237,9 @@ def counties_for_state(state_abbr):
 
 geofile_cache = {}
 def tracts_for_state_county(*,state_abbr,county):
-    """Read the state geofile to determine the number of tracts that are in a given county. The state geofile is cached, because it takes a while to read. the actual results are also cached in the CACHE_DIR"""
+    """Read the state geofile to determine the number of tracts that are
+    in a given county. The state geofile is cached, because it takes a
+    while to read. the actual results are also cached in the CACHE_DIR"""
     global geofile_cache
     import pandas as pd
 
@@ -255,11 +263,14 @@ def tracts_for_state_county(*,state_abbr,county):
         return pickle.load(f)
 
 
-
 ################################################################
 ### Output Products
 ################################################################
 def tracts_with_files(state_abbr,county, filetype='lp'):
+    assert isinstance(state_abbr, str)
+    assert isinstance(county, str)
+    assert isinstance(filetype, str)
+    
     ret = []
     state_code = state_fips(state_abbr)
     if filetype=='lp':
@@ -276,22 +287,31 @@ def tracts_with_files(state_abbr,county, filetype='lp'):
     return ret
 
 def valid_state_code(code):
+    assert isinstance(code,str)
     return len(state)==2 and all(ch.isdigit() for ch in code)
 
 def valid_county_code(code):
+    assert isinstance(code,str)
     return len(code)==3 and all(ch.isdigit() for ch in code)
 
 def state_county_tract_has_file(state_abbr, county_code, tract_code, filetype='lp'):
+    assert isinstance(state_abbr,str)
+    assert isinstance(county_code,str)
+    assert isinstance(tract_code,str)
     state_code = state_fips(state_abbr)
     files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
     return f"model_{state_code}{county_code}{tract_code}.{filetype}" in files
 
 def state_county_has_any_files(state_abbr, county_code, filetype='lp'):
+    assert isinstance(state_abbr,str)
+    assert isinstance(county_code,str)
     state_code = state_fips(state_abbr)
     files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
     return any([fn.endswith("."+filetype) for fn in files])
 
 def state_has_any_files(state_abbr, county_code, filetype='lp'):
+    assert isinstance(state_abbr,str)
+    assert isinstance(county_code,str)
     state_code = state_fips(state_abbr)
     counties   = counties_for_state(state_abbr)
     for county_code in counties:
@@ -299,19 +319,19 @@ def state_has_any_files(state_abbr, county_code, filetype='lp'):
             return True
 
 
+################################################################
+### Logging. Much of this was moved to ctools.clogging
+
 # Our generic setup routine
 # https://stackoverflow.com/questions/8632354/python-argparse-custom-actions-with-additional-arguments-passed
 def argparse_add_logging(parser):
-    parser.add_argument("--mem", action='store_true',
+    clogging.add_argument(parser)
+    parser.add_argument("--stdout", help="Also log to stdout", action='store_true')
+    parser.add_argument("--logmem", action='store_true',
                         help="enable memory debugging. Print memory usage. "
                         "Write output to temp file and compare with correct file.")
-    parser.add_argument('--loglevel', help='Set logging level',
-                        choices=['CRITICAL','ERROR','WARNING','INFO','DEBUG'],
-                        default='INFO')    
-    parser.add_argument("--stdout", help="Also log to stdout", action='store_true')
 
 
-LOG_FORMAT="%(asctime)s %(filename)s:%(lineno)d %(levelname)s (%(funcName)s) %(message)s"
 def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None):
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
@@ -320,44 +340,32 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
         loglevel = args.loglevel
     if args and args.stdout:
         stdout = args.stdout
-    if args and args.mem:
+    if args and args.logmem:
         stdout = True
-
-    logger = logging.getLogger()
-    logger.setLevel(loglevel)
 
     logfname = "{}/{}-{}-{:06}.log".format(logdir,prefix,datetime.datetime.now().isoformat()[0:19],os.getpid())
     if not os.path.exists(logdir):
         os.mkdir(logdir)
 
-    formatter = logging.Formatter(LOG_FORMAT)
-    logging.basicConfig(filename=logfname, 
-                        format=LOG_FORMAT,
-                        datefmt='%Y-%m-%dT%H:%M:%S',
-                        level=logging.getLevelName(loglevel))
-
-    # Make a second handler that logs to syslog
-    syslog_handler=logging.handlers.SysLogHandler(address="/dev/log",
-                                           facility=logging.handlers.SysLogHandler.LOG_LOCAL1)
-
-    logger.addHandler(syslog_handler)
+    clogging.setup(level=loglevel, filename=logfname)
+    logger = logging.getLogger()
 
     # Log to stdout if requested
     if stdout:
         print("Logging to stdout ")
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logging.getLevelName(loglevel))
-        handler.setFormatter(formatter)
+        handler.setFormatter(  logging.Formatter(clogging.LOG_FORMAT) )
         logger.addHandler(handler)
 
     # Log errors to stderr
     error_handler = logging.StreamHandler(sys.stderr)
     error_handler.setLevel(logging.ERROR)
-    error_handler.setFormatter(formatter)
+    error_handler.setFormatter( logging.Formatter(clogging.LOG_FORMAT) )
     logger.addHandler(error_handler)
 
     # Log to DFXML
-    global dfxml_writer
+    from dfxml.python.dfxml.writer import DFXMLWriter
     dfxml_writer    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
     dfxml_handler   = dfxml_writer.logHandler()
     logger.addHandler(dfxml_handler)

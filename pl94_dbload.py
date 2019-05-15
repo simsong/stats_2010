@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 #
 """
-<<<<<<< HEAD:dbload.py
 dbload.py: create an SQLite3 database from PL94 data. Data loaded includes:
   STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED
 
@@ -9,11 +8,6 @@ Datasources:
   STATE|COUNTY|TRACT|BLOCK => LOGRECNO  -- Geography file
   POP --- File 12010
   HOUSES|OCCUPIED --- File 22010
-=======
-pl94_dbload.py: create an SQLite3 database from 2010 PL94 data. Table positions defined by hand.
-This is a legacy program which was written before we could directly parse the PL94 PDF.
-This approach works, but it does not scale very well. 
->>>>>>> ee95b6ef7a6bbe01c6da3cb86d3e76a9bf01d91e:pl94_dbload.py
 """
 
 __version__ = '0.0.1'
@@ -28,13 +22,10 @@ import time
 import zipfile
 import io
 
-<<<<<<< HEAD:dbload.py
 from sql import SLGSQL
 
 DBFILE="pl94.sqlite3"
 
-=======
->>>>>>> ee95b6ef7a6bbe01c6da3cb86d3e76a9bf01d91e:pl94_dbload.py
 CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
@@ -60,7 +51,6 @@ GEO_BLKGRP=(61,1)
 GEO_BLOCK=(62,4)        # first digit of block is blockgroup
 
 DEBUG_BLOCK=None
-
 
 
 class SLGSQL:

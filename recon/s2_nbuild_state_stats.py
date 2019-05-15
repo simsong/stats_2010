@@ -21,17 +21,16 @@ import time
 import logging
 import multiprocessing
 
-from dfxml.python.dfxml.writer import DFXMLWriter
-from dbrecon import *
-from ctools.timer import Timer
-import dbrecon
+sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
+import dbrecon
+from ctools.timer import Timer
 
 def open_segment(state_abbr,segment):
     """ Given a state abbreviation and a segment number, open it"""
 
-def process_state(state):
-    nonlocal config
+
+def process_state(state_abbr):
     logging.info(f"{state_abbr}: building data frame with all SF1 measurements")
     with Timer() as timer:
 
@@ -40,19 +39,20 @@ def process_state(state):
         # mods due to access limitations.  It's read as a ordered dict to preserve
         # the order of the layout to read the csv.
 
-        layout           = json.load(dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
+        layout           = json.load(dbrecon.dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
         sf1_zipfilename  = dbrecon.dpath_expand("$SF1_DIST/{state_abbr}2010.sf1.zip").format(state_abbr=state_abbr)
         geo_filename     = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
         done_filename    = f"$ROOT/{state_abbr}/completed_{state_abbr}_02"
 
         # done_filename is created when files are generated
         # If there are no county directories, delete the done file.
-        for county in counties_for_state(state_abbr):
-            if not dpath_exists(STATE_COUNTY_DIR(state_abbr=state_abbr,county=county)) and dpath_exists(done_filename):
-                dpath_unlink(done_filename)
+        for county in dbrecon.counties_for_state(state_abbr):
+            if ( (not dbrecon.dpath_exists(dbrecon.STATE_COUNTY_DIR(state_abbr=state_abbr,county=county) ) )
+                 and dbrecon.dpath_exists(done_filename)):
+                dbrecon.dpath_unlink(done_filename)
 
         # If done_file exists, we don't need to run. This would be better done by checking all of the county files.
-        if dpath_exists(done_filename):
+        if dbrecon.dpath_exists(done_filename):
             print(f"{state_abbr} already exists")
             return
 
@@ -61,10 +61,13 @@ def process_state(state):
         SUMLEV_COUNTY = '050' # State-County
         SUMLEV_TRACT  = '140' # State-County-Census Tract
         SUMLEV_BLOCK  = '101' # State-County-County Sub∀division-Place/Remainder-Census Tract∀-Block Group-Block
+        SF1_SUMMARY_LEVELS    = set([SUMLEV_COUNTY,SUMLEV_TRACT,SUMLEV_BLOCK])
         SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
 
-        segment_files = []
-
+        # Open the geofile and find all of the LOGRECNOs for the summary summary levels we care about
+        with dbrecon.dopen(geo_filename,"r") as f:
+            for line in f:
+                print(line)
 
 
 
@@ -76,27 +79,29 @@ if __name__=="__main__":
     parser.add_argument("--config", help="config file")
     parser.add_argument("state_abbrs",nargs="*",help='Specify states to process')
     parser.add_argument("--all",action='store_true',help='All states')
-    parser.add_argument("--threads", '--j', type=int, help='Number of states to run at once (defaults to thread count in config file).')
+    parser.add_argument("--threads", '--j1', type=int, help='Number of states to run at once (defaults to thread count in config file).')
 
     args     = parser.parse_args()
     config   = dbrecon.get_config(filename=args.config)
     dbrecon.setup_logging(config=config,loglevel=args.loglevel,prefix="02red")
     logfname = logging.getLogger().handlers[0].baseFilename
 
-    if not dbrecon.dpath_exists(f"$SRC/layouts/layouts.json","r"):
+    if not dbrecon.dpath_exists(f"$SRC/layouts/layouts.json"):
         raise FileNotFoundError("Cannot find $SRC/layouts/layouts.json")
     
     if not dbrecon.dpath_exists(f"$SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv"):
         raise FileNotFoundError("$SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv")
 
 
-    dfxml    = DFXMLWriter(logger=logging.info, filename=logfname.replace(".log",".dfxml"), prettyprint=True)
+    from dfxml.python.dfxml.writer import DFXMLWriter
+    dfxml    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
 
     states = []
     if args.all:
         states = dbrecon.all_state_abbrs()
     else:
         states = [dbrecon.state_abbr(st).lower() for st in args.state_abbrs]
+
 
     if not states:
         print("Specify states to process or --all")
@@ -106,6 +111,9 @@ if __name__=="__main__":
         args.threads=config['run'].getint('threads',1)
 
     logging.info("Running with {} threads".format(args.threads))
-    with multiprocessing.Pool(args.threads) as p:
-        p.map(process_state, states)
+    if args.threads==1:
+        [process_state(state) for state in states]
+    else:
+        with multiprocessing.Pool(args.threads) as p:
+            p.map(process_state, states)
 

@@ -9,14 +9,14 @@ import sys
 import os
 import os.path
 import dbrecon
-from dbrecon import dmakedirs
-from dbrecon import dopen,dpath_exists
 import logging
 import requests
 import time    
 import zipfile
 import glob
 
+from dbrecon import dmakedirs
+from dbrecon import dopen,dpath_exists
 
 ####Get input parameters
 
@@ -81,6 +81,7 @@ if __name__=="__main__":
 
     ## Make sure we have a directory for the state
     sf1_dist_dir = dbrecon.dpath_expand("$SF1_DIST")
+
     print(f"Downloading to {sf1_dist_dir}")
     dmakedirs(sf1_dist_dir)
 

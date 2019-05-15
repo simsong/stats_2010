@@ -43,11 +43,9 @@ release.) This is fast, so it is not parallelized.
 
 2. Extract the summary level for STATE, COUNTY, TRACT, BLOCK_GRP,
 BLOCK, SUMLEVEL and LOGRECNO and a data frame with all of the SF1
-measurements. 
-
-The time and memory that this process requires is proportional to the number of census tracts and blocks. We have provided two implementations:
-
-Pandas Implementation --- 02_pandas_build_state_stats.py.  This implementation is single-threaded. It requires roughly 59GB of RAM to process TX and 49GB of RAM to process CA; other states take less. Time on our high-performance server is
+measurements. This uses pandas and is **the current implementation is memory heavy,** especially for the
+larger states. (CA takes 100GB). The program is multithreaded using
+Python's multiprocessing module, which means that once each state is computed as a whole, each Census county is output. **This should be rewritten so that it is done county-by-county, which will be less efficient, but will not need nearly so much memory.**
 
 The file `$ROOT/{state_abbr}/completed_{state_abbr}_02` is created when each
 state is completed. (This would take less memory, and be faster, if a

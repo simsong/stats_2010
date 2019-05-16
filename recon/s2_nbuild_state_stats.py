@@ -113,7 +113,6 @@ def process_state(state_abbr):
                 geo_data = line.split(",")
                 sumlev   = geo_data[GEO_SUMLEV_FIELD]
                 if sumlev in [SUMLEV_COUNTY,SUMLEV_TRACT,SUMLEV_BLOCK]:
-                    ct += 1
                     logrecno = geo_data[GEO_LOGRECNO_FIELD]
                     county   = geo_data[GEO_COUNTY_FIELD]
                     geocode  = "".join(geo_data[f] for f in
@@ -122,6 +121,7 @@ def process_state(state_abbr):
                                          [geo_data[ geo_fields[ field ] ] for field in JOIN_FIELDS],
                                          geocode )
                     counts[sumlev] += 1
+                    ct += 1
                 
         print("{} geography file processed. counties:{}  tracts:{}  blocks:{}  mem:{:,}".format(
             state_abbr, counts[SUMLEV_COUNTY], counts[SUMLEV_TRACT], counts[SUMLEV_BLOCK],
@@ -149,8 +149,11 @@ def process_state(state_abbr):
 
         # Now, for each segment, grab the fields, join, and stuff...
 
+        def line_to_fields(line):
+            """Transform a line from the SF1 file to the what the original code did (frequently incorrectly)
+            with pandas."""
+            TK**
 
-        ct = 0
         while True:
             line = ",".join([f.readline().strip() for f in open_segment_files])
             fields = line.split(",")
@@ -159,13 +162,11 @@ def process_state(state_abbr):
             if fields[0]!='SF1ST' or fields[1]!=state_abbr_upper:
                 raise RuntimeError(f"bad fields in line {ct}: {fields}")
             logrecno = fields[4]
-            try:
+            if logrecno in logrecs:
                 (sumlev,ct,county,joinfields,geocode) = logrecs[logrecno]
                 outline = str(ct)+","+(",".join(fields+joinfields)) + "," + geocode + "\n"
                 output_files[county][sumlev].write(outline)
-                ct += 1
-            except KeyError:
-                pass
+
 
 
 

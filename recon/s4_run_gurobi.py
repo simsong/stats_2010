@@ -82,7 +82,11 @@ class RunGurobi:
             raise RuntimeError("Don't know how to read model from {}".format(self.lp_filename))
 
     def run_model(self):
-        with tempfile.NamedTemporaryFile(suffix='.log',encoding='utf-8') as tf:
+        if os.path.exists( self.sol_filename() ):
+            print("solution already exists")
+            return
+
+        with tempfile.NamedTemporaryFile(suffix='.log',encoding='utf-8',mode='w+') as tf:
             self.model.setParam("Threads",GUROBI_THREADS)
             print("tf.name:",tf.name,type(tf.name))
             self.model.setParam("LogFile",tf.name)
@@ -114,8 +118,6 @@ class RunGurobi:
                 logging.info(line)
             tf.seek(0)
             
-                
-
 def run_gurobi_for_county_tract(state_abbr, county, tract):
     assert len(state_abbr)==2
     assert len(county)==3
@@ -153,9 +155,13 @@ def run_gurobi_for_county(state_abbr, county):
     else:
         for tt in tracttuples:
             run_gurobi_tuple(tt)
+    with dopen(county_csv_filename_done,"w") as outfile:
+        outfile.write(time.asctime()+"\n")
 
 def make_csv_file(state_abbr, county):
     # Make sure we have a solution file for every tract
+    county_csv_filename = dbrecon.COUNTY_CSV_FILENAME(state_abbr=state_abbr, county=county)
+    county_csv_filename_done = county_csv_filename+"-done"
     state_code = dbrecon.state_fips(state_abbr)
     tracts     = dbrecon.tracts_for_state_county(state_abbr=state_abbr, county=county)
     missing = 0
@@ -166,12 +172,6 @@ def make_csv_file(state_abbr, county):
             missing += 1
     if missing:
         raise RuntimeError("Missing tracts. Stop")
-
-    county_csv_filename = dbrecon.COUNTY_CSV_FILENAME(state_abbr=state_abbr, county=county)
-    county_csv_filename_done = county_csv_filename+"-done"
-    if dpath_exists(county_csv_filename_done):
-        logging.info(f"{county_csv_filename_done} already exists")
-        return
 
     with dopen(county_csv_filename,"w") as outfile:
         w = csv.writer(outfile)
@@ -193,30 +193,16 @@ def make_csv_file(state_abbr, county):
                         geoid_tract = state_code + county + tract
                         w.writerow([geoid_tract, c[1], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13]])
             logging.info("Ending tract "+tract_code)
-    with dopen(county_csv_filename_done,"w") as outfile:
-        outfile.write(time.asctime()+"\n")
 
 
 
-if __name__=="__main__":
-    from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
-    parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
-                             description="Run Gurobi and convert the output to the CSV file." )
-    dbrecon.argparse_add_logging(parser)
-    parser.add_argument("state_abbr", help="2-character state abbreviation")
-    parser.add_argument("county", help="3-digit county code")
-    parser.add_argument("tracts", help="4-digit tract code[s]; can be 'all'",nargs="*")
-    parser.add_argument("--j", help="Specify number of threads", default=1, type=int)
-    parser.add_argument("--config", help="config file")
-    parser.add_argument("--dry-run", help="do not run gurobi; just print model stats", action="store_true")
-    parser.add_argument("--justcsv", help="Just make the CSV file from the solutions", action='store_true')
+def process_state_county(state_abbr, county):
+    county_csv_filename = dbrecon.COUNTY_CSV_FILENAME(state_abbr=state_abbr, county=county)
+    county_csv_filename_done = county_csv_filename+"-done"
 
-    
-    args       = parser.parse_args()
-    config     = dbrecon.setup_logging_and_get_config(args,prefix="02bld")
-
-    state_abbr = dbrecon.state_abbr(args.state_abbr).lower()
-    county     = args.county
+    if dpath_exists(county_csv_filename_done):
+        logging.warning(f"{county_csv_filename_done} already exists")
+        return
 
     if not args.justcsv:
         if 'GUROBI_HOME' not in os.environ:
@@ -237,5 +223,32 @@ if __name__=="__main__":
 
     # Create the state-level CSV files
     make_csv_file(state_abbr, county)
+    print(f"Finished {state_abbr} {county}")
 
-    print(f"Logfile: {logfname}")
+
+if __name__=="__main__":
+    from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
+    parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
+                             description="Run Gurobi and convert the output to the CSV file." )
+    dbrecon.argparse_add_logging(parser)
+    parser.add_argument("state_abbr", help="2-character state abbreviation")
+    parser.add_argument("county", help="3-digit county code; can be 'all' for all counties")
+    parser.add_argument("tracts", help="4-digit tract code[s]; can be 'all'",nargs="*")
+    parser.add_argument("--j", help="Specify number of threads", default=1, type=int)
+    parser.add_argument("--config", help="config file")
+    parser.add_argument("--dry-run", help="do not run gurobi; just print model stats", action="store_true")
+    parser.add_argument("--justcsv", help="Just make the CSV file from the solutions", action='store_true')
+
+    
+    args       = parser.parse_args()
+    config     = dbrecon.setup_logging_and_get_config(args,prefix="02bld")
+
+    state_abbr = dbrecon.state_abbr(args.state_abbr).lower()
+
+    if args.county=='all':
+        counties = dbrecon.counties_for_state(state_abbr)
+    else:
+        counties = [args.county]
+
+    for county in counties:
+        process_state_county(state_abbr,county)

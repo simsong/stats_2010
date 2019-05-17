@@ -358,6 +358,12 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
         handler.setFormatter(  logging.Formatter(clogging.LOG_FORMAT) )
         logger.addHandler(handler)
 
+    # Log warnings to stderr
+    warning_handler = logging.StreamHandler(sys.stderr)
+    warning_handler.setLevel(logging.WARNING)
+    warning_handler.setFormatter( logging.Formatter(clogging.LOG_FORMAT) )
+    logger.addHandler(warning_handler)
+
     # Log errors to stderr
     error_handler = logging.StreamHandler(sys.stderr)
     error_handler.setLevel(logging.ERROR)

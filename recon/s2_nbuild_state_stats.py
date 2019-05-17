@@ -28,13 +28,83 @@ import dbrecon
 from dbrecon import dopen
 from ctools.timer import Timer
 
+# The linkage variables, in the order they appear in the file
+SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
+
 def sf1_zipfilename(state_abbr):
     return dbrecon.dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip")
 
-def open_segment(state_abbr,segment):
-    """ Given a state abbreviation and a segment number, open it"""
-    sf1_input_file = f"{state_abbr}{segment:05d}2010.sf1"
-    return dopen(sf1_input_file, zipfilename=sf1_zipfilename(state_abbr), encoding='latin1')
+ANY="any"
+class ReaderException(Exception):
+    pass
+
+class SF1SegmentReader():
+    def __init__(self,*,state_abbr,segment_filename,names,xy,cifsn):
+        """ Given a state abbreviation and a segment number, open it"""
+        self.infile = dopen(segment_filename, zipfilename=sf1_zipfilename(state_abbr), encoding='latin1')
+        self.fields = None       # the last line read
+        self.names  = names      # names of the fields
+        self.cifsn  = cifsn
+        # process the names as pandas would
+        for i in range(0,4):
+            self.names[i] = self.names[i]+"_"+xy
+        if self.cifsn>1:
+            del self.names[4]   #  don't include
+        
+    def getfields(self,*,logrecno):
+        """ Reads a line, looking for logrecno. If not found, return a line of fields """
+        if self.fields is None:
+            line = self.infile.readline().strip()
+            if line=="":
+                # End of this segment. Segment 1 has all the logrecs. Otherwise, this just doesn't go to the end
+                if self.cifsn==1:
+                    raise ReaderException(f"Reached end of CIFSN {self.cifsn} while looking for {logrecno}")
+                else:
+                    return ['' for name in self.names]
+            self.fields   = line.split(",")
+            self.logrecno = self.fields[4]
+
+            # Undo the broken transformations
+            # Delete LOGRECNO in all but the CIFSN 1
+            if self.cifsn>1:
+                del self.fields[4] 
+            # These two fields were improperly formatted as floats...
+            self.fields[2] = format(int(self.fields[2]),'.1f') # CHARITER
+            self.fields[3] = format(int(self.fields[3]),'.1f') # CIFSN
+            assert len(self.fields) == len(self.names)
+
+
+        if (self.logrecno == logrecno) or (logrecno==ANY):
+            # Map the fields we have to the broken fields that are reported
+            def refmt(nv):
+                (name,val) = nv
+                if name=='PCT012A001':
+                    print(name,val,format(float(val),'.1f'))
+                if (name in ['CHARITER','CIFSN'] 
+                    or name.startswith('PCT') 
+                    or name.startswith('HCT') 
+                    or name.startswith('PCT012')):
+                    return format(float(val),'.1f')
+
+                if '.' in val and len(val)>3:
+                    if val[-3]=='.':
+                        if val[-1]=='0':
+                            return val[0:-1]
+                        return val
+
+
+                return val
+            
+            fields = ([self.fields[0],        # FILEID
+                       self.fields[1],        # STUSAB
+                       refmt(('CHARITER',self.fields[2])), # CHARITER
+                       refmt(('CIFSN',self.fields[3])), # CIFSN
+                       self.fields[4]] +      # LOGRECNO
+                      [refmt(nv) for nv in zip(self.names[5:],self.fields[5:]) ])
+            
+            self.fields = None
+            return fields
+        return ['' for name in self.names]
 
 def process_state(state_abbr):
     logging.info(f"{state_abbr}: building data frame with all SF1 measurements")
@@ -66,31 +136,40 @@ def process_state(state_abbr):
 
         # Generate the CSV header that the original code used
         # This looks weird, but we are trying to match the original files exactly.
-        field_names = ['']
+        # while we are here, open the segment files
+        field_names = ['']      # PANDASID
         xy = 'x'
-        segment_numbers = []
-        for i in range(1,48):
-            try:
-                heads = layouts[f"SF1_{i:05d}.xsd"]
-                [field_names.append(head+"_"+xy) for head in heads[0:4]]
-                if i==1:
-                    assert heads[4]=='LOGRECNO'
-                    field_names.append(heads[4])
-                [field_names.append(head) for head in heads[5:]]
+        open_segments = []
+        for (c,l) in enumerate(layouts,1):
+            if l[:3]=='SF1' and l[9:-4]!='mod' and l[10:-5]!='PT':
+                cifsn = int(l[4:-4])
+                names = layouts[l]
+                extra = l[4:-4]
+                fname = f'$ROOT/{state_abbr}/sf1/{state_abbr}{extra}2010.sf1'
+                segreader = SF1SegmentReader(state_abbr=state_abbr,
+                                             segment_filename=fname,
+                                             names = names,
+                                             xy = xy,
+                                             cifsn = cifsn )
                 xy = 'y' if xy=='x' else 'x'
-                segment_numbers.append(i) # we are using these segments only
-            except KeyError as e:
-                pass
+                open_segments.append(segreader)
+
+                # add all the field names in order to header record, with pandas-style renaming
+                field_names.extend( segreader.names )
+
+        # Add the geoid fields
         JOIN_FIELDS = "STATE,COUNTY,TRACT,BLOCK,BLKGRP,SUMLEV".split(",")
         [field_names.append(field) for field in JOIN_FIELDS]
         field_names.append("geoid")
 
+
+        ################################################################
+        
         # The SF1 directory consists of 47 or 48 segments. The first columns are defined below:
         # Summary levels at https://factfinder.census.gov/help/en/summary_level_code_list.htm
         SUMLEV_COUNTY = '050' # State-County
         SUMLEV_TRACT  = '140' # State-County-Census Tract
         SUMLEV_BLOCK  = '101' # State-County-County Sub∀division-Place/Remainder-Census Tract∀-Block Group-Block
-        SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
 
         geo_fields = {a[1]:a[0] for a in enumerate(layouts['GEO_HEADER_SF1.xsd'])}
         assert geo_fields['FILEID']==0 and geo_fields['STUSAB']==1
@@ -115,11 +194,11 @@ def process_state(state_abbr):
                 if sumlev in [SUMLEV_COUNTY,SUMLEV_TRACT,SUMLEV_BLOCK]:
                     logrecno = geo_data[GEO_LOGRECNO_FIELD]
                     county   = geo_data[GEO_COUNTY_FIELD]
-                    geocode  = "".join(geo_data[f] for f in
+                    geoid  = "".join(geo_data[f] for f in
                                        [GEO_STATE_FIELD,GEO_COUNTY_FIELD,GEO_TRACT_FIELD,GEO_BLOCK_FIELD])
                     logrecs[logrecno] = (sumlev, ct, county,
                                          [geo_data[ geo_fields[ field ] ] for field in JOIN_FIELDS],
-                                         geocode )
+                                         geoid.strip() )
                     counts[sumlev] += 1
                     ct += 1
                 
@@ -127,10 +206,12 @@ def process_state(state_abbr):
             state_abbr, counts[SUMLEV_COUNTY], counts[SUMLEV_TRACT], counts[SUMLEV_BLOCK],
             total_size(logrecs)))
 
-        # Open the geofile and find all of the LOGRECNOs for the summary summary levels we care about
-        # We are splitting on the entire line, which is a waste. But most of the data we are collecting is at the
-        # block level, so most of the time we aren't wasting the work
-        open_segment_files = [open_segment(state_abbr,segment) for segment in segment_numbers]
+        # Open the geofile and find all of the LOGRECNOs for the
+        # summary summary levels we care about We are splitting on the
+        # entire line, which is a waste. But most of the data we are
+        # collecting is at the block level, so most of the time we
+        # aren't wasting the work
+
 
         # Open the block, tract, and county files for every county
         # and write the first line
@@ -141,30 +222,48 @@ def process_state(state_abbr):
             dbrecon.dmakedirs(countydir)
             output_files[county_code] = {
                 SUMLEV_COUNTY: dopen(f'{countydir}/sf1_county_{state_code}{county_code}.csv','w') ,
-                SUMLEV_BLOCK: dopen(f'{countydir}/sf1_block_{state_code}{county_code}.csv','w') ,
-                SUMLEV_TRACT: dopen(f'{countydir}/sf1_tract_{state_code}{county_code}.csv','w') }
+                SUMLEV_BLOCK:  dopen(f'{countydir}/sf1_block_{state_code}{county_code}.csv','w') ,
+                SUMLEV_TRACT:  dopen(f'{countydir}/sf1_tract_{state_code}{county_code}.csv','w') }
             for f in output_files[county_code].values():
                 f.write(",".join(field_names))
                 f.write("\n")
 
-        # Now, for each segment, grab the fields, join, and stuff...
-
-        def line_to_fields(line):
-            """Transform a line from the SF1 file to the what the original code did (frequently incorrectly)
-            with pandas."""
-            TK**
-
+        import operator
+        count = 0
         while True:
-            line = ",".join([f.readline().strip() for f in open_segment_files])
-            fields = line.split(",")
+            count += 1
+            try:
+                fields = open_segments[0].getfields(logrecno=ANY)
+            except ReaderException as e:
+                break;
+            logrecno = fields[4]
+            for osr in open_segments[1:]:
+                fields.extend(osr.getfields(logrecno=logrecno))
             if fields[0]=='':   # end of file!
                 break
-            if fields[0]!='SF1ST' or fields[1]!=state_abbr_upper:
-                raise RuntimeError(f"bad fields in line {ct}: {fields}")
-            logrecno = fields[4]
+
             if logrecno in logrecs:
-                (sumlev,ct,county,joinfields,geocode) = logrecs[logrecno]
-                outline = str(ct)+","+(",".join(fields+joinfields)) + "," + geocode + "\n"
+                (sumlev,ct,county,joinfields,geoid) = logrecs[logrecno]
+
+                fields.insert(0,str(ct)) # insert the pandasID
+                fields.extend(joinfields) # add the fields that we join
+                fields.append(geoid)
+
+                # Check the SF1ST fields. Everyplace we have a SF1ST should be a FILEID
+                errors = 0
+                for i in range(len(fields)):
+                    if fields[i]=='SF1ST' and not field_names[i].startswith('FILEID'):
+                        print(f"fields[{i}]={fields[i]}  (should be FILEID field)")
+                        errors += 1
+                if len(fields) != len(field_names):
+                    print(f"Expected {len(field_names)} fields, got {len(fields)}")
+                    errors += 1
+                if errors>0:
+                    for i in range(len(fields)):
+                        print(i,field_names[i],fields[i])
+                    raise RuntimeError(f"errors: {errors}")
+
+                outline = ",".join(fields) + "\n"
                 output_files[county][sumlev].write(outline)
 
 

@@ -248,9 +248,7 @@ def process_state(state_abbr):
     logging.info(f"{state_abbr}: part1: Building state-wide frame of all tracts and blocks")
     frame = None
     for c,l in enumerate(layout,1):
-
         if l[:3]=='SF1' and l[9:-4]!='mod' and l[10:-5]!='PT':
-
             # add all the field names in order to header record.
             names = layout[l]
             extra = l[4:-4]

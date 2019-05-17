@@ -59,6 +59,10 @@ The time and memory that this process requires is proportional to the number of 
 
 Pandas Implementation --- 02_pandas_build_state_stats.py.  This implementation is single-threaded. It requires roughly 59GB of RAM to process TX and 49GB of RAM to process CA; other states take less. Time on our high-performance server is
 
+Direct implementation ---
+ The direct implementation is complicated by the fact that not every logical record is in every segment file. So we create a reader that, when given a logical record request, returns either blank logical records or the records from the requested file. This means that each reader needs to know the fields in that record. Pandas does this all for us, and we might be able to do a chunked merge, but it wouldn't do all of the recoreds in parallel (which we do, assuming that the logical records are sorted.)
+
+
 The file `$ROOT/{state_abbr}/completed_{state_abbr}_02` is created when each
 state is completed. (This would take less memory, and be faster, if a
 single data frame was not created for all of the counties in each
@@ -66,6 +70,9 @@ state.) On our machine the Deleware completed in just 630 seconds (10
 minutes), but CA took 14844.2 seconds (4.12 hours)
 
     python3 02_build_state_stats.py --all
+
+
+
 
 3. Create the LP files. There is 1 LP file for every census tract. The
 LP files are very large. The model to create the tract-level files are

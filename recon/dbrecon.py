@@ -36,7 +36,7 @@ from total_size import total_size
 ## Functions that return paths.
 ## These cannot be constants because they do substituion, and f-strings don't work as macros
 ###
-SF1_DIR           = "$SF1DATA_ROOT/{state_abbr}/{state_code}{county}"
+SF1_DIR           = '$ROOT/{state_abbr}/{state_code}{county}'
 SF1_RACE_BINARIES = '$SRC/layouts/sf1_vars_race_binaries.csv'
 
 

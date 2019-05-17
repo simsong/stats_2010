@@ -73,7 +73,6 @@ class SF1SegmentReader():
             self.fields[3] = format(int(self.fields[3]),'.1f') # CIFSN
             assert len(self.fields) == len(self.names)
 
-
         if (self.logrecno == logrecno) or (logrecno==ANY):
             # Map the fields we have to the broken fields that are reported
             def refmt(nv):
@@ -116,7 +115,7 @@ def process_state(state_abbr):
         # the order of the layouts to read the csv.
 
         state_abbr_upper = state_abbr.upper()
-        layouts           = json.load(dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
+        layouts          = json.load(dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
         geo_filename     = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
         done_filename    = f"$ROOT/{state_abbr}/completed_{state_abbr}_02"
 
@@ -299,7 +298,6 @@ if __name__=="__main__":
         states = dbrecon.all_state_abbrs()
     else:
         states = [dbrecon.state_abbr(st).lower() for st in args.state_abbrs]
-
 
     if not states:
         print("Specify states to process or --all")

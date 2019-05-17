@@ -398,7 +398,7 @@ class LPTractBuilder:
         block_summary_nums = {}
         for block in sf1_block_data:
             self.get_constraint_summary('block', sf1_block_data, sf1_block_data[block], block_summary_nums)
-        logging.info("done with block summaries")
+        logging.info(f"{state_abbr} {county} {tract}: done getting block summary constraints")
 
         # Initial constraint number counter
         n_con  = 1                  
@@ -413,7 +413,7 @@ class LPTractBuilder:
 
         tract_summary_nums = {}
         self.get_constraint_summary('tract', sf1_tract_data, sf1_tract_data, tract_summary_nums)
-        logging.info("done with tract summary")
+        logging.info(f"{state_abbr} {county} {tract}: done with tract summary")
 
         # for tracts, need to add the master_tuple_list just once
         for i in self.master_tuple_list: 

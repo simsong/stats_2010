@@ -155,7 +155,6 @@ def update_constraints(f, level, n_con, summary_nums, geo_id, state_code, county
     
     ## Note: we must make con_frame into categories *after* GEO_TABLE is added, because you cannot add categories
 
-
     if level=='block':
         merge_list=[GEOID] + ATTRIBUTES
     else:
@@ -193,8 +192,6 @@ def update_constraints(f, level, n_con, summary_nums, geo_id, state_code, county
     del lp_df
     gc.collect()
     return n_con
-
-
 
 
 class LPTractBuilder:
@@ -339,6 +336,8 @@ class LPTractBuilder:
                     # Once to make the tract_summary_nums, and then it is written to the LP file.
                     # So we won't save anything by making it a generator.
                     #
+
+                    # This is where the variables are created!
 
                     if level=='block':
                         for i in s_tuple_list:

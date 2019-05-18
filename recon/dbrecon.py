@@ -222,7 +222,6 @@ def parse_state_abbrs(statelist):
     assert isinstance(statelist,str)
     return [state_rec(key)['state_abbr'].lower() for key in statelist.split(",")]
     
-
 def counties_for_state(state_abbr):
     assert isinstance(state_abbr,str)
     fips = state_fips(state_abbr)

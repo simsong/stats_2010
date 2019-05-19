@@ -45,6 +45,18 @@ dfxml_writer = None
 t0 = time.time()
 
 
+class Memoize:
+    def __init__(self, fn):
+        self.fn = fn
+        self.memo = {}
+
+    def __call__(self, *args):
+        if args not in self.memo:
+            self.memo[args] = self.fn(*args)
+        return self.memo[args]
+
+
+
 def SF1_ZIP_FILE(*,state_abbr):
     return f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr)
 
@@ -71,12 +83,12 @@ def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
 def LPDIR(*,state_abbr,county):
     """Returns the directory where LP files for a particular state and county are stored"""
     fips = state_fips(state_abbr)
-    return f'$LPROOT/{state_abbr}/{fips}{county}/lp'
+    return f'$ROOT/{state_abbr}/{fips}{county}/lp'
 
 def SOLDIR(*,state_abbr,county):
     """Returns the directory where LP files for a particular state and county are stored"""
     fips = state_fips(state_abbr)
-    return f'$LPROOT/{state_abbr}/{fips}{county}/sol'
+    return f'$ROOT/{state_abbr}/{fips}{county}/sol'
 
 def LPFILENAME(*,state_abbr,county,geo_id):
     lpdir = LPDIR(state_abbr=state_abbr,county=county)
@@ -96,7 +108,6 @@ def COUNTY_CSV_FILENAME(*,state_abbr,county):
     geo_id = state_fips(state_abbr) + county
     return f'{csvdir}/synth_out_{geo_id}.csv'
     
-
 def find_lp_filename(*,state_abbr,county,tract):
     geoid = state_fips(state_abbr)+county+tract
     lpdir = LPDIR(state_abbr=state_abbr,county=county)
@@ -234,7 +245,6 @@ def counties_for_state(state_abbr):
             counties.append(county)
     return counties
 
-geofile_cache = {}
 def tracts_for_state_county(*,state_abbr,county):
     """Read the state geofile to determine the number of tracts that are
     in a given county. The state geofile is cached, because it takes a
@@ -253,7 +263,7 @@ def tracts_for_state_county(*,state_abbr,county):
                                   'SUMLEV': object, 'LOGRECNO': object},
                              low_memory=False)
                 geofile_cache[state_abbr] = df
-        df = geofile_cache[state_abbr]
+        df     = geofile_cache[state_abbr]
         tracts = df[df['SUMLEV'].isin(['140'])]
         tracts_in_county = tracts[tracts['COUNTY'].isin([county])]
         with dopen(state_county_tracts_fname,'wb') as f:
@@ -272,16 +282,19 @@ def tracts_with_files(state_abbr,county, filetype='lp'):
     
     ret = []
     state_code = state_fips(state_abbr)
-    if filetype=='lp':
+    if filetype=='lp' or filetype=='lp.gz':
         dirfunc = LPDIR
-    elif filetype=='sol':
+    elif filetype=='sol' or filetype=='sol.gz':
         dirfunc = SOLDIR
     else:
         raise RuntimeError("only filetype lp and sol supported at the moment")
     for s in dlistdir(dirfunc(state_abbr=state_abbr, county=county)):
         if s.endswith(filetype):
             geo_id = state_code + county
-            tract = os.path.basename(s).replace(f"model_{geo_id}","").replace(filetype,"")
+            tract = os.path.basename(s).replace(f"model_{geo_id}","")
+            dpos = tract.find('.')
+            if dpos>0:
+                tract = tract[0:dpos]
             ret.append(tract)
     return ret
 

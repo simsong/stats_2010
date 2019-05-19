@@ -34,7 +34,7 @@ GUROBI_STATUS_CODES={2:"optimal", 3:"infeasible"}
 
 # Details on Gurobi output:
 # http://www.gurobi.com/documentation/8.1/refman/mip_logging.html
-GUROBI_THREADS=16
+GUROBI_THREADS_DEFAULT=16
 
 
 ##function for timing later
@@ -87,7 +87,7 @@ class RunGurobi:
             return
 
         with tempfile.NamedTemporaryFile(suffix='.log',encoding='utf-8',mode='w+') as tf:
-            self.model.setParam("Threads",GUROBI_THREADS)
+            self.model.setParam("Threads",args.j2)
             print("tf.name:",tf.name,type(tf.name))
             self.model.setParam("LogFile",tf.name)
 
@@ -148,15 +148,13 @@ def run_gurobi_for_county(state_abbr, county):
         run_gurobi_for_county_tract(tt[0], tt[1], tt[2])
 
     tracttuples = [(state_abbr, county, tract) for tract in tracts]
-    if args.j>1:
+    if args.j1>1:
         from multiprocessing import Pool
-        with Pool(args.j) as p:
+        with Pool(args.j1) as p:
             p.map(run_gurobi_tuple, tracttuples)
     else:
         for tt in tracttuples:
             run_gurobi_tuple(tt)
-    with dopen(county_csv_filename_done,"w") as outfile:
-        outfile.write(time.asctime()+"\n")
 
 def make_csv_file(state_abbr, county):
     # Make sure we have a solution file for every tract
@@ -193,6 +191,8 @@ def make_csv_file(state_abbr, county):
                         geoid_tract = state_code + county + tract
                         w.writerow([geoid_tract, c[1], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13]])
             logging.info("Ending tract "+tract_code)
+    with dopen(county_csv_filename_done,"w") as outfile:
+        outfile.write(time.asctime()+"\n")
 
 
 
@@ -229,12 +229,13 @@ def process_state_county(state_abbr, county):
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
-                             description="Run Gurobi and convert the output to the CSV file." )
+                             description="Run Gurobi on oneo r all off the tracts in a given state/county and convert the output to a single CSV file for the county." )
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("state_abbr", help="2-character state abbreviation")
     parser.add_argument("county", help="3-digit county code; can be 'all' for all counties")
     parser.add_argument("tracts", help="4-digit tract code[s]; can be 'all'",nargs="*")
-    parser.add_argument("--j", help="Specify number of threads", default=1, type=int)
+    parser.add_argument("--j1", help="Specify number of tracts to solve at once (presolve doens't parallelize)", default=1, type=int)
+    parser.add_argument("--j2", help="Specify number of threads for gurobi to use", default=GUROBI_THREADS_DEFAULT, type=int)
     parser.add_argument("--config", help="config file")
     parser.add_argument("--dry-run", help="do not run gurobi; just print model stats", action="store_true")
     parser.add_argument("--justcsv", help="Just make the CSV file from the solutions", action='store_true')

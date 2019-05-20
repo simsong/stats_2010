@@ -30,6 +30,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 import ctools.s3 as s3
 import ctools.clogging as clogging
 from total_size import total_size
+from ctools.gzfile import GZFile
 
 
 ##
@@ -271,6 +272,28 @@ def tracts_for_state_county(*,state_abbr,county):
     with dopen(state_county_tracts_fname,'rb') as f:
         return pickle.load(f)
 
+################################################################
+### LPFile Manipulation
+################################################################
+
+MIN_LP_SIZE = 1000              # smaller than this, the file must be invalid
+def lpfile_properly_terminated(fname):
+    #
+    # If the lpfile does not end with '.gz', we can tell if it is properly terminated
+    # by reading the last 3 bytes and seeing if they have an End.
+    # Otherwise, assume it is properly terminated if it is not writable.
+    if not fname.endswith('.gz'):
+        if dbrecon.dgetsize(fname) < MIN_LP_SIZE:
+            return False
+        with dopen(fname,"rb") as f:
+            f.seek(-3,2)
+            last3 = f.read(3)
+            return last3==b'End'
+    return os.access(path, os.W_OK)==False
+
+def mark_lpfile_properly_terminated(fname):
+    from stat import S_IREAD, S_IRGRP, S_IROTH
+    os.chmod(fname, S_IREAD|S_IRGRP|S_IROTH)
 
 ################################################################
 ### Output Products
@@ -475,7 +498,8 @@ def dlistdir(path):
         return []
 
 def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
-    """An open function that can open from S3 and from inside of zipfiles"""
+    """An open function that can open from S3 and from inside of zipfiles.
+    Don't use this for new projects; use ctools.dconfig.dopen instead"""
     logging.info("  dopen(path={},mode={},encoding={})".format(path,mode,encoding))
     path = dpath_expand(path)
 
@@ -487,6 +511,9 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
 
     # Check for full path name
     logging.info("=>open(path={},mode={},encoding={})".format(path,mode,encoding))
+
+    # if opening mode==r and the file does not exist, see if there is a file ending filename.gz,
+    # and if it does, open through a pipe with a decompressor.
 
     # If opening mode==r, and the file does not exist, see if it is present in the provided ZIP file
     # If a zipfile is not provided, see if we can find one in the directory
@@ -505,10 +532,11 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
             if encoding==None and ("b" not in mode):
                 encoding='utf-8'
             return io.TextIOWrapper(zf , encoding=encoding)
-    if encoding==None:
-        return open(path,mode=mode)
-    else:
-        return open(path,mode=mode,encoding=encoding)
+
+    if path.endswith(".gz"):
+        logging.info(f"  passing {path} to GZFile for automatic compress/decompress")
+        return GZFile(path,mode=mode,encoding=encoding)
+    return open(path,mode=mode,encoding=encoding)
 
 def dmakedirs(dpath):
     """Like os.makedirs, but just returns for s3"""

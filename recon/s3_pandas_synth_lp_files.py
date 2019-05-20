@@ -27,15 +27,13 @@ import tempfile
 import subprocess
 
 from total_size import total_size
+from dbrecon import lpfile_properly_terminated
 
 assert pd.__version__ > '0.19'
 
 
-MIN_LP_SIZE = 1000              # smaller than this, the file must be invalid
 MAX_SF1_ERRORS = 10             # some files may have errors
-
-
-MISSING = 'missing'
+MISSING  = 'missing'
 HISPANIC = 'hispanic'
 
 Y = 'Y'
@@ -92,14 +90,6 @@ def make_attributes_categories(df):
             df[a] = df[a].astype('category')
     return df
 
-def lpfile_properly_terminated(fname):
-    # Note that we need to open in binary mode to allow seeking from end of file
-    if dbrecon.dgetsize(fname) < MIN_LP_SIZE:
-        return False
-    with dopen(fname,"rb") as f:
-        f.seek(-3,2)
-        last3 = f.read(3)
-        return last3==b'End'
     
 
 ################################################################
@@ -405,6 +395,7 @@ class LPTractBuilder:
         n_con = update_constraints(f, 'block', n_con, block_summary_nums,geo_id,state_code,county,state_abbr)
 
         # loop through blocks in the tract to get block constraints and the master tuple list
+        logging.info(f"block_summary_nums: {total_size(block_summary_nums):,}")
         if args.mem:
             print(f"block_summary_nums: {total_size(block_summary_nums):,}")
 
@@ -420,6 +411,8 @@ class LPTractBuilder:
 
         # Loop through the tract constraints to write to file.
         n_con = update_constraints(f, 'tract', n_con, tract_summary_nums,geo_id,state_code,county,state_abbr,)
+        logging.info(f"tract_summary_nums: {total_size(tract_summary_nums):,}")
+        logging.info(f"master_tuple_list: {total_size(self.master_tuple_list):,}")
         if args.mem:
             print(f"tract_summary_nums: {total_size(tract_summary_nums):,}")
             print(f"master_tuple_list: {total_size(self.master_tuple_list):,}")
@@ -432,6 +425,7 @@ class LPTractBuilder:
             f.write('\n')
         f.write(' End')
         f.close()
+        dbrecon.mark_lpfile_properly_terminated(lpfilename)
 
         if args.mem:
             if dpath_exists(lpfilename):

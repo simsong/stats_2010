@@ -22,7 +22,6 @@ import psutil
 import subprocess
 import tempfile
 
-
 from collections import defaultdict
 
 import gurobipy as gu
@@ -42,17 +41,22 @@ def millis():
     return int(round(time.time() * 1000))
 
 class RunGurobi:
+    """Run gurobi with a given LP file. 
+    Note: automatically handles the case where lpfile is compressed by decompressing
+    and giving the Gurobi optimizer device to read from.
+    """
     def __init__(self,state_abbr, county, tract_code, lp_filename):
+
         logging.info(f'RunGurobi({state_abbr},{county},{tract_code})')
         self.state_abbr = state_abbr
         self.county = county
         self.tract_code = tract_code
         self.state_code = dbrecon.state_fips(state_abbr)
         self.geoid_tract = self.state_code + self.county + self.tract_code
-
         self.lp_filename   = lp_filename
         self.ilp_filename  = dbrecon.ILPFILENAME(state_abbr=state_abbr, county=county, geo_id=self.geoid_tract)
         self.p = None
+        self.config = dbrecon.get_config()
 
     def sol_filename(self):
         return dbrecon.dpath_expand(dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=self.tract_code))
@@ -64,7 +68,9 @@ class RunGurobi:
         if self.lp_filename.startswith("s3:"):
             raise RuntimeError("This must be modified to allow Gurobi to read files from S3 using the stdin hack.")
 
-        e = gu.Env.OtherEnv("gurobi.log", "Census", "DAS", 0, "")
+        customer = config['gurobi']['customer']
+        appname  = config['gurobi']['appname']
+        e = gu.Env.OtherEnv("gurobi.log", customer, appname, 0, "")
         if self.lp_filename.endswith(".lp"):
             self.model = gu.read(dbrecon.dpath_expand(self.lp_filename), env=e)
         elif self.lp_filename.endswith(".lp.gz"):
@@ -75,9 +81,11 @@ class RunGurobi:
             # Because Gurobin must read from a file that ends with a .lp, 
             # make /tmp/stdin.lp a symlink to /dev/stdin, and
             # then read that
-            if not os.path.exists("/tmp/stdin.lp"):
-                os.symlink("/dev/stdin","/tmp/stdin.lp")
-            self.model = gu.read("/tmp/stdin.lp", env=e)
+            tmpname = f"/tmp/stdin-{self.p.pid}.lp"
+            if os.path.exists(tmpname):
+                raise RuntimeError(f"File should not exist: {tmpname}")
+            os.symlink("/dev/stdin",tmpname)
+            self.model = gu.read(tmpname, env=e)
         else:
             raise RuntimeError("Don't know how to read model from {}".format(self.lp_filename))
 

@@ -6,11 +6,9 @@ Read the processed SF1 dat and syntheize the LP file that will be input to the o
 """
 
 from collections import defaultdict
-from dbrecon import *
 import xml.etree.ElementTree as ET
 import math
 import csv
-import dbrecon
 import gc
 import itertools
 import json
@@ -27,10 +25,12 @@ import tempfile
 import subprocess
 
 from total_size import total_size
-from dbrecon import lpfile_properly_terminated
+
+#from dbrecon import *
+import dbrecon
+from dbrecon import lpfile_properly_terminated,LPFILENAME,dopen,dmakedirs,LPDIR,dpath_exists,dpath_unlink
 
 assert pd.__version__ > '0.19'
-
 
 MAX_SF1_ERRORS = 10             # some files may have errors
 MISSING  = 'missing'
@@ -346,6 +346,9 @@ class LPTractBuilder:
         logging.info(f"{state_code}{county}{tract} tract_data_size:{sys.getsizeof(sf1_tract_data):,} ; "
                      "block_data_size:{sys.getsizeof(sf1_block_data):,} ")
 
+        if not lpfilename.endswith(".gz"):
+            lpfilename+=".gz"
+
         if args.dry_run:
             print(f"DRY RUN: Will not create {lpfilename}")
             return
@@ -425,6 +428,7 @@ class LPTractBuilder:
             f.write('\n')
         f.write(' End')
         f.close()
+        dbrecon.db_done('lp',state_abbr, county, tract)
         dbrecon.mark_lpfile_properly_terminated(lpfilename)
 
         if args.mem:
@@ -459,7 +463,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
 
     ### Has the variables and the collapsing values we want (e.g, to collapse race, etc)
     ### These data frames are all quite small
-    sf1_vars       = pd.read_csv(dopen(SF1_RACE_BINARIES), quoting=2)
+    sf1_vars       = pd.read_csv(dopen(dbrecon.SF1_RACE_BINARIES), quoting=2)
     make_attributes_categories(sf1_vars)
 
     sf1_vars_block = sf1_vars[(sf1_vars['level']=='block')]
@@ -469,8 +473,8 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ### These files are not that large
 
     try:
-        sf1_block_reader = csv.DictReader(dopen(SF1_BLOCK_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
-        sf1_tract_reader = csv.DictReader(dopen(SF1_TRACT_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
+        sf1_block_reader = csv.DictReader(dopen(dbrecon.SF1_BLOCK_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
+        sf1_tract_reader = csv.DictReader(dopen(dbrecon.SF1_TRACT_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
     except FileNotFoundError as e:
         print(e)
         logging.error(f"ERROR. NO BLOCK DATA FILE for {state_abbr} {county} ")
@@ -674,5 +678,5 @@ if __name__=="__main__":
     # We are doing a single state/county pair. We may do each tract multithreaded.
     assert args.county!='all'
     make_state_county_files(state_abbrs[0], args.county)
-    print(f"Logfile: {logfname}")
+
 

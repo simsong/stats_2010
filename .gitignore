@@ -16,3 +16,4 @@ pl94/
 .cache
 TAGS
 logs/
+shell.out*

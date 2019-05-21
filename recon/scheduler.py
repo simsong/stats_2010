@@ -25,30 +25,35 @@ import psutil
 import xml.etree.ElementTree as ET
 import glob, time, os, sys
 import csv
+import datetime
 
 from collections import defaultdict
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
-import ctools.dbfile as dbfile
-
-DBFILE=os.path.join( os.path.dirname(__file__), "dbfile.sqlite3" )
+from ctools.dbfile import DBMySQL
 
 SCHEMA="""
-CREATE TABLE IF NOT EXISTS tracts (
-    rowid INTEGER PRIMARY KEY,
+DROP TABLE IF EXISTS tracts;
+CREATE TABLE tracts (
+    rowid INT(11) NOT NULL AUTO_INCREMENT,
     state varchar(2) NOT NULL,
     county varchar(3) NOT NULL,
     tract varchar(6) NOT NULL,
-    has_csv varchar(1) default 'N' NOT NULL,
-    has_lp varchar(1) default 'N' NOT NULL,
-    has_sol varchar(1) default 'N NOT NULL'
+    lp_start datetime,
+    lp_end datetime,
+    sol_start datetime,
+    sol_end datetime,
+    final_pop INTEGER,
+    modified timestamp,
+    PRIMARY KEY (rowid),
+    UNIQUE INDEX (state,county,tract),
+    INDEX (lp_start),
+    INDEX (lp_end),
+    INDEX (sol_start),
+    INDEX (sol_end)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS t_geoid ON tracts(state,county,tract);
-CREATE INDEX IF NOT EXISTS t_csv ON tracts(has_csv);
-CREATE INDEX IF NOT EXISTS t_lp ON tracts(has_lp);
-CREATE INDEX IF NOT EXISTS t_sol ON tracts(has_sol);
 """
                 
 class Memoize:
@@ -69,30 +74,44 @@ def county_csv_exists(state_abbr,county):
 def tracts_with_files(s, c, w):
     return dbrecon.tracts_with_files(s, c, w)
 
-def init_sct(c,state_abbr,county,tract):
-    has_csv = "Y" if county_csv_exists(state_abbr, county) else "N"
-    has_lp  = "Y" if ((tract in tracts_with_files(state_abbr, county, 'lp') )
-                      or
-                      (tract in tracts_with_files(state_abbr, county, 'lp.gz') ) ) else "N"
-    has_sol = "Y" if tract in tracts_with_files(state_abbr, county, 'sol') else "N" 
+def filename_mtime(fname):
+    if fname is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(os.stat(fname).st_mtime).isoformat()
+    except FileNotFoundError:
+        return None
 
-    c.execute("INSERT INTO TRACTS (state,county,tract,has_csv,has_lp,has_sol) values (?,?,?,?,?,?)",
-              (state_abbr,county,tract,has_csv,has_lp,has_sol))
+def final_pop(state_abbr,county,tract):
+    count = 0
+    try:
+        with open( dbrecon.SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)) as f:
+            for line in f:
+                if line.startswith('C'):
+                    count += 1
+        return count
+    except FileNotFoundError:
+        return None
+
+def init_sct(c,state_abbr,county,tract):
+    lpfilename = dbrecon.find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
+    lptime = filename_mtime( lpfilename )
+    soltime = filename_mtime( dbrecon.SOLFILENAME(state_abbr=state_abbr,county=county, tract=tract) )
+    
+    c.execute("INSERT INTO tracts (state,county,tract,lp_end,sol_end,final_pop) values (%s,%s,%s,%s,%s,%s)",
+              (state_abbr,county,tract,lptime,soltime,
+               final_pop(state_abbr,county,tract)))
 
 def init():
-    try:
-        os.unlink(DBFILE)
-    except FileNotFoundError:
-        pass
-    with dbfile.DBSQL(fname=DBFILE) as db:
-        db.create_schema(SCHEMA)
-
-        c = db.cursor()
-        for state_abbr in dbrecon.all_state_abbrs():
-            for county in dbrecon.counties_for_state(state_abbr=state_abbr):
-                for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
-                    init_sct(c,state_abbr,county,tract)
-            db.commit()
+    db = dbrecon.DB()
+    db.create_schema(SCHEMA)
+    print("schema loaded")
+    c = db.cursor()
+    for state_abbr in dbrecon.all_state_abbrs():
+        for county in dbrecon.counties_for_state(state_abbr=state_abbr):
+            for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
+                init_sct(c,state_abbr,county,tract)
+        db.commit()
                       
 
 def process_dfxml(dfxml):
@@ -112,11 +131,20 @@ if __name__=="__main__":
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--init",   help="Clear database and learn the current configuration",
                         action='store_true')
-    parser.add_argument("--dbfile", help="database file", default=DBFILE)
     parser.add_argument("--config", help="config file")
+    parser.add_argument("--testdb", help="test database connection", action='store_true')
     
     args   = parser.parse_args()
     config = dbrecon.get_config(filename=args.config)
+
+    if args.testdb:
+        db = dbrecon.DB(config)
+        c = db.cursor()
+        print("Tables:")
+        c.execute("show tables")
+        for row in c.fetchall():
+            print(row)
+        exit(0)
 
     if args.init:
         init()

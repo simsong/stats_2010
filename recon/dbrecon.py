@@ -56,65 +56,128 @@ class Memoize:
             self.memo[args] = self.fn(*args)
         return self.memo[args]
 
+################################################################
+### Database management functions
+class DB():
+    """DB class with singleton pattern"""
+    instance  = None
+    def __init__(self, config=None):
+        if not DB.instance:
+            if not config:
+                raise RuntimeError("config required for singleton creation")
+            DB.instance = DB.__DB(config)
+    def __getattr__(self, name):
+        return getattr(self.instance, name)
+            
+    # The actual singleton class follows
+    class __DB:
+        def __init__(self, config):
+            from ctools.dbfile import DBMySQL
+            self.config = config
+            mysql_section = config['mysql']
+            self.db     = DBMySQL(host=os.path.expandvars(mysql_section['host']),
+                                  database=os.path.expandvars(mysql_section['database']),
+                                  user=os.path.expandvars(mysql_section['user']),
+                                  password=os.path.expandvars(mysql_section['password']))
+        def cursor(self):
+            return self.db.cursor()
 
+        def commit(self):
+            return self.db.commit()
 
-def SF1_ZIP_FILE(*,state_abbr):
-    return f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr)
+        def create_schema(self,schema):
+            return self.db.create_schema(schema)
+            
+def db_start(what,state_abbr, county, tract):
+    assert what in ['lp','sol']
+    db = DB()
+    c = db.cursor()
+    c.execute(f"update tracts set {what}_start=now() where state=%s,county=%s,tract=%s",
+              (state,county,tract))
+    db.commit()
+    assert c.rowcount==1
+    
+def db_done(what, state_abbr, county, tract):
+    assert what in ['lp','sol']
+    db = DB()
+    c = db.cursor()
+    c.execute(f"update tracts set {what}_end=now() where state=%s,county=%s,tract=%s",
+              (state,county,tract))
+    db.commit()
+    assert c.rowcount==1
+    
 
-def STEP02_DONE_FILE(*,state_abbr):
-    return f'$ROOT/{state_abbr}/completed_{state_abbr}_02'
+################################################################
+### functions that return directories. dpath_expand is not called on these.
 
-def SF1_BLOCK_DATA_FILE(*,state_abbr,county):
-    state_code = state_fips(state_abbr)
-    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
-    return f'{sf1_dir}/sf1_block_{state_code}{county}.csv'
-
-def SF1_TRACT_DATA_FILE(*,state_abbr,county):
-    state_code = state_fips(state_abbr)
-    sf1_dir        = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
-    return f'{sf1_dir}/sf1_tract_{state_code}{county}.csv'
-
-def STATE_COUNTY_LIST(*,root='$ROOT',state_abbr,fips):
-    return f"{root}/{state_abbr}/state_county_list_{fips}.csv"
 
 def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
     fips = state_fips(state_abbr)
     return f"{root}/{state_abbr}/{fips}{county}"
 
 def LPDIR(*,state_abbr,county):
-    """Returns the directory where LP files for a particular state and county are stored"""
+    """Returns the directory where LP files for a particular state and county are stored.
+    dpath_expand() is not called because we may search this directory for files."""
     fips = state_fips(state_abbr)
     return f'$ROOT/{state_abbr}/{fips}{county}/lp'
 
 def SOLDIR(*,state_abbr,county):
-    """Returns the directory where LP files for a particular state and county are stored"""
+    """Returns the directory where LP files for a particular state and county are stored.
+    dpath_expand() is not called because we may search this directory for files.
+    """
     fips = state_fips(state_abbr)
     return f'$ROOT/{state_abbr}/{fips}{county}/sol'
 
+################################################################
+
+
+def SF1_ZIP_FILE(*,state_abbr):
+    return dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr))
+
+def STEP02_DONE_FILE(*,state_abbr):
+    return dpath_expand(f'$ROOT/{state_abbr}/completed_{state_abbr}_02')
+
+def SF1_BLOCK_DATA_FILE(*,state_abbr,county):
+    state_code = state_fips(state_abbr)
+    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
+    return dpath_expand(f'{sf1_dir}/sf1_block_{state_code}{county}.csv')
+
+def SF1_TRACT_DATA_FILE(*,state_abbr,county):
+    state_code = state_fips(state_abbr)
+    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
+    return dpath_expand(f'{sf1_dir}/sf1_tract_{state_code}{county}.csv')
+
+def STATE_COUNTY_LIST(*,root='$ROOT',state_abbr,fips):
+    return dpath_expand(f"{root}/{state_abbr}/state_county_list_{fips}.csv")
+
 def LPFILENAME(*,state_abbr,county,geo_id):
     lpdir = LPDIR(state_abbr=state_abbr,county=county)
-    return f'{lpdir}/model_{geo_id}.lp'
+    return dpath_expand(f'{lpdir}/model_{geo_id}.lp')
+    
+def LPFILENAMEGZ(*,state_abbr,county,geo_id):
+    lpdir = LPDIR(state_abbr=state_abbr,county=county)
+    return dpath_expand(f'{lpdir}/model_{geo_id}.lp.gz')
     
 def ILPFILENAME(*,state_abbr,county,geo_id):
     lpdir = LPDIR(state_abbr=state_abbr,county=county)
-    return f'{lpdir}/model_{geo_id}.ilp'
+    return dpath_expand(f'{lpdir}/model_{geo_id}.ilp')
     
 def SOLFILENAME(*,state_abbr,county,tract):
     soldir = SOLDIR(state_abbr=state_abbr,county=county)
     fips = state_fips(state_abbr)
-    return f'{soldir}/model_{fips}{county}{tract}.sol'
+    return dpath_expand(f'{soldir}/model_{fips}{county}{tract}.sol')
     
 def COUNTY_CSV_FILENAME(*,state_abbr,county):
-    csvdir = STATE_COUNTY_DIR(root='$LPROOT',state_abbr=state_abbr,county=county)
+    csvdir = STATE_COUNTY_DIR(root='$ROOT',state_abbr=state_abbr,county=county)
     geo_id = state_fips(state_abbr) + county
-    return f'{csvdir}/synth_out_{geo_id}.csv'
+    return dpath_expand(f'{csvdir}/synth_out_{geo_id}.csv')
     
 def find_lp_filename(*,state_abbr,county,tract):
     geoid = state_fips(state_abbr)+county+tract
     lpdir = LPDIR(state_abbr=state_abbr,county=county)
     for key in dlistdir(lpdir):
         if geoid in key and (key.endswith(".lp") or key.endswith(".lp.gz")):
-            return os.path.join(lpdir,key)
+            return dpath_expand(os.path.join(lpdir,key))
     return None
 
 ##
@@ -202,6 +265,7 @@ def get_config(pathname=None,filename=None):
         config_file.read(pathname)
         # Add our source directory to the paths
         config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
+    DB(config_file)                 # register the config file with the database
     return config_file
 
 def state_rec(key):
@@ -283,13 +347,13 @@ def lpfile_properly_terminated(fname):
     # by reading the last 3 bytes and seeing if they have an End.
     # Otherwise, assume it is properly terminated if it is not writable.
     if not fname.endswith('.gz'):
-        if dbrecon.dgetsize(fname) < MIN_LP_SIZE:
+        if dgetsize(fname) < MIN_LP_SIZE:
             return False
         with dopen(fname,"rb") as f:
             f.seek(-3,2)
             last3 = f.read(3)
             return last3==b'End'
-    return os.access(path, os.W_OK)==False
+    return os.access(fname, os.W_OK)==False
 
 def mark_lpfile_properly_terminated(fname):
     from stat import S_IREAD, S_IRGRP, S_IROTH

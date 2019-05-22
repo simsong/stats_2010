@@ -8,7 +8,10 @@ import sys
 import datetime
 cgitb.enable()
 
+sys.path.append( os.path.join(os.path.dirname(__file__),".."))
+
 import dbrecon
+import ctools.tydoc as tydoc
 
 queries = [
     ("Total states in database:", "select count(distinct state) from tracts"),
@@ -18,6 +21,8 @@ queries = [
     ("Tracts with completed SOL files:", "SELECT COUNT(*) FROM tracts WHERE  sol_end IS NOT NULL"),
     ("Last 5 completed LP files:", "SELECT state,county,tract,lp_end from tracts where lp_end IS NOT NULL order by lp_end DESC limit 5"),
     ("Last 5 completed SOL files:", "SELECT state,county,tract,lp_end from tracts where lp_end IS NOT NULL order by sol_end DESC limit 5"),
+    (None,None),
+    ("Last 5 system load","select t,min1,min5,min15 from sysload order by t desc limit 5"),
     ]
 
 db_re = re.compile("export (.*)=(.*)")
@@ -32,24 +37,34 @@ def fmt(r):
     if isinstance(r,int):
         return "{:,}".format(r)
     if isinstance(r,datetime.datetime):
-        return r.isoformat()
+        timestr = (r - datetime.timedelta(hours=4)).isoformat()
+        timestr = timestr.replace("T"," ")
     return str(r)
 
 if __name__=="__main__":
-    print("Content-Type: text/plain;charset=utf-8")
-    print()
-    print("Hello World!")
+    print("Content-Type: text/html;charset=utf-8\r\n\r\n")
     get_pw()
     config = dbrecon.get_config("config.ini")
     db = dbrecon.DB()
     c = db.cursor()
-    print("Queries:")
 
+    doc = tydoc.tydoc()
+    doc.head.add_tag('meta',attrib={'http-equiv':'refresh','content':'30'})
+    doc.body.add_tag_text('p',"Report on reconstruction. All times in GMT.")
+
+    table = tydoc.tytable()
+    doc.body.append(table)
     for (desc,query) in queries:
+        if desc is None:
+            table = tydoc.tytable()
+            doc.body.append(table)
+            continue
+            
         c.execute(query)
         for row in c.fetchall():
-            print(desc," ".join([fmt(r) for r in row]))
-            desc = '     '
+            table.add_data([desc] + [fmt(r) for r in row])
+            desc = ''
+    doc.render(sys.stdout , format='html')
 
     
     

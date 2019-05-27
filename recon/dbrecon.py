@@ -5,32 +5,33 @@
 Common code and constants for the database reconstruction.
 """
 
-import urllib.parse 
-from configparser import ConfigParser
-import os
-import os.path
+import argparse
+import atexit
+import csv
+import datetime
+import glob
+import io
+import json
 import logging
 import logging.handlers
-import datetime
-import time
-import argparse
-import csv
-import zipfile
-import io
-import glob
-import sys
-import atexit
+import os
+import os.path
+import pickle
 import re
 import socket
-import pickle
+import sys
+import time
+import urllib.parse 
 import xml.etree.ElementTree as ET
+import zipfile
+from configparser import ConfigParser
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 import ctools.s3 as s3
 import ctools.clogging as clogging
-from total_size import total_size
 from ctools.gzfile import GZFile
+from total_size import total_size
 
 
 ##
@@ -40,11 +41,12 @@ from ctools.gzfile import GZFile
 SF1_DIR           = '$ROOT/{state_abbr}/{state_code}{county}'
 SF1_RACE_BINARIES = '$SRC/layouts/sf1_vars_race_binaries.csv'
 
-
 global dfxml_writer
 dfxml_writer = None
 t0 = time.time()
 
+LP='lp'
+SOL='sol'
 
 class Memoize:
     def __init__(self, fn):
@@ -69,16 +71,25 @@ class DB():
     def __getattr__(self, name):
         return getattr(self.instance, name)
             
-    # The actual singleton class follows
+    # The actual singleton class follows. Because this is a long-lived connection that goes away periodically, use 'select_and_fetchall' which reconnects if necessary
     class __DB:
+        RETRIES = 50
+        RETRY_DELAY_TIME = 1
         def __init__(self, config):
-            from ctools.dbfile import DBMySQL
             self.config = config
-            mysql_section = config['mysql']
-            self.db     = DBMySQL(host=os.path.expandvars(mysql_section['host']),
-                                  database=os.path.expandvars(mysql_section['database']),
-                                  user=os.path.expandvars(mysql_section['user']),
-                                  password=os.path.expandvars(mysql_section['password']))
+            self.reconnect()
+
+        def reconnect(self):
+            from ctools.dbfile import DBMySQL
+            mysql_section = self.config['mysql']
+            self.db       = DBMySQL(host=os.path.expandvars(mysql_section['host']),
+                                    database=os.path.expandvars(mysql_section['database']),
+                                    user=os.path.expandvars(mysql_section['user']),
+                                    password=os.path.expandvars(mysql_section['password']))
+            self.db.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
+            self.db.cursor().execute('SET autocommit = 1') # autocommit
+
+        # Legacy methods do not automatically reconnect
         def cursor(self):
             return self.db.cursor()
 
@@ -88,24 +99,100 @@ class DB():
         def create_schema(self,schema):
             return self.db.create_schema(schema)
             
+        def select_and_fetchall(self,cmd,vals=None):
+            import mysql.connector.errors
+            for i in range(1,self.RETRIES):
+                try:
+                    c = self.db.cursor()
+                    try:
+                        c.execute(cmd,vals)
+                    except mysql.connector.errors.ProgrammingError as e:
+                        logging.error("cmd: "+str(cmd))
+                        logging.error("vals: "+str(vals))
+                        logging.error(str(e))
+                        raise e
+                    if cmd.upper().startswith("SELECT"):
+                        return c.fetchall()
+                    return
+                except mysql.connector.errors.OperationalError as e:
+                    print(e)
+                    print(f"RETRYING {i}/{self.RETRIES}: {cmd} {vals} ")
+                    pass
+                time.sleep(self.RETRY_DELAY_TIME)
+                if i+1 < self.RETRIES:
+                    self.reconnect()
+            raise e
+                    
+
+def filename_mtime(fname):
+    if fname is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(int(os.stat(fname).st_mtime))
+    except FileNotFoundError:
+        return None
+
+def final_pop(state_abbr,county,tract):
+    count = 0
+    try:
+        sol_filename = SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)
+        with dopen( sol_filename) as f:
+            for line in f:
+                if line.startswith('C') and line.strip().endswith(" 1"):
+                    count += 1
+        if count==0 or count>100000:
+            logging.warning(f"{sol_filename} has a final pop of {count}. This is invalid, so deleting")
+            os.unlink(sol_filename)
+            return None
+        return count
+    except FileNotFoundError:
+        return None
+
 def db_start(what,state_abbr, county, tract):
-    assert what in ['lp','sol']
-    db = DB()
-    c = db.cursor()
-    c.execute(f"update tracts set {what}_start=now() where state=%s,county=%s,tract=%s",
-              (state,county,tract))
-    db.commit()
-    assert c.rowcount==1
+    assert what in [LP, SOL]
+    DB().select_and_fetchall(f"INSERT INTO tracts (state,county,tract,{what}_start) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_start=now()",
+                             (state_abbr,county,tract))
+    DB().commit()
+
     
-def db_done(what, state_abbr, county, tract):
-    assert what in ['lp','sol']
-    db = DB()
-    c = db.cursor()
-    c.execute(f"update tracts set {what}_end=now() where state=%s,county=%s,tract=%s",
-              (state,county,tract))
-    db.commit()
-    assert c.rowcount==1
+def db_done(what, state_abbr, county, tract, t=None):
+    assert what in [LP,SOL]
+    DB().select_and_fetchall(f"INSERT INTO tracts (state,county,tract,{what}_end) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_end=now()",
+                             (state_abbr,county,tract))
+    if t:
+        DB().select_and_fetchall(f"update tracts set {what}_time=%s where state=%s and county=%s and tract=%s", (t,state_abbr,county,tract))
+    DB().commit()
+    print(f"db_done: {what} {state_abbr} {county} {tract} ")
     
+def is_db_done(what, state_abbr, county, tract):
+    assert what in [LP,SOL]
+    row = DB().select_and_fetchall(f"select {what}_end from tracts where state=%s and county=%s and tract=%s LIMIT 1", (state_abbr,county,tract))
+    if (row is None) or (row[0] is None) or (row[0][0] is None):
+        return False
+    return True
+
+def refresh_db(state_abbr, county, tract):
+    lpfilename = find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
+    lp_end  = filename_mtime( lpfilename )
+    sol_end = filename_mtime( SOLFILENAME(state_abbr=state_abbr,county=county, tract=tract) )
+    
+    row = DB().select_and_fetchall("SELECT lp_end,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",(state_abbr,county,tract))
+    fp  = final_pop(state_abbr,county,tract)
+    if len(row)==3 and row[0]==lp_end and row[1]==sol_end and row[2]==fp:
+        return
+
+    # If there was no final pop, make sure that there is no solution
+    if fp is None:
+        sol_end = None
+
+    lp_end_str  = lp_end.isoformat()[0:19] if lp_end else None
+    sol_end_str = sol_end.isoformat()[0:19] if sol_end else None
+
+    DB().select_and_fetchall("INSERT INTO tracts  (state,county,tract,lp_end,sol_end,final_pop) "
+              "VALUES (%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE lp_end=%s,sol_end=%s,final_pop=%s",
+              (state_abbr,county,tract,lp_end_str,sol_end_str,fp,lp_end_str,sol_end_str,fp))
+    DB().commit()
+    print(f"refreshing {state_abbr} {county} {tract} in database; lp_end={lp_end_str} sol_end={sol_end_str}")
 
 ################################################################
 ### functions that return directories. dpath_expand is not called on these.
@@ -178,6 +265,13 @@ def find_lp_filename(*,state_abbr,county,tract):
     for key in dlistdir(lpdir):
         if geoid in key and (key.endswith(".lp") or key.endswith(".lp.gz")):
             return dpath_expand(os.path.join(lpdir,key))
+    return None
+
+SET_RE = re.compile(r"[^0-9](?P<state>\d\d)(?P<county>\d\d\d)(?P<tract>\d\d\d\d\d\d)[^0-9]")
+def extract_state_county_tract(fname):
+    m = SET_RE.search(fname)
+    if m:
+        return( state_abbr(m.group('state')), m.group('county'), m.group('tract'))
     return None
 
 ##
@@ -286,7 +380,7 @@ def state_fips(key):
 def state_abbr(key):
     """Convert state FIPS code to the appreviation"""
     assert isinstance(key,str)
-    return state_rec(key)['state_abbr']
+    return state_rec(key)['state_abbr'].lower()
 
 def all_state_abbrs():
     # Return a list of all the states 
@@ -311,14 +405,18 @@ def counties_for_state(state_abbr):
     return counties
 
 def tracts_for_state_county(*,state_abbr,county):
-    """Read the state geofile to determine the number of tracts that are
-    in a given county. The state geofile is cached, because it takes a
-    while to read. the actual results are also cached in the CACHE_DIR"""
+    """Accessing the database, return the tracts for a given state/county"""
+
+    rows = DB().select_and_fetchall("select tract from tracts where state=%s and county=%s",(state_abbr,county))
+    return [row[0] for row in rows]
+
     global geofile_cache
     import pandas as pd
 
+"""
+Use this to load the database:
     dmakedirs("$CACHE_DIR")       # make sure that the cache directory exists
-    state_county_tracts_fname = f"$CACHE_DIR/{state_abbr}_{county}_tracts.pickle"
+    state_county_tracts_fname = f"$CACHE_DIR/{state_abbr}_{county}_tracts.json"
     if not dpath_exists(state_county_tracts_fname):
         if state_abbr not in geofile_cache:
             with dopen(f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv") as f:
@@ -332,10 +430,10 @@ def tracts_for_state_county(*,state_abbr,county):
         tracts = df[df['SUMLEV'].isin(['140'])]
         tracts_in_county = tracts[tracts['COUNTY'].isin([county])]
         with dopen(state_county_tracts_fname,'wb') as f:
-            pickle.dump(tracts_in_county['TRACT'].tolist(), f)
+            f.write(json.dumps(tracts_in_county['TRACT'].tolist()))
     with dopen(state_county_tracts_fname,'rb') as f:
-        return pickle.load(f)
-
+        return json.load(f)
+"""
 ################################################################
 ### LPFile Manipulation
 ################################################################
@@ -343,35 +441,32 @@ def tracts_for_state_county(*,state_abbr,county):
 MIN_LP_SIZE = 1000              # smaller than this, the file must be invalid
 def lpfile_properly_terminated(fname):
     #
-    # If the lpfile does not end with '.gz', we can tell if it is properly terminated
+    # Small files are not valid LP files
+    if dgetsize(fname) < MIN_LP_SIZE:
+        return False
+    # If the lpfile is not compressed, we can tell if it is properly terminated
     # by reading the last 3 bytes and seeing if they have an End.
-    # Otherwise, assume it is properly terminated if it is not writable.
-    if not fname.endswith('.gz'):
-        if dgetsize(fname) < MIN_LP_SIZE:
-            return False
+    if fname.endswith('.lp'):
         with dopen(fname,"rb") as f:
             f.seek(-3,2)
             last3 = f.read(3)
             return last3==b'End'
-    return os.access(fname, os.W_OK)==False
-
-def mark_lpfile_properly_terminated(fname):
-    from stat import S_IREAD, S_IRGRP, S_IROTH
-    os.chmod(fname, S_IREAD|S_IRGRP|S_IROTH)
+    # Otherwise, assume it is properly terminated
+    return True
 
 ################################################################
 ### Output Products
 ################################################################
-def tracts_with_files(state_abbr,county, filetype='lp'):
+def tracts_with_files(state_abbr,county, filetype=LP):
     assert isinstance(state_abbr, str)
     assert isinstance(county, str)
     assert isinstance(filetype, str)
     
     ret = []
     state_code = state_fips(state_abbr)
-    if filetype=='lp' or filetype=='lp.gz':
+    if filetype==LP or filetype=='lp.gz':
         dirfunc = LPDIR
-    elif filetype=='sol' or filetype=='sol.gz':
+    elif filetype==SOL or filetype=='sol.gz':
         dirfunc = SOLDIR
     else:
         raise RuntimeError("only filetype lp and sol supported at the moment")
@@ -393,7 +488,7 @@ def valid_county_code(code):
     assert isinstance(code,str)
     return len(code)==3 and all(ch.isdigit() for ch in code)
 
-def state_county_tract_has_file(state_abbr, county_code, tract_code, filetype='lp'):
+def state_county_tract_has_file(state_abbr, county_code, tract_code, filetype=LP):
     assert isinstance(state_abbr,str)
     assert isinstance(county_code,str)
     assert isinstance(tract_code,str)
@@ -401,14 +496,14 @@ def state_county_tract_has_file(state_abbr, county_code, tract_code, filetype='l
     files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
     return f"model_{state_code}{county_code}{tract_code}.{filetype}" in files
 
-def state_county_has_any_files(state_abbr, county_code, filetype='lp'):
+def state_county_has_any_files(state_abbr, county_code, filetype=LP):
     assert isinstance(state_abbr,str)
     assert isinstance(county_code,str)
     state_code = state_fips(state_abbr)
     files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
     return any([fn.endswith("."+filetype) for fn in files])
 
-def state_has_any_files(state_abbr, county_code, filetype='lp'):
+def state_has_any_files(state_abbr, county_code, filetype=LP):
     assert isinstance(state_abbr,str)
     assert isinstance(county_code,str)
     state_code = state_fips(state_abbr)

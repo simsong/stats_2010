@@ -107,6 +107,7 @@ class GeoDecoder:
 
     def __init__(self,args):
         self.args = args
+        self.dumped = 0
 
     def read_sas_geo(self,fname):
         geo_line_re = re.compile(r'@(\d+) (\w+) [$](\d+)[.] [/][*](.*)[*][/]')
@@ -130,13 +131,16 @@ class GeoDecoder:
     def decode_geo_line(self,line):
         """Decode the hiearchical geography lines. These must be done before the other files are read
         to get the logrecno."""
-        assert self.ex_geo_field(line,'FILEID')=='PLST  '
+        assert self.ex_geo_field(line,'FILEID') in ['PLST  ','SF1ST ']
         geo_level = self.ex_geo_field(line,'SUMLEV')
-        if geo_level == args.level and args.dump:
-            for fieldname in self.GEO_FIELDS.keys():
-                print(fieldname, self.ex_geo_field(line, fieldname), self.GEO_FIELDS[fieldname][2])
-            print("")
-            args.dump -= 1
+        if args.dump:
+            if (args.level is None) or (args.level==geo_level):
+                for fieldname in self.GEO_FIELDS.keys():
+                    print(fieldname, self.ex_geo_field(line, fieldname), self.GEO_FIELDS[fieldname][2])
+                print("")
+            self.dumped += 1
+            if self.dumped == args.dump:
+                exit(0)
         return
         if exi(GEO_SUMLEV) in [750]:
             try:
@@ -163,7 +167,7 @@ class GeoDecoder:
         print("Finished {}; {:,.0f} lines/sec".format(fname,ll/(t1-t0)))
 
     def process_name(self,f,name):
-        if name[2:]=='geo2010.pl':
+        if 'geo2010' in name[2:]:
             self.load_file(f,self.decode_geo_line)
         elif name[2:]=='000012010.pl':
             print("Not processing 000012010 files")
@@ -196,6 +200,6 @@ if __name__ == "__main__":
 
     # open database and give me a big cache
     g = GeoDecoder(args)
-    g.read_sas_geo("pl_geohd_2010.sas")
+    g.read_sas_geo("doc/2010/pl_geohd_2010.sas")
     for fname in args.files:
         g.process_file(fname)

@@ -22,10 +22,6 @@ if __name__=="__main__":
     args   = parser.parse_args()
     config = dbrecon.get_config(filename=args.config)
 
-    db = dbrecon.DB(config)
-    c = db.cursor()
     while True:
-        DB().select_and_fetchall("insert into sysload (t, min1, min5, min15) values (now(), %s, %s, %s)",
-                                 os.getloadavg())
-        DB().commit()
+        dbrecon.DB.csfr("insert into sysload (t, min1, min5, min15) values (now(), %s, %s, %s)", os.getloadavg(),quiet=True)
         time.sleep(600)

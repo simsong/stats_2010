@@ -1,0 +1,1 @@
+ps wwx -o uname,pid,ppid,pcpu,vsz,rss,command

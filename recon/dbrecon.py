@@ -60,69 +60,69 @@ class Memoize:
 
 ################################################################
 ### Database management functions
-class DB():
+RETRIES = 10
+RETRY_DELAY_TIME = 1
+class DB:
     """DB class with singleton pattern"""
-    instance  = None
-    def __init__(self, config=None):
-        if not DB.instance:
-            if not config:
-                raise RuntimeError("config required for singleton creation")
-            DB.instance = DB.__DB(config)
-    def __getattr__(self, name):
-        return getattr(self.instance, name)
-            
-    # The actual singleton class follows. Because this is a long-lived connection that goes away periodically, use 'select_and_fetchall' which reconnects if necessary
-    class __DB:
-        RETRIES = 50
-        RETRY_DELAY_TIME = 1
-        def __init__(self, config):
-            self.config = config
-            self.reconnect()
-
-        def reconnect(self):
-            from ctools.dbfile import DBMySQL
-            mysql_section = self.config['mysql']
-            self.db       = DBMySQL(host=os.path.expandvars(mysql_section['host']),
-                                    database=os.path.expandvars(mysql_section['database']),
-                                    user=os.path.expandvars(mysql_section['user']),
-                                    password=os.path.expandvars(mysql_section['password']))
-            self.db.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
-            self.db.cursor().execute('SET autocommit = 1') # autocommit
-
-        # Legacy methods do not automatically reconnect
-        def cursor(self):
-            return self.db.cursor()
-
-        def commit(self):
-            return self.db.commit()
-
-        def create_schema(self,schema):
-            return self.db.create_schema(schema)
-            
-        def select_and_fetchall(self,cmd,vals=None):
-            import mysql.connector.errors
-            for i in range(1,self.RETRIES):
+    config = None
+    @staticmethod
+    def csfr(cmd,vals=None,quiet=False):
+        """Connect, select, fetchall, and retry as necessary"""
+        import mysql.connector.errors
+        for i in range(1,RETRIES):
+            try:
+                db = DB()
+                db.connect()
+                result = None
+                c = db.cursor()
                 try:
-                    c = self.db.cursor()
-                    try:
-                        c.execute(cmd,vals)
-                    except mysql.connector.errors.ProgrammingError as e:
-                        logging.error("cmd: "+str(cmd))
-                        logging.error("vals: "+str(vals))
-                        logging.error(str(e))
-                        raise e
-                    if cmd.upper().startswith("SELECT"):
-                        return c.fetchall()
-                    return
-                except mysql.connector.errors.OperationalError as e:
-                    print(e)
-                    print(f"RETRYING {i}/{self.RETRIES}: {cmd} {vals} ")
-                    pass
-                time.sleep(self.RETRY_DELAY_TIME)
-                if i+1 < self.RETRIES:
-                    self.reconnect()
-            raise e
-                    
+                    logging.info(f"PID{os.getpid()}: {cmd} {vals}")
+                    if quiet==False:
+                        print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
+                    c.execute(cmd,vals)
+                except mysql.connector.errors.ProgrammingError as e:
+                    logging.error("cmd: "+str(cmd))
+                    logging.error("vals: "+str(vals))
+                    logging.error(str(e))
+                    raise e
+                if cmd.upper().startswith("SELECT"):
+                    result = c.fetchall()
+                c.close()       # close the cursor
+                db.close() # close the connection
+                return result
+            except mysql.connector.errors.InterfaceError as e:
+                logging.error(e)
+                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                pass
+            except mysql.connector.errors.OperationalError as e:
+                logging.error(e)
+                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                pass
+            time.sleep(RETRY_DELAY_TIME)
+        raise e
+
+    def cursor(self):
+        return self.dbs.cursor()
+
+    def commit(self):
+        return self.dbs.commit()
+
+    def create_schema(self,schema):
+        return self.dbs.create_schema(schema)
+
+    def connect(self):
+        from ctools.dbfile import DBMySQL
+        mysql_section = self.config_file['mysql']
+        self.dbs       = DBMySQL(host=os.path.expandvars(mysql_section['host']),
+                                database=os.path.expandvars(mysql_section['database']),
+                                user=os.path.expandvars(mysql_section['user']),
+                                password=os.path.expandvars(mysql_section['password']))
+        self.dbs.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
+        self.dbs.cursor().execute('SET autocommit = 1') # autocommit
+
+    def close(self):
+        return self.dbs.close()
+
 
 def filename_mtime(fname):
     if fname is None:
@@ -134,39 +134,40 @@ def filename_mtime(fname):
 
 def final_pop(state_abbr,county,tract):
     count = 0
-    try:
-        sol_filename = SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)
-        with dopen( sol_filename) as f:
-            for line in f:
-                if line.startswith('C') and line.strip().endswith(" 1"):
-                    count += 1
-        if count==0 or count>100000:
-            logging.warning(f"{sol_filename} has a final pop of {count}. This is invalid, so deleting")
-            os.unlink(sol_filename)
-            return None
-        return count
-    except FileNotFoundError:
+    sol_filename = SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)
+    if dpath_exists( sol_filename):
+        f = open(sol_filename)
+    elif dpath_exist( sol_filename+".gz") and (not sol_filename.startswith("s3://")):
+        f = GZFile(sol_filename+".gz",level=1)
+    else:
         return None
+    for line in f:
+        if line.startswith('C') and line.strip().endswith(" 1"):
+            count += 1
+    if count==0 or count>100000:
+        logging.warning(f"{sol_filename} has a final pop of {count}. This is invalid, so deleting")
+        os.unlink(sol_filename)
+        return None
+    return count
+
 
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL]
-    DB().select_and_fetchall(f"INSERT INTO tracts (state,county,tract,{what}_start) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_start=now()",
+    DB.csfr(f"INSERT INTO tracts (state,county,tract,{what}_start) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_start=now()",
                              (state_abbr,county,tract))
-    DB().commit()
 
     
 def db_done(what, state_abbr, county, tract, t=None):
     assert what in [LP,SOL]
-    DB().select_and_fetchall(f"INSERT INTO tracts (state,county,tract,{what}_end) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_end=now()",
+    DB.csfr(f"INSERT INTO tracts (state,county,tract,{what}_end) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_end=now()",
                              (state_abbr,county,tract))
     if t:
-        DB().select_and_fetchall(f"update tracts set {what}_time=%s where state=%s and county=%s and tract=%s", (t,state_abbr,county,tract))
-    DB().commit()
-    print(f"db_done: {what} {state_abbr} {county} {tract} ")
+        DB.csfr(f"update tracts set {what}_time=%s where state=%s and county=%s and tract=%s", (t,state_abbr,county,tract))
+    logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
 def is_db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
-    row = DB().select_and_fetchall(f"select {what}_end from tracts where state=%s and county=%s and tract=%s LIMIT 1", (state_abbr,county,tract))
+    row = DB.csfr(f"select {what}_end from tracts where state=%s and county=%s and tract=%s LIMIT 1", (state_abbr,county,tract))
     if (row is None) or (row[0] is None) or (row[0][0] is None):
         return False
     return True
@@ -176,10 +177,12 @@ def refresh_db(state_abbr, county, tract):
     lp_end  = filename_mtime( lpfilename )
     sol_end = filename_mtime( SOLFILENAME(state_abbr=state_abbr,county=county, tract=tract) )
     
-    row = DB().select_and_fetchall("SELECT lp_end,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",(state_abbr,county,tract))
-    fp  = final_pop(state_abbr,county,tract)
-    if len(row)==3 and row[0]==lp_end and row[1]==sol_end and row[2]==fp:
-        return
+    rows = DB.csfr("SELECT lp_end,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",(state_abbr,county,tract))
+    if len(rows)==1:
+        row = rows[0]
+        fp  = final_pop(state_abbr,county,tract)
+        if len(row)==3 and row[0]==lp_end and row[1]==sol_end and row[2]==fp:
+            return
 
     # If there was no final pop, make sure that there is no solution
     if fp is None:
@@ -188,11 +191,10 @@ def refresh_db(state_abbr, county, tract):
     lp_end_str  = lp_end.isoformat()[0:19] if lp_end else None
     sol_end_str = sol_end.isoformat()[0:19] if sol_end else None
 
-    DB().select_and_fetchall("INSERT INTO tracts  (state,county,tract,lp_end,sol_end,final_pop) "
+    DB.csfr("INSERT INTO tracts  (state,county,tract,lp_end,sol_end,final_pop) "
               "VALUES (%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE lp_end=%s,sol_end=%s,final_pop=%s",
               (state_abbr,county,tract,lp_end_str,sol_end_str,fp,lp_end_str,sol_end_str,fp))
-    DB().commit()
-    print(f"refreshing {state_abbr} {county} {tract} in database; lp_end={lp_end_str} sol_end={sol_end_str}")
+    logging.info(f"refreshing {state_abbr} {county} {tract} in database; lp_end={lp_end_str} sol_end={sol_end_str}")
 
 ################################################################
 ### functions that return directories. dpath_expand is not called on these.
@@ -359,7 +361,7 @@ def get_config(pathname=None,filename=None):
         config_file.read(pathname)
         # Add our source directory to the paths
         config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
-    DB(config_file)                 # register the config file with the database
+    DB.config_file = config_file
     return config_file
 
 def state_rec(key):
@@ -407,7 +409,7 @@ def counties_for_state(state_abbr):
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""
 
-    rows = DB().select_and_fetchall("select tract from tracts where state=%s and county=%s",(state_abbr,county))
+    rows = DB.csfr("select tract from tracts where state=%s and county=%s",(state_abbr,county))
     return [row[0] for row in rows]
 
     global geofile_cache

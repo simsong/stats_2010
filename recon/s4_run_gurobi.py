@@ -41,23 +41,26 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     lp_filename = dbrecon.dpath_expand(lp_filename)
     ilp_filename= dbrecon.ILPFILENAME(state_abbr=state_abbr, county=county, geo_id=geoid_tract)
     sol_filename= dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)
+    solgz_filename= dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)+".gz"
     env         = None # Guorbi environment
     p           = None # subprocess for decompressor
     tempname    = None # symlink that points to decompressed model file
 
-
     if lp_filename.startswith("s3:"):
         raise RuntimeError("This must be modified to allow Gurobi to read files from S3 using the stdin hack.")
 
-    if dbrecon.dpath_exists(sol_filename):
-        raise FileExistsError(sol_filename)
-
+    # make sure input file exists and is valid
     if not os.path.exists(lp_filename):
         raise FileNotFoundError("File does not exist: {}".format(lp_filename))
 
     if os.path.getsize(lp_filename) < dbrecon.MIN_LP_SIZE:
         # lp file is too small. Delete it and remove it from the database
         raise FileNotFoundError("File {} is too small ({})".format(lp_filename,os.path.getsize(lp_filename)))
+
+    # Make sure output does not exist
+    for fn in [sol_filename,solgz_filename]:
+        if dbrecon.dpath_exists(fn):
+            raise FileExistsError(fn)
 
     customer     = config['gurobi']['customer']
     appname      = config['gurobi']['appname']
@@ -124,7 +127,9 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         vars.append("final_pop")
         vals.append(dbrecon.final_pop(state_abbr,county,tract))
         cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where state=%s and county=%s and tract=%s"
-        dbrecon.DB().select_and_fetchall(cmd, vals+[state_abbr,county,tract])
+        dbrecon.DB.csfr(cmd, vals+[state_abbr,county,tract])
+        # And compress the output file
+        subprocess.check_call(['gzip','-1',sol_filename])
     del env
 
 
@@ -153,8 +158,6 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         print("exit1")
         exit(0)
 
-
-
 def run_gurobi_tuple(tt):
     """Run gurobi on a tract tuple. 
     This cannot be made a local function inside run_gurobi_for_county because then it won't work with map.
@@ -164,13 +167,12 @@ def run_gurobi_tuple(tt):
 def run_gurobi_for_county(state_abbr, county, tracts):
     logging.info(f"run_gurobi_for_county({state_abbr},{county})")
     if tracts==['all']:
-        db = dbrecon.DB()
-        tracts = [row[0] for row in db.select_and_fetchall("select tract from tracts where (lp_end is not null) and (sol_end is null) and state=%s and county=%s",
-                                                           (state_abbr, county))]
+        tracts = [row[0] for row in DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND state=%s AND county=%s",
+                                            (state_abbr, county))]
 
         if tracts==[]:
             # No tracts. Report if there are unsolved counties
-            rows = db.select_and_fetchall("select tract from tracts where (lp_end is null) and state=%s and county=%s",(state_abbr,county))
+            rows = DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NULL) AND state=%s AND county=%s",(state_abbr,county))
             if rows:
                 logging.warning(f"run_gurobi_for_county({state_abbr},{county}): {len(rows)} tracts do not have LP files")
                 return

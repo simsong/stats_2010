@@ -339,7 +339,7 @@ class LPTractBuilder:
 
     def build_tract_lp(self,state_abbr, county, tract, sf1_tract_data, sf1_block_data):
         if dbrecon.is_db_done('lp',state_abbr, county, tract):
-            logging.warning(f"LP file exists in database: {state_abbr}{county}{tract}")
+            logging.warning(f"note: LP file exists in database: {state_abbr}{county}{tract}; will not create another one.")
             return
 
         t0         = time.time()
@@ -434,7 +434,7 @@ class LPTractBuilder:
         for t in self.master_tuple_list:
             f.write(t[10])
             f.write('\n')
-        f.write(' End')
+        f.write('End\n')
         f.close()
         dbrecon.db_done('lp',state_abbr, county, tract)
 
@@ -468,7 +468,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     logging.info(f"make_state_county_files({state_abbr},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
-    rows = DB().select_and_fetchall("SELECT tract from tracts where state=%s and county=%s and (lp_end IS NULL)",(state_abbr,county))
+    rows = DB.csfr("SELECT tract from tracts where state=%s and county=%s and (lp_end IS NULL)",(state_abbr,county))
     tracts_needing_lp_files = [row[0] for row in rows]
     if tractgen=='all':
         if len(tracts_needing_lp_files)==0:
@@ -623,7 +623,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
                     sf1_block_dict[tract]) for tract in tracts]
 
     if args.j2>1:
-        with multiprocessing.Pool(args.j2) as p:
+        with multiprocessing.Pool( max(args.j2, len(tracttuples))) as p:
             p.map(build_tract_lp_tuple, tracttuples)
     else:
         list(map(build_tract_lp_tuple, tracttuples))
@@ -698,7 +698,7 @@ if __name__=="__main__":
             state_abbr_county_pairs.extend([(state_abbr,county) 
                                             for county in dbrecon.counties_for_state(state_abbr)])
         if args.j1>1:
-            with multiprocessing.Pool(args.j1) as p:
+            with multiprocessing.Pool( max(args.j1,len(state_abbr_county_pairs))) as p:
                 p.map(recall, state_abbr_county_pairs)
         else:
             for (state_abbr,county) in state_abbr_county_pairs:

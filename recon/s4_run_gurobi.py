@@ -70,6 +70,7 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     # make sure output directory exists
     dbrecon.dmakedirs( os.path.dirname( sol_filename)) 
     env = gu.Env.OtherEnv( log_filename, customer, appname, 0, "")
+    env.setParam("LogToConsole",0)
     if lp_filename.endswith(".lp"):
         model = gu.read(lp_filename, env=env)
     elif lp_filename.endswith(".lp.gz"):
@@ -86,7 +87,6 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         raise RuntimeError("Don't know how to read model from {}".format(lp_filename))
 
     model.setParam("Threads",args.j2)
-    model.setParam("LogToConsole",0)
 
     if dry_run:
         print(f"MODEL FOR {state_abbr} {county} {tract} ")

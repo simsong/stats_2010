@@ -14,7 +14,6 @@ import os.path
 import subprocess
 import sys
 import time
-import xml.etree.ElementTree as ET
 import psutil
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
@@ -183,15 +182,6 @@ def run():
         # and repeat
     # Should never get here
 
-
-def process_dfxml(dfxml):
-    root = ET.parse(dfxml)
-    start_time = root.find(".//start_time").text[0:19].replace("T"," ")
-    command_line = " ".join(root.find("//command_line").text.split()[1:])
-    maxrss = 0
-    for e in root.findall("//rusage/maxrss"):
-        maxrss += int(e.text)
-    print(start_time,command_line,maxrss)
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter

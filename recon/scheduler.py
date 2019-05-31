@@ -129,7 +129,7 @@ last_report = 0
 def report_load_memory(quiet=True):
     global last_report
     if last_report < time.time() + REPORT_FREQUENCY:
-        dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) values (now(), %s, %s, %s, %s, %s)", 
+        dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY IGNORE", 
                         [socket.gethostname().partition('.')[0]] + list(os.getloadavg()) + [freemem()//GB],
                         quiet=quiet)
         last_report = time.time()

@@ -22,6 +22,8 @@ from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
 from dbrecon import DB
 
+CLEANEXIT_FILE='cleanexit.txt'
+
 # Tuning parameters
 
 SCHEMA_FILENAME="schema.sql"                
@@ -141,9 +143,10 @@ def run():
             print(" ".join(p.args))
         print("---")
 
-        if os.path.exists("cleanexit.txt") and len(running)==0:
+        clean_exit = os.path.exists(CLEANEXIT_FILE)
+        if clean_exit and len(running)==0:
             print("Clean exit")
-            os.unlink("cleanexit.txt")
+            os.unlink(CLEANEXIT_FILE)
             return
 
         # See if we can create another process. 
@@ -152,10 +155,11 @@ def run():
         # The LP makers take a lot of memory, so if we aren't running less than two, run up to two.
         # Order by lp_start to make it least likely to start where there is another process running
         needed_lp =  MAX_LP - len(running_lp) 
-        if (not args.nolp) and (freemem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0:
+        if (not args.nolp) and (freemem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0 and (not clean_exit):
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
-                               "WHERE lp_end IS NULL GROUP BY state,county order BY RAND() DESC LIMIT %s", (needed_lp,))
+                               "WHERE lp_end IS NULL GROUP BY state,county "
+                               "order BY RAND() DESC LIMIT %s", (needed_lp,))
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
                 print("WILL MAKE LP",'s3_pandas_synth_lp_files.py',state,county,"TRACTS:",tract_count)
@@ -166,11 +170,12 @@ def run():
 
         needed_sol = MAX_CHILDREN-len(running)
         print(f"needed_sol: {needed_sol}")
-        if (not args.nosol) and freemem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
+        if (not args.nosol) and freemem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0 and (not clean_exit):
             # Run any solvers that we have room for
             needed_sol = 1
             solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
-                                "WHERE sol_end IS NULL AND lp_end IS NOT NULL ORDER BY sol_start,RAND() LIMIT %s",(needed_sol,))
+                                "WHERE sol_end IS NULL AND lp_end IS NOT NULL "
+                                "ORDER BY sol_start,RAND() LIMIT %s",(needed_sol,))
             for (state,county,tract) in solve_lps:
                 print("WILL SOLVE ",state,county,tract)
                 p = prun([sys.executable,'s4_run_gurobi.py',state,county,tract])
@@ -181,6 +186,18 @@ def run():
         time.sleep(SLEEP_TIME)
         # and repeat
     # Should never get here
+
+def non_running():
+    print("LP in progress:")
+    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL"):
+        print(state,county,tract)
+    DB.csfr("UPDATE tracts set lp_start=NULL WHERE lp_start IS NOT NULL and lp_end is NULL")
+        
+    print("SOL in progress:")
+    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL"):
+        print(state,county,tract)
+    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL")
+
 
 
 if __name__=="__main__":
@@ -197,6 +214,7 @@ if __name__=="__main__":
     parser.add_argument("--clean",   help="Look for .lp and .sol files that are too slow and delete them, then remove them from the database", action='store_true')
     parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
     parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
+    parser.add_argument("--none_running", help="Run if there are no outstanding LP files being built or Solutions being solved; clears them from database", action='store_true')
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
     
     args   = parser.parse_args()
@@ -209,15 +227,18 @@ if __name__=="__main__":
         rows = db.csfr("show tables")
         for row in rows:
             print(row)
-        exit(0)
 
-    if args.init:
+
+    elif args.init:
         init()
 
-    if args.refresh:
+    elif args.refresh:
         refresh()
 
-    if args.clean:
+    elif args.clean:
         clean()
 
-    run()
+    elif args.none_running:
+        non_running()
+    else:
+        run()

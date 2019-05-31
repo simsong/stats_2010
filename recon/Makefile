@@ -24,9 +24,6 @@ setuptest:
 	mkdir -p /data/sf1/recon_test/al
 	cp /data/sf1/recon/al/*.csv /data/sf1/recon_test/al/
 
-backup:
-	time rsync --archive /workdir/slgarfinkel /home/ecco_lv39/projects/
-
 tags:
 	etags *.py ../ctools/*.py
 

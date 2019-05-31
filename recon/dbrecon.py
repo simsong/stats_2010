@@ -137,7 +137,7 @@ def final_pop(state_abbr,county,tract):
     sol_filename = SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)
     if dpath_exists( sol_filename):
         f = open(sol_filename)
-    elif dpath_exist( sol_filename+".gz") and (not sol_filename.startswith("s3://")):
+    elif dpath_exists( sol_filename+".gz") and (not sol_filename.startswith("s3://")):
         f = GZFile(sol_filename+".gz",level=1)
     else:
         return None
@@ -171,6 +171,10 @@ def is_db_done(what, state_abbr, county, tract):
     if (row is None) or (row[0] is None) or (row[0][0] is None):
         return False
     return True
+
+def db_ping(state_abbr, county, tract):
+    DB.csfr(f"update tracts set ping=now() where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
+    
 
 def refresh_db(state_abbr, county, tract):
     lpfilename = find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
@@ -262,11 +266,10 @@ def COUNTY_CSV_FILENAME(*,state_abbr,county):
     return dpath_expand(f'{csvdir}/synth_out_{geo_id}.csv')
     
 def find_lp_filename(*,state_abbr,county,tract):
-    geoid = state_fips(state_abbr)+county+tract
-    lpdir = LPDIR(state_abbr=state_abbr,county=county)
-    for key in dlistdir(lpdir):
-        if geoid in key and (key.endswith(".lp") or key.endswith(".lp.gz")):
-            return dpath_expand(os.path.join(lpdir,key))
+    geo_id = state_fips(state_abbr)+county+tract
+    for fname in [ LPFILENAME(state_abbr=state_abbr,county=county,geo_id=geo_id), LPFILENAMEGZ(state_abbr=state_abbr,county=county,geo_id=geo_id)]:
+        if dpath_exists(fname):
+            return fname
     return None
 
 SET_RE = re.compile(r"[^0-9](?P<state>\d\d)(?P<county>\d\d\d)(?P<tract>\d\d\d\d\d\d)[^0-9]")
@@ -408,52 +411,32 @@ def counties_for_state(state_abbr):
 
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""
-
     rows = DB.csfr("select tract from tracts where state=%s and county=%s",(state_abbr,county))
     return [row[0] for row in rows]
 
-    global geofile_cache
-    import pandas as pd
-
-"""
-Use this to load the database:
-    dmakedirs("$CACHE_DIR")       # make sure that the cache directory exists
-    state_county_tracts_fname = f"$CACHE_DIR/{state_abbr}_{county}_tracts.json"
-    if not dpath_exists(state_county_tracts_fname):
-        if state_abbr not in geofile_cache:
-            with dopen(f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv") as f:
-                df = pd.read_csv(f,
-                           dtype={'STATE': object, 'COUNTY': object, 'TRACT': object,
-                                  'BLOCK': object, 'BLKGRP': object,
-                                  'SUMLEV': object, 'LOGRECNO': object},
-                             low_memory=False)
-                geofile_cache[state_abbr] = df
-        df     = geofile_cache[state_abbr]
-        tracts = df[df['SUMLEV'].isin(['140'])]
-        tracts_in_county = tracts[tracts['COUNTY'].isin([county])]
-        with dopen(state_county_tracts_fname,'wb') as f:
-            f.write(json.dumps(tracts_in_county['TRACT'].tolist()))
-    with dopen(state_county_tracts_fname,'rb') as f:
-        return json.load(f)
-"""
 ################################################################
 ### LPFile Manipulation
 ################################################################
 
-MIN_LP_SIZE = 1000              # smaller than this, the file must be invalid
+MIN_LP_SIZE = 10              # smaller than this, the file must be invalid
 def lpfile_properly_terminated(fname):
     #
     # Small files are not valid LP files
     if dgetsize(fname) < MIN_LP_SIZE:
         return False
-    # If the lpfile is not compressed, we can tell if it is properly terminated
-    # by reading the last 3 bytes and seeing if they have an End.
-    if fname.endswith('.lp'):
+    # If the lpfile is not on S3 and not compressed, we can tell if it is properly terminated
+    # by reading the last 3 bytes and seeing if they have an End. This is fast
+    if (not fname.startswith("s3:")) and (fname.endswith('.lp')):
         with dopen(fname,"rb") as f:
-            f.seek(-3,2)
-            last3 = f.read(3)
-            return last3==b'End'
-    # Otherwise, assume it is properly terminated
+            f.seek(-4,2)
+            last4 = f.read(4)
+            return last4 in (b'End\n',b'\nEnd')
+    # Otherwise, scan the file
+    with dopen(fname,'rb') as f:
+        lastline = ''
+        for line in f:
+            lastline = line
+        return b'End' in lastline
     return True
 
 ################################################################

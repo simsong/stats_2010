@@ -198,12 +198,3 @@ $S3ROOT/title13_reid_cleanup/solution_variability/{state_name}/{state_code}{coun
 (Ignore the title13 prefix, as the data are not actually title13)
 
 
-# Tests
-For testing, we have two additional directories, which must be specified in config.ini:
-
-    GOLD_ROOT - where the good files are kept
-    TEST_ROOT - Where the the programs under test will write their results
-
-
-When py.test is run, the config.ini file is copied into TEST_ROOT/test_config.ini, with the value of ROOT in the test config file being replaced with the value of TEST_ROOT from the config.ini file.
-

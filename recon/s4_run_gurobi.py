@@ -14,6 +14,7 @@ import os.path
 import subprocess
 import sys
 import time
+import atexit
 
 import gurobipy as gu
 import dbrecon
@@ -69,6 +70,10 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     
     # make sure output directory exists
     dbrecon.dmakedirs( os.path.dirname( sol_filename)) 
+
+    dbrecon.db_start('sol', state_abbr, county, tract)
+    atexit.register(db_unstart, state_abbr, county, tract)
+
     env = gu.Env.OtherEnv( log_filename, customer, appname, 0, "")
     env.setParam("LogToConsole",0)
     if lp_filename.endswith(".lp"):
@@ -131,6 +136,11 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         # And compress the output file
         subprocess.check_call(['gzip','-1',sol_filename])
     del env
+    atexit.unregister(db_unstart)
+
+
+def db_unstart(state_abbr, county, tract):
+    DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
 
 
 def run_gurobi_for_county_tract(state_abbr, county, tract):
@@ -138,15 +148,15 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
     assert len(county)==3
     assert len(tract)==6
     lp_filename  = dbrecon.find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
-    if not lp_filename:
-        logging.info(f"no LP file for {state_abbr} {county} {tract}")
+    if lp_filename is None:
+        logging.info(f"lp_filename does not exist")
+        dbrecon.refresh_db(state_abbr, county,tract)
         return
 
     if dbrecon.is_db_done('sol',state_abbr, county, tract):
         logging.warning(f"SOL exists in database: {state_abbr}{county}{tract}; will not solve")
         return
 
-    dbrecon.db_start('sol', state_abbr, county, tract)
     try:
         run_gurobi(state_abbr, county, tract, lp_filename, args.dry_run)
     except FileExistsError as e:
@@ -166,16 +176,17 @@ def run_gurobi_tuple(tt):
 
 def run_gurobi_for_county(state_abbr, county, tracts):
     logging.info(f"run_gurobi_for_county({state_abbr},{county})")
-    if tracts==['all']:
+    if (tracts==[]) or (tracts==['all']):
         tracts = [row[0] for row in DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND state=%s AND county=%s",
                                             (state_abbr, county))]
 
+        logging.info(f"Tracts require solving in {state_abbr} {county}: {tracts}")
         if tracts==[]:
-            # No tracts. Report if there are unsolved counties
+            # No tracts. Report if there are tracts in county missing LP files
             rows = DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NULL) AND state=%s AND county=%s",(state_abbr,county))
             if rows:
                 logging.warning(f"run_gurobi_for_county({state_abbr},{county}): {len(rows)} tracts do not have LP files")
-                return
+            return
 
     tracttuples = [(state_abbr, county, tract) for tract in tracts]
     if args.j1>1:
@@ -245,9 +256,6 @@ if __name__=="__main__":
     state_abbr = dbrecon.state_abbr(args.state_abbr).lower()
     tracts     = args.tracts
     
-    if tracts==[]:
-        tracts=['all']
-
     if args.county=='all':
         counties = dbrecon.counties_for_state(state_abbr)
     else:
@@ -255,7 +263,6 @@ if __name__=="__main__":
 
     for county in counties:
         run_gurobi_for_county(state_abbr, county, tracts)
-
 
     # Create the state-level CSV files
     if args.csv:

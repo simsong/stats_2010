@@ -14,15 +14,14 @@ import itertools
 import json
 import logging
 import multiprocessing
-import numpy as np
 import os
 import os.path
 import pandas as pd
-import psutil
 import sys
 import time
 import tempfile
 import subprocess
+import atexit
 
 from total_size import total_size
 
@@ -187,10 +186,17 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
 class LPTractBuilder:
     """Build the LP files for a given tract"""
 
-    def __init__(self):
+    def __init__(self,state_abbr, county, tract):
         self.master_tuple_list=[]
+        self.state_abbr = state_abbr
+        self.county     = county
+        self.tract      = tract
 
-        pass
+    def db_unstart(self):
+        # remove from the database that we started. This is used to clean up the database if the program terminates improperly
+        DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(self.state_abbr,self.county,self.tract))
+        
+        
 
     def get_constraint_summary(self, level, p01_data, data_dict, summary_nums):
         """
@@ -216,7 +222,8 @@ class LPTractBuilder:
         @param master_tuple_list - updated
         """
         if args.mem:
-            print("get_constraint_summary  level: {} p01_data: {:,}B data_dict: {:,}B summary_nums: {:,}B".
+            logging.info("get_constraint_summary  level: {} p01_data: {:,}B "
+                         "data_dict: {:,}B summary_nums: {:,}B".
                   format(level,total_size(p01_data,verbose=False),total_size(data_dict,verbose=False),
                          total_size(summary_nums,verbose=False)))
 
@@ -336,10 +343,15 @@ class LPTractBuilder:
                             self.master_tuple_list.append(row)
         ###
         ### END OF get_constraint_summary() ###
+        ###
 
     def build_tract_lp(self,state_abbr, county, tract, sf1_tract_data, sf1_block_data):
+        """Main entry point for building a new tract LP file.
+        Modified to write gzipped LP files because the LP files are so large
+        """
         if dbrecon.is_db_done('lp',state_abbr, county, tract):
-            logging.warning(f"note: LP file exists in database: {state_abbr}{county}{tract}; will not create another one.")
+            logging.warning(f"note: LP file exists in database: {state_abbr}{county}{tract}; "
+                            "will not create another one.")
             return
 
         t0         = time.time()
@@ -347,38 +359,36 @@ class LPTractBuilder:
         geo_id     = sf1_tract_data[0][GEOID]
         lpdir      = LPDIR(state_abbr=state_abbr,county=county)
         lpfilename = LPFILENAME(state_abbr=state_abbr,county=county,geo_id=geo_id)
+        tmpgzfilename = lpfilename + ".tmp.gz" # temp output file
+        gzlpfilename  = lpfilename + ".gz"     # final output file
+        outfilename   = tmpgzfilename
+
+        # file exists and it is good. Note that in the database
+        try:
+            if dbrecon.lpfile_properly_terminated(gzlpfilename):
+                logging.info(f"{gzlpfilename} at {state_code}{county}{tract} is properly terminated.")
+                dbrecon.db_done('lp',state_abbr, county, tract)
+                return
+        except FileNotFoundError as e:
+            pass
 
         logging.info(f"{state_code}{county}{tract} tract_data_size:{sys.getsizeof(sf1_tract_data):,} ; "
                      "block_data_size:{sys.getsizeof(sf1_block_data):,} ")
 
-        dbrecon.db_start('lp',state_abbr, county, tract)
-        
-        # Make sure we are making the GZ file
-        if not lpfilename.endswith(".gz"):
-            lpfilename+=".gz"
+        dbrecon.db_start('lp', state_abbr, county, tract)
+        atexit.register(self.db_unstart)
 
         if args.dry_run:
-            print(f"DRY RUN: Will not create {lpfilename}")
+            logging.warning(f"DRY RUN: Will not create {lpfilename}")
             return
 
         if args.mem:
-            tf = tempfile.NamedTemporaryFile(delete=False)
-            lpfilename_hold = lpfilename
-            lpfilename = tf.name
-            print(f"MEMORY COUNTING. Will not create {lpfilename}. Tempfile written to {tf.name}")
+            tf              = tempfile.NamedTemporaryFile(delete=False)
+            outfilename     = tf.name
+            logging.info(f"MEMORY COUNTING. Will not create {lpfilename}. Tempfile written to {outfilename}")
 
         # assure that the output directory exists
         dmakedirs(lpdir)  
-
-        # If the LP files for this state/county/tract already exist, and they are properly terminated, just return
-
-        if dpath_exists(lpfilename) and not args.mem:
-            if lpfile_properly_terminated(lpfilename):
-                logging.info(f"{state_abbr} {county} {tract}: {lpfilename} already exists")
-                return
-            logging.info(f"{state_abbr} {county} {tract}: {lpfilename} "
-                         f"exists but not properly terminated. Deleting.")
-            dpath_unlink(lpfilename)
 
         # Block constraint building
         # loop through blocks to get block constraints and the master tuple list
@@ -389,13 +399,14 @@ class LPTractBuilder:
         # Get the constraints from the block dict for all the blocks in the tract
         block_summary_nums = {}
         for block in sf1_block_data:
-            self.get_constraint_summary('block', sf1_block_data, sf1_block_data[block], block_summary_nums)
+            self.get_constraint_summary('block', sf1_block_data, sf1_block_data[block], 
+                                        block_summary_nums)
         logging.info(f"{state_abbr} {county} {tract}: done getting block summary constraints")
 
         # 
         # Create the output LP file and write header
         #
-        f = dopen(lpfilename,'w')
+        f = dopen(outfilename,'w')
         f.write("\* DB Recon *\ \n")
         f.write("Minimize \n")
         f.write("Arbitrary_Objective_Function: __dummy \n")
@@ -408,7 +419,7 @@ class LPTractBuilder:
         # loop through blocks in the tract to get block constraints and the master tuple list
         logging.info(f"block_summary_nums: {total_size(block_summary_nums):,}")
         if args.mem:
-            print(f"block_summary_nums: {total_size(block_summary_nums):,}")
+            logging.info(f"block_summary_nums: {total_size(block_summary_nums):,}")
 
         del block_summary_nums
 
@@ -425,8 +436,8 @@ class LPTractBuilder:
         logging.info(f"tract_summary_nums: {total_size(tract_summary_nums):,}")
         logging.info(f"master_tuple_list: {total_size(self.master_tuple_list):,}")
         if args.mem:
-            print(f"tract_summary_nums: {total_size(tract_summary_nums):,}")
-            print(f"master_tuple_list: {total_size(self.master_tuple_list):,}")
+            logging.info(f"tract_summary_nums: {total_size(tract_summary_nums):,}")
+            logging.info(f"master_tuple_list: {total_size(self.master_tuple_list):,}")
         del tract_summary_nums
 
         # Write the collected variable names to the file, since they are all binaries
@@ -440,21 +451,28 @@ class LPTractBuilder:
 
         if args.mem:
             if dpath_exists(lpfilename):
-                print(f"Comparing {lpfilename} and {lpfilename_hold}")
+                logging.info(f"Comparing {lpfilename} and {lpfilename_hold}")
                 subprocess.check_call(['cmp',
                                        dbrecon.dpath_expand(lpfilename),
-                                       dbrecon.dpath_expand(lpfilename_hold)])
-            print("memory round completed. File validates")
-            print("Elapsed seconds: {}".format(int(time.time()-t0)))
+                                       dbrecon.dpath_expand(outfilename)])
+            else:
+                logging.warning("Need to write code to compare {gzlpfilename} and {outfilename}")
+            logging.info("memory round completed. File validates")
+            logging.info("Elapsed seconds: {}".format(int(time.time()-t0)))
             dbrecon.print_maxrss()
             dbrecon.add_dfxml_tag('synth_lp_files','', {'success':1})
             exit(0)
+
+        # Rename the temp file to the gzfile
+        dbrecon.drename(outfilename, gzlpfilename)
+        atexit.unregister(self.db_unstart)
+        
 
 # Make the tract LP files. This cannot be a local functions
 def build_tract_lp_tuple(tracttuple):
     (state_abbr, county, tract, sf1_tract_data, sf1_block_data) = tracttuple
     
-    lptb = LPTractBuilder()
+    lptb = LPTractBuilder(state_abbr, county, tract)
     lptb.build_tract_lp(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
 
 """Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""
@@ -603,9 +621,9 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     logging.info("%s %s total_size(sf1_block_dict)=%s total_size(sf1_tract_dict)=%s",
                  state_abbr,county,total_size(sf1_block_dict),total_size(sf1_tract_dict))
     if args.mem:
-        print("sf1_block_dict total memory: {:,} bytes".format(total_size(sf1_block_dict)))
-        print("sf1_tract_dict has data for {} tracts.".format(len(sf1_tract_dict)))
-        print("sf1_tract_dict total memory: {:,} bytes".format(total_size(sf1_tract_dict)))
+        logging.info("sf1_block_dict total memory: {:,} bytes".format(total_size(sf1_block_dict)))
+        logging.info("sf1_tract_dict has data for {} tracts.".format(len(sf1_tract_dict)))
+        logging.info("sf1_tract_dict total memory: {:,} bytes".format(total_size(sf1_tract_dict)))
     
     ################################################################
     ### 
@@ -655,7 +673,7 @@ if __name__=="__main__":
     config   = dbrecon.setup_logging_and_get_config(args,prefix="03syn")
     
     if args.mem:
-        print("Memory debugging mode. Setting j1=1 and j2=1")
+        logging.info("Memory debugging mode. Setting j1=1 and j2=1")
         args.j1 = 1
         args.j2 = 1
 
@@ -665,7 +683,7 @@ if __name__=="__main__":
         state_abbrs = dbrecon.parse_state_abbrs(args.state)
 
     if len(state_abbrs)>1 and args.county!='all':
-        print("if more than one state_abbr is specified, then county must be all",file=sys.stderr)
+        logging.info("if more than one state_abbr is specified, then county must be all",file=sys.stderr)
         exit(1)
     
     # If we are doing a specific tract

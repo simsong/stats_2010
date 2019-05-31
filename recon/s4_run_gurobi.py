@@ -128,9 +128,15 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
                 vars.append(name)
             except AttributeError:
                 pass
+
         # Get the final pop
         vars.append("final_pop")
         vals.append(dbrecon.final_pop(state_abbr,county,tract))
+
+        # Get the sol_gb
+        vars.append("sol_gb")
+        vals.append(dbrecon.maxrss() // GB)
+
         cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where state=%s and county=%s and tract=%s"
         dbrecon.DB.csfr(cmd, vals+[state_abbr,county,tract])
         # And compress the output file

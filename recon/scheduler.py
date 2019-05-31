@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import psutil
+import socket
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
@@ -34,8 +35,9 @@ MAX_CHILDREN = 10
 PYTHON_START_TIME = 5
 MB          = 1024*1024
 GB          = MB * 1024
-MIN_FREE_MEM_FOR_LP  = 256*GB
+MIN_FREE_MEM_FOR_LP  = 240*GB
 MIN_FREE_MEM_FOR_SOL = 100*GB
+REPORT_FREQUENCY = 60          # report this often
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
@@ -123,10 +125,22 @@ def prun(cmd):
 def freemem():
     return psutil.virtual_memory().available
 
+last_report = 0
+def report_load_memory(quiet=True):
+    global last_report
+    if last_report < time.time() + REPORT_FREQUENCY:
+        dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) values (now(), %s, %s, %s, %s, %s)", 
+                        list(os.getloadavg()) + [socket.gethostname().partition('.')[0], freemem()//GB],
+                        quiet=quiet)
+        last_report = time.time()
+    
 def run():
-    running = set()
-    running_lp = set()
+    running     = set()
+    running_lp  = set()
     while True:
+        # Report system usage if necessary
+        report_load_memory()
+
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:

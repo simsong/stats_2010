@@ -12,6 +12,7 @@ import datetime
 import glob
 import io
 import json
+import resource
 import logging
 import logging.handlers
 import os
@@ -45,6 +46,8 @@ global dfxml_writer
 dfxml_writer = None
 t0 = time.time()
 
+MB=1024*1024
+GB=1024*1024*1024
 LP='lp'
 SOL='sol'
 
@@ -717,8 +720,10 @@ def dsystem(x):
 ## memory profiling tools
 ##
 
+def maxrss():
+    return resource.getrusage(resource.RUSAGE_SELF)[2]
+
 def print_maxrss():
-    import resource
     for who in ['RUSAGE_SELF','RUSAGE_CHILDREN']:
         rusage = resource.getrusage(getattr(resource,who))
         print(who,'utime:',rusage[0],'stime:',rusage[1],'maxrss:',rusage[2])

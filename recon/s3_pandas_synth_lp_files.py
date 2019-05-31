@@ -26,7 +26,7 @@ import atexit
 from total_size import total_size
 
 import dbrecon
-from dbrecon import DB
+from dbrecon import DB,GB,MB
 from dbrecon import lpfile_properly_terminated,LPFILENAME,dopen,dmakedirs,LPDIR,dpath_exists,dpath_unlink
 
 assert pd.__version__ > '0.19'
@@ -448,6 +448,8 @@ class LPTractBuilder:
         f.write('End\n')
         f.close()
         dbrecon.db_done('lp',state_abbr, county, tract)
+        dbrecon.DB.cfrs("UPDATE tracts set lp_gb=%s where state=%s and county=%s and tract=%s",
+                        (dbrecon.maxrss()//GB,state_abbr, county, tract))
 
         if args.mem:
             if dpath_exists(lpfilename):

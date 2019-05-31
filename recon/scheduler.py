@@ -169,6 +169,7 @@ def run():
         # The LP makers take a lot of memory, so if we aren't running less than two, run up to two.
         # Order by lp_start to make it least likely to start where there is another process running
         needed_lp =  MAX_LP - len(running_lp) 
+        print(f"needed_lp: {needed_lp}")
         if (not args.nolp) and (freemem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0 and (not clean_exit):
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "

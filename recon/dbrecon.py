@@ -644,7 +644,7 @@ def dlistdir(path):
 def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     """An open function that can open from S3 and from inside of zipfiles.
     Don't use this for new projects; use ctools.dconfig.dopen instead"""
-    logging.info("  dopen(path={},mode={},encoding={})".format(path,mode,encoding))
+    logging.info("  dopen('{}','{}','{}', zipfilename={})".format(path,mode,encoding,zipfilename))
     path = dpath_expand(path)
 
     if path[0:5]=='s3://':
@@ -681,6 +681,12 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
         logging.info(f"  passing {path} to GZFile for automatic compress/decompress")
         return GZFile(path,mode=mode,encoding=encoding)
     return open(path,mode=mode,encoding=encoding)
+
+def drename(src,dst):
+    logging.info('drename({},{})'.format(src,dst))
+    if src.startswith('s3://') or dst.startswith('s3://'):
+        raise RuntimeError('drename does not yet implement s3')
+    return os.rename( dpath_expand(src), dpath_expand(dst) )
 
 def dmakedirs(dpath):
     """Like os.makedirs, but just returns for s3"""

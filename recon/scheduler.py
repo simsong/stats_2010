@@ -21,7 +21,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
-from dbrecon import DB
+from dbrecon import DB,get_config_int
 
 CLEANEXIT_FILE='cleanexit.txt'
 
@@ -30,7 +30,6 @@ CLEANEXIT_FILE='cleanexit.txt'
 SCHEMA_FILENAME="schema.sql"                
 SLEEP_TIME   = 5
 MAX_LOAD     = 32
-MAX_LP       = 1
 MAX_CHILDREN = 10
 PYTHON_START_TIME = 5
 MB          = 1024*1024
@@ -57,13 +56,15 @@ def init_sct(c,state_abbr,county,tract):
     DB.csfr("INSERT INTO tracts (state,county,tract,lp_end,sol_end,final_pop) values (%s,%s,%s,%s,%s,%s)",
             (state_abbr,county,tract,lptime,soltime, final_pop(state_abbr,county,tract)))
 
-def refresh():
-    for state_abbr in dbrecon.all_state_abbrs():
-        print(state_abbr)
-        for county in dbrecon.counties_for_state(state_abbr=state_abbr):
-            print(county," ",end='')
+def rescan():
+    states = [args.state] if args.state else dbrecon.all_state_abbrs()
+    for state_abbr in states:
+        counties = [args.county] if args.county else dbrecon.counties_for_state(state_abbr=state_abbr)
+        for county in counties:
+            print(f"RESCAN {state_abbr} {county}")
             for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
-                dbrecon.refresh_db(state_abbr,county,tract)
+                dbrecon.rescan_files(state_abbr,county,tract)
+        print()
 
 def clean():
     db = dbrecon.DB()
@@ -168,12 +169,15 @@ def run():
 
         # The LP makers take a lot of memory, so if we aren't running less than two, run up to two.
         # Order by lp_start to make it least likely to start where there is another process running
-        needed_lp =  MAX_LP - len(running_lp) 
+        if args.nolp:
+            needed_lp = 0
+        else:
+            needed_lp =  get_config_int('run','max_lp') - len(running_lp) 
         print(f"needed_lp: {needed_lp}")
-        if (not args.nolp) and (freemem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0 and (not clean_exit):
+        if (freemem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0 and (not clean_exit):
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
-                               "WHERE lp_end IS NULL GROUP BY state,county "
+                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) GROUP BY state,county "
                                "order BY RAND() DESC LIMIT %s", (needed_lp,))
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
@@ -183,13 +187,17 @@ def run():
                 running_lp.add(p)
                 time.sleep(PYTHON_START_TIME) # give load 5 seconds to adjust
 
-        needed_sol = MAX_CHILDREN-len(running)
+        if args.nosol:
+            needed_sol = 0
+        else:
+            needed_sol = max( get_config_int('run','max_children')-len(running),
+                              get_config_int('run','max_sol')-(len(running) - len(running_lp)))
         print(f"needed_sol: {needed_sol}")
-        if (not args.nosol) and freemem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0 and (not clean_exit):
+        if freemem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0 and (not clean_exit):
             # Run any solvers that we have room for
             needed_sol = 1
             solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
-                                "WHERE sol_end IS NULL AND lp_end IS NOT NULL "
+                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)  "
                                 "ORDER BY sol_start,RAND() LIMIT %s",(needed_sol,))
             for (state,county,tract) in solve_lps:
                 print("WILL SOLVE ",state,county,tract)
@@ -224,13 +232,15 @@ if __name__=="__main__":
     parser.add_argument("--init",    help="Clear database and learn the current configuration", action='store_true')
     parser.add_argument("--config",  help="config file")
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
-    parser.add_argument("--refresh", help="scan all of the files and update the database if we find any missing LP or Solution files",
+    parser.add_argument("--rescan", help="scan all of the files and update the database if we find any missing LP or Solution files",
                         action='store_true')
     parser.add_argument("--clean",   help="Look for .lp and .sol files that are too slow and delete them, then remove them from the database", action='store_true')
     parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
     parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
     parser.add_argument("--none_running", help="Run if there are no outstanding LP files being built or Solutions being solved; clears them from database", action='store_true')
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
+    parser.add_argument("--state", help="state for rescanning")
+    parser.add_argument("--county", help="county for rescanning")
     
     args   = parser.parse_args()
     config = dbrecon.setup_logging_and_get_config(args,prefix='sch_')
@@ -247,8 +257,8 @@ if __name__=="__main__":
     elif args.init:
         init()
 
-    elif args.refresh:
-        refresh()
+    elif args.rescan:
+        rescan()
 
     elif args.clean:
         clean()

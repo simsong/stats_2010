@@ -69,7 +69,7 @@ class DB:
     """DB class with singleton pattern"""
     config = None
     @staticmethod
-    def csfr(cmd,vals=None,quiet=False):
+    def csfr(cmd,vals=None,quiet=False,rowcount=None):
         """Connect, select, fetchall, and retry as necessary"""
         import mysql.connector.errors
         for i in range(1,RETRIES):
@@ -83,6 +83,9 @@ class DB:
                     if quiet==False:
                         print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
                     c.execute(cmd,vals)
+                    if rowcount is not None:
+                        if c.rowcount!=rowcount:
+                            raise RuntimeError(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
                 except mysql.connector.errors.ProgrammingError as e:
                     logging.error("cmd: "+str(cmd))
                     logging.error("vals: "+str(vals))
@@ -137,75 +140,79 @@ def filename_mtime(fname):
 
 def final_pop(state_abbr,county,tract):
     count = 0
-    sol_filename = SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)
-    if dpath_exists( sol_filename):
-        f = open(sol_filename)
-    elif dpath_exists( sol_filename+".gz") and (not sol_filename.startswith("s3://")):
-        f = GZFile(sol_filename+".gz",level=1)
-    else:
-        return None
-    for line in f:
-        if line.startswith('C') and line.strip().endswith(" 1"):
-            count += 1
+    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    with dopen(sol_filenamegz) as f:
+        for line in f:
+            if line.startswith('C') and line.strip().endswith(" 1"):
+                count += 1
     if count==0 or count>100000:
         logging.warning(f"{sol_filename} has a final pop of {count}. This is invalid, so deleting")
-        os.unlink(sol_filename)
+        abort()
+        dpath_unlink(sol_filenamegz)
         return None
     return count
 
+def hostname():
+    """Hostname without domain"""
+    return socket.gethostname().partition('.')[0]
 
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL]
-    DB.csfr(f"INSERT INTO tracts (state,county,tract,{what}_start) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_start=now()",
-                             (state_abbr,county,tract))
+    DB.csfr(f"UPDATE tracts set {what}_start=now(),hostlock=%s where state=%s and county=%s and tract=%s",
+            (hostname(),state_abbr,county,tract),
+            rowcount=1 )
+    logging.info(f"db_start: {what} {state_abbr} {county} {tract} ")
 
     
 def db_done(what, state_abbr, county, tract, t=None):
     assert what in [LP,SOL]
-    DB.csfr(f"INSERT INTO tracts (state,county,tract,{what}_end) values (%s,%s,%s,now()) ON DUPLICATE KEY UPDATE {what}_end=now()",
-                             (state_abbr,county,tract))
     if t:
-        DB.csfr(f"update tracts set {what}_time=%s where state=%s and county=%s and tract=%s", (t,state_abbr,county,tract))
+        DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,{what}_t=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
+                (hostname(),t,state_abbr,county,tract),rowcount=1)
+    else:
+        DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
+                (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
 def is_db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
-    row = DB.csfr(f"select {what}_end from tracts where state=%s and county=%s and tract=%s LIMIT 1", (state_abbr,county,tract))
-    if (row is None) or (row[0] is None) or (row[0][0] is None):
-        return False
-    return True
+    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE state=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
+    return len(row)==1
 
-def db_ping(state_abbr, county, tract):
-    DB.csfr(f"update tracts set ping=now() where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
-    
 
-def refresh_db(state_abbr, county, tract):
-    lpfilename = find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
-    lp_end  = filename_mtime( lpfilename )
-    sol_end = filename_mtime( SOLFILENAME(state_abbr=state_abbr,county=county, tract=tract) )
+def rescan_files(state_abbr, county, tract, check_final_pop=False):
+    logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
+    lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
     
     rows = DB.csfr("SELECT lp_end,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",(state_abbr,county,tract))
-    if len(rows)==1:
-        row = rows[0]
-        fp  = final_pop(state_abbr,county,tract)
-        if len(row)==3 and row[0]==lp_end and row[1]==sol_end and row[2]==fp:
-            return
+    if len(rows)!=1:
+        raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
+    
+    (lp_end,sol_end,final_pop_db) = rows[0]
+    if dpath_exists(lpfilenamegz):
+        if lp_end is None:
+            logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
+            DB.csfr("UPDATE tracts set lp_end=%s where state=%s and county=%s and tract=%s",
+                    (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
-    # If there was no final pop, make sure that there is no solution
-    if fp is None:
-        sol_end = None
 
-    lp_end_str  = lp_end.isoformat()[0:19] if lp_end else None
-    sol_end_str = sol_end.isoformat()[0:19] if sol_end else None
+    if dpath_exists(solfilenamegz):
+        if sol_end is None:
+            logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
+            DB.csfr("UPDATE tracts set sol_end=%s where state=%s and county=%s and tract=%s",
+                    (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
-    DB.csfr("INSERT INTO tracts  (state,county,tract,lp_end,sol_end,final_pop) "
-              "VALUES (%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE lp_end=%s,sol_end=%s,final_pop=%s",
-              (state_abbr,county,tract,lp_end_str,sol_end_str,fp,lp_end_str,sol_end_str,fp))
-    logging.info(f"refreshing {state_abbr} {county} {tract} in database; lp_end={lp_end_str} sol_end={sol_end_str}")
+        if check_final_pop:
+            final_pop_file = final_pop(state_abbr,county,tract)
+            if final_pop_db!=final_pop_file:
+                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} for {state_abbr} {county} {tract}. Correcting")
+                DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
+                        (final_pop_file,state_abbr,county,tract))
+
 
 ################################################################
 ### functions that return directories. dpath_expand is not called on these.
-
 
 def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
     fips = state_fips(state_abbr)
@@ -246,15 +253,13 @@ def SF1_TRACT_DATA_FILE(*,state_abbr,county):
 def STATE_COUNTY_LIST(*,root='$ROOT',state_abbr,fips):
     return dpath_expand(f"{root}/{state_abbr}/state_county_list_{fips}.csv")
 
-def LPFILENAME(*,state_abbr,county,geo_id):
-    lpdir = LPDIR(state_abbr=state_abbr,county=county)
-    return dpath_expand(f'{lpdir}/model_{geo_id}.lp')
-    
-def LPFILENAMEGZ(*,state_abbr,county,geo_id):
-    lpdir = LPDIR(state_abbr=state_abbr,county=county)
+def LPFILENAMEGZ(*,state_abbr,county,tract):
+    geo_id = state_fips(state_abbr)+county+tract
+    lpdir  = LPDIR(state_abbr=state_abbr,county=county)
     return dpath_expand(f'{lpdir}/model_{geo_id}.lp.gz')
     
-def ILPFILENAME(*,state_abbr,county,geo_id):
+def ILPFILENAME(*,state_abbr,county,tract):
+    geo_id = state_fips(state_abbr)+county+tract
     lpdir = LPDIR(state_abbr=state_abbr,county=county)
     return dpath_expand(f'{lpdir}/model_{geo_id}.ilp')
     
@@ -263,18 +268,15 @@ def SOLFILENAME(*,state_abbr,county,tract):
     fips = state_fips(state_abbr)
     return dpath_expand(f'{soldir}/model_{fips}{county}{tract}.sol')
     
+def SOLFILENAMEGZ(*,state_abbr,county,tract):
+    return SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)+".gz"
+
+    
 def COUNTY_CSV_FILENAME(*,state_abbr,county):
     csvdir = STATE_COUNTY_DIR(root='$ROOT',state_abbr=state_abbr,county=county)
     geo_id = state_fips(state_abbr) + county
     return dpath_expand(f'{csvdir}/synth_out_{geo_id}.csv')
     
-def find_lp_filename(*,state_abbr,county,tract):
-    geo_id = state_fips(state_abbr)+county+tract
-    for fname in [ LPFILENAME(state_abbr=state_abbr,county=county,geo_id=geo_id), LPFILENAMEGZ(state_abbr=state_abbr,county=county,geo_id=geo_id)]:
-        if dpath_exists(fname):
-            return fname
-    return None
-
 SET_RE = re.compile(r"[^0-9](?P<state>\d\d)(?P<county>\d\d\d)(?P<tract>\d\d\d\d\d\d)[^0-9]")
 def extract_state_county_tract(fname):
     m = SET_RE.search(fname)
@@ -369,6 +371,9 @@ def get_config(pathname=None,filename=None):
         config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
     DB.config_file = config_file
     return config_file
+
+def get_config_int(section,name):
+    return int(get_config()[section][name])
 
 def state_rec(key):
     """Return the record in the state database for a key, where key is the state name, abbreviation, or FIPS code."""

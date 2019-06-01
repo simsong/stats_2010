@@ -21,6 +21,10 @@ import dbrecon
 from dbrecon import DB
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists
 
+def db_fail(state_abbr, county, tract):
+    DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
+
+
 # Details on Gurobi output:
 # http://www.gurobi.com/documentation/8.1/refman/mip_logging.html
 GUROBI_THREADS_DEFAULT=16
@@ -42,7 +46,7 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     lp_filename = dbrecon.dpath_expand(lp_filename)
     ilp_filename= dbrecon.ILPFILENAME(state_abbr=state_abbr, county=county, geo_id=geoid_tract)
     sol_filename= dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)
-    solgz_filename= dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)+".gz"
+    solgz_filename= sol_filename+".gz"
     env         = None # Guorbi environment
     p           = None # subprocess for decompressor
     tempname    = None # symlink that points to decompressed model file
@@ -72,7 +76,7 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     dbrecon.dmakedirs( os.path.dirname( sol_filename)) 
 
     dbrecon.db_start('sol', state_abbr, county, tract)
-    atexit.register(db_unstart, state_abbr, county, tract)
+    atexit.register(db_fail, state_abbr, county, tract)
 
     env = gu.Env.OtherEnv( log_filename, customer, appname, 0, "")
     env.setParam("LogToConsole",0)
@@ -142,21 +146,18 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         # And compress the output file
         subprocess.check_call(['gzip','-1',sol_filename])
     del env
-    atexit.unregister(db_unstart)
+    atexit.unregister(db_fail)
 
-
-def db_unstart(state_abbr, county, tract):
-    DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
 
 
 def run_gurobi_for_county_tract(state_abbr, county, tract):
     assert len(state_abbr)==2
     assert len(county)==3
     assert len(tract)==6
-    lp_filename  = dbrecon.find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
-    if lp_filename is None:
+    lp_filename  = dbrecon.LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    if dbrecon.dpath_exists(lp_filename) is None:
         logging.info(f"lp_filename does not exist")
-        dbrecon.refresh_db(state_abbr, county,tract)
+        dbrecon.rescan_db(state_abbr, county, tract)
         return
 
     if dbrecon.is_db_done('sol',state_abbr, county, tract):
@@ -167,7 +168,7 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         run_gurobi(state_abbr, county, tract, lp_filename, args.dry_run)
     except FileExistsError as e:
         logging.warning(f"solution file exists for {state_abbr}{county}{tract}; updating database")
-        dbrecon.refresh_db(state_abbr, county,tract)
+        dbrecon.rescan_db(state_abbr, county,tract)
         return
 
     if args.exit1:

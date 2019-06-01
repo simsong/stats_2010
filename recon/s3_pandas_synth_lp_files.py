@@ -27,7 +27,7 @@ from total_size import total_size
 
 import dbrecon
 from dbrecon import DB,GB,MB
-from dbrecon import lpfile_properly_terminated,LPFILENAME,dopen,dmakedirs,LPDIR,dpath_exists,dpath_unlink
+from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dmakedirs,LPDIR,dpath_exists,dpath_unlink
 
 assert pd.__version__ > '0.19'
 
@@ -192,9 +192,10 @@ class LPTractBuilder:
         self.county     = county
         self.tract      = tract
 
-    def db_unstart(self):
+    def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
-        DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(self.state_abbr,self.county,self.tract))
+        DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",
+                (self.state_abbr,self.county,self.tract),rowcount=1)
         
         
 
@@ -355,18 +356,19 @@ class LPTractBuilder:
             return
 
         t0         = time.time()
-        state_code = dbrecon.state_fips(state_abbr)
-        geo_id     = sf1_tract_data[0][GEOID]
         lpdir      = LPDIR(state_abbr=state_abbr,county=county)
-        lpfilename = LPFILENAME(state_abbr=state_abbr,county=county,geo_id=geo_id)
-        tmpgzfilename = lpfilename + ".tmp.gz" # temp output file
-        gzlpfilename  = lpfilename + ".gz"     # final output file
+        dmakedirs(lpdir)  
+
+        state_code    = dbrecon.state_fips(state_abbr)
+        geo_id        = sf1_tract_data[0][GEOID]
+        lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+        tmpgzfilename = lpfilenamegz.replace(".gz",".tmp.gz")
         outfilename   = tmpgzfilename
 
         # file exists and it is good. Note that in the database
         try:
-            if dbrecon.lpfile_properly_terminated(gzlpfilename):
-                logging.info(f"{gzlpfilename} at {state_code}{county}{tract} is properly terminated.")
+            if dbrecon.lpfile_properly_terminated(lpfilenamegz):
+                logging.info(f"{lpfilenamegz} at {state_code}{county}{tract} is properly terminated.")
                 dbrecon.db_done('lp',state_abbr, county, tract)
                 return
         except FileNotFoundError as e:
@@ -376,19 +378,16 @@ class LPTractBuilder:
                      "block_data_size:{sys.getsizeof(sf1_block_data):,} ")
 
         dbrecon.db_start('lp', state_abbr, county, tract)
-        atexit.register(self.db_unstart)
+        atexit.register(self.db_fail)
 
         if args.dry_run:
-            logging.warning(f"DRY RUN: Will not create {lpfilename}")
+            logging.warning(f"DRY RUN: Will not create {outfilename}")
             return
 
         if args.mem:
             tf              = tempfile.NamedTemporaryFile(delete=False)
             outfilename     = tf.name
-            logging.info(f"MEMORY COUNTING. Will not create {lpfilename}. Tempfile written to {outfilename}")
-
-        # assure that the output directory exists
-        dmakedirs(lpdir)  
+            logging.info(f"MEMORY COUNTING. Will not create {tmpgzfilename}. Writing tempfile to {outfilename}")
 
         # Block constraint building
         # loop through blocks to get block constraints and the master tuple list
@@ -448,17 +447,18 @@ class LPTractBuilder:
         f.write('End\n')
         f.close()
         dbrecon.db_done('lp',state_abbr, county, tract)
-        dbrecon.DB.cfrs("UPDATE tracts set lp_gb=%s where state=%s and county=%s and tract=%s",
-                        (dbrecon.maxrss()//GB,state_abbr, county, tract))
+        dbrecon.DB.csfr("UPDATE tracts set lp_gb=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
+                        (dbrecon.maxrss()//GB,state_abbr, county, tract), rowcount=1)
 
         if args.mem:
-            if dpath_exists(lpfilename):
-                logging.info(f"Comparing {lpfilename} and {lpfilename_hold}")
+            if dpath_exists(lpfilenamegz):
+                logging.info(f"Comparing {lpfilenamegz} and {outfilename_hold}")
+                raise RuntimeError("Modify this so that it compares the compressed files")
                 subprocess.check_call(['cmp',
-                                       dbrecon.dpath_expand(lpfilename),
-                                       dbrecon.dpath_expand(outfilename)])
+                                       dbrecon.dpath_expand(lpfilenamegz),
+                                       dbrecon.dpath_expand(outfilename_hold)])
             else:
-                logging.warning("Need to write code to compare {gzlpfilename} and {outfilename}")
+                logging.warning("Need to write code to compare {lpfilenamegz} and {outfilename}")
             logging.info("memory round completed. File validates")
             logging.info("Elapsed seconds: {}".format(int(time.time()-t0)))
             dbrecon.print_maxrss()
@@ -466,8 +466,8 @@ class LPTractBuilder:
             exit(0)
 
         # Rename the temp file to the gzfile
-        dbrecon.drename(outfilename, gzlpfilename)
-        atexit.unregister(self.db_unstart)
+        dbrecon.drename(outfilename, lpfilenamegz)
+        atexit.unregister(self.db_fail)
         
 
 # Make the tract LP files. This cannot be a local functions
@@ -688,6 +688,8 @@ if __name__=="__main__":
         logging.info("if more than one state_abbr is specified, then county must be all",file=sys.stderr)
         exit(1)
     
+    DB.csfr("UPDATE tracts set hostlock=%s where state=%s and county=%s",(dbrecon.hostname(),args.state,args.county))
+
     # If we are doing a specific tract
     if args.tract:
         if len(state_abbrs)!=1:
@@ -728,5 +730,5 @@ if __name__=="__main__":
     # We are doing a single state/county pair. We may do each tract multithreaded.
     assert args.county!='all'
     make_state_county_files(state_abbrs[0], args.county)
-
+    
 

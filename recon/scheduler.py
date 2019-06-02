@@ -185,7 +185,7 @@ def run():
         for p in sorted(running, key=lambda p:p.args):
             print(pcmd(p))
             ps = psutil.Process(pid=p.pid)
-            print("    ",(ps.memory_info().rss * 1024)//GB,"GB")
+            print("    ",ps.memory_info().rss//GB,"GB")
             print("    ",ps.memory_info())
 
         clean_exit = os.path.exists(STOP_FILE)

@@ -21,9 +21,9 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
-from dbrecon import DB,get_config_int
+from dbrecon import DB,LP,SOL,MB,GB,get_config_int
 
-CLEANEXIT_FILE='cleanexit.txt'
+STOP_FILE='stop.txt'
 
 # Tuning parameters
 
@@ -32,11 +32,11 @@ SLEEP_TIME   = 5
 MAX_LOAD     = 32
 MAX_CHILDREN = 10
 PYTHON_START_TIME = 5
-MB          = 1024*1024
-GB          = MB * 1024
 MIN_FREE_MEM_FOR_LP  = 240*GB
 MIN_FREE_MEM_FOR_SOL = 100*GB
-REPORT_FREQUENCY = 60          # report this often
+MIN_FREE_MEM_FOR_KILLER = 10*GB  # if less than this, start killing processes
+REPORT_FREQUENCY = 60           # report this often
+PROCESS_DIE_TIME = 5
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
@@ -103,8 +103,6 @@ def init():
         db.commit()
 
                       
-LP='lp'
-SOL='sol'
 class SCT:
     def __init__(self,state,county,tract):
         self.state = state
@@ -142,6 +140,18 @@ def run():
         # Report system usage if necessary
         report_load_memory()
 
+        if freemem() < MIN_FREE_MEM_FOR_KILLER:
+            logging.warning("Free memory down to {} --- will start killing processes.".format(freemem()))
+            p = running.pop()
+            p.kill()
+            try:
+                running_lp.remove(p)
+            except KeyError:
+                pass
+            time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
+            continue
+            
+
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:
@@ -158,10 +168,10 @@ def run():
             print(" ".join(p.args))
         print("---")
 
-        clean_exit = os.path.exists(CLEANEXIT_FILE)
+        clean_exit = os.path.exists(STOP_FILE)
         if clean_exit and len(running)==0:
             print("Clean exit")
-            os.unlink(CLEANEXIT_FILE)
+            os.unlink(STOP_FILE)
             return
 
         # See if we can create another process. 

@@ -44,7 +44,7 @@ SF1_RACE_BINARIES = '$SRC/layouts/sf1_vars_race_binaries.csv'
 
 global dfxml_writer
 dfxml_writer = None
-t0 = time.time()
+start_time = time.time()
 
 MB=1024*1024
 GB=1024*1024*1024
@@ -758,5 +758,5 @@ def mem_info(what,df,dump=True):
                 except AttributeError:
                     pass
         df.info(verbose=False,max_cols=160,memory_usage='deep',null_counts=True)
-    print("elapsed time at {}: {:.2f}".format(what,time.time() - t0))
+    print("elapsed time at {}: {:.2f}".format(what,time.time() - start_time))
     print("==============================")

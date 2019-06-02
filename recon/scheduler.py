@@ -34,7 +34,7 @@ MAX_CHILDREN = 10
 PYTHON_START_TIME = 5
 MIN_FREE_MEM_FOR_LP  = 240*GB
 MIN_FREE_MEM_FOR_SOL = 100*GB
-MIN_FREE_MEM_FOR_KILLER = 10*GB  # if less than this, start killing processes
+MIN_FREE_MEM_FOR_KILLER = 5*GB  # if less than this, start killing processes
 REPORT_FREQUENCY = 60           # report this often
 PROCESS_DIE_TIME = 5
 
@@ -121,33 +121,46 @@ def prun(cmd):
     return subprocess.Popen(cmd)
 
 
-def freemem():
+def get_free_mem():
     return psutil.virtual_memory().available
 
 last_report = 0
 def report_load_memory(quiet=True):
+    """Report and print the load and free memory; return free memory"""
     global last_report
+    free_mem = get_free_mem()
+
+    # print current tasks
+    total_seconds = (time.time() - dbrecon.start_time)
+    hours    = total_seconds // 3600
+    mins     = (total_seconds % 3600) // 60
+    secs     = int(total_seconds % 60)
+    print("Time: {} Running time: {}:{:02}:{:02} load: {}  free_gb: {}".format(time.asctime(),hours,mins,secs,load(),round(get_free_mem()/GB,2)))
     if last_report < time.time() + REPORT_FREQUENCY:
         dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1", 
-                        [socket.gethostname().partition('.')[0]] + list(os.getloadavg()) + [freemem()//GB],
+                        [socket.gethostname().partition('.')[0]] + list(os.getloadavg()) + [get_free_mem()//GB],
                         quiet=quiet)
         last_report = time.time()
+    return free_mem
     
+
 def run():
     running     = set()
-    running_lp  = set()
+
+    def running_lp():
+        return [p for p in running if 's3' in p.args[1]]
+
     while True:
         # Report system usage if necessary
-        report_load_memory()
+        free_mem = report_load_memory()
 
-        if freemem() < MIN_FREE_MEM_FOR_KILLER:
-            logging.warning("Free memory down to {} --- will start killing processes.".format(freemem()))
+        if free_mem < MIN_FREE_MEM_FOR_KILLER:
+            logging.warning("Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
+            if len(running)==0:
+                logging.error("No more processes to kill. Exiting")
+                exit(1)
             p = running.pop()
             p.kill()
-            try:
-                running_lp.remove(p)
-            except KeyError:
-                pass
             time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
             p.poll()                     # clear the exit code
             continue
@@ -160,18 +173,10 @@ def run():
                 if p.returncode!=0:
                     logging.error(f"Process {p.pid} did not exit cleanly ")
                 running.remove(p)
-                if p in running_lp:
-                    running_lp.remove(p)
 
-        # print current tasks
-        total_seconds = (time.time() - dbrecon.start_time)
-        hours    = total_seconds // 3600
-        mins     = (total_seconds % 3600) // 60
-        secs     = int(total_seconds % 60)
-        print("Time: {} Running time: {}:{:02}:{:02} load: {}  free_gb: {}".format(time.asctime(),hours,mins,secs,load(),round(freemem()/GB,2)))
+        print("running:")
         for p in sorted(running, key=lambda p:p.args):
             print(" ".join(p.args))
-        print("---")
 
         clean_exit = os.path.exists(STOP_FILE)
         if clean_exit and len(running)==0:
@@ -187,9 +192,8 @@ def run():
         if args.nolp:
             needed_lp = 0
         else:
-            needed_lp =  get_config_int('run','max_lp') - len(running_lp) 
-        print(f"needed_lp: {needed_lp}")
-        if (freemem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0 and (not clean_exit):
+            needed_lp =  get_config_int('run','max_lp') - len(running_lp())
+        if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0 and (not clean_exit):
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
                                "WHERE (lp_end IS NULL) and (hostlock IS NULL) GROUP BY state,county "
@@ -199,16 +203,13 @@ def run():
                 print("WILL MAKE LP",'s3_pandas_synth_lp_files.py',state,county,"TRACTS:",tract_count)
                 p = prun([sys.executable,'s3_pandas_synth_lp_files.py',state,county,'--j1','1'])
                 running.add(p)
-                running_lp.add(p)
                 time.sleep(PYTHON_START_TIME) # give load 5 seconds to adjust
 
         if args.nosol:
             needed_sol = 0
         else:
-            needed_sol = max( get_config_int('run','max_children')-len(running),
-                              get_config_int('run','max_sol')-(len(running) - len(running_lp)))
-        print(f"needed_sol: {needed_sol}")
-        if freemem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0 and (not clean_exit):
+            needed_sol = get_config_int('run','max_children')-len(running)
+        if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0 and (not clean_exit):
             # Run any solvers that we have room for
             needed_sol = 1
             solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
@@ -220,7 +221,7 @@ def run():
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
 
-        print("------")
+        print("="*64)
         time.sleep(SLEEP_TIME)
         # and repeat
     # Should never get here

@@ -211,7 +211,7 @@ def run():
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
                 print("WILL MAKE LP",'s3_pandas_synth_lp_files.py',state,county,"TRACTS:",tract_count)
-                p = prun([sys.executable,'s3_pandas_synth_lp_files.py',state,county,'--j1','1'])
+                p = prun([sys.executable,'s3_pandas_synth_lp_files.py','--j1','1','--j2',str(S3_J2),state,county])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME) # give load 5 seconds to adjust
 
@@ -227,7 +227,7 @@ def run():
                                 "ORDER BY sol_start,RAND() LIMIT %s",(needed_sol,))
             for (state,county,tract) in solve_lps:
                 print("WILL SOLVE ",state,county,tract)
-                p = prun([sys.executable,'s4_run_gurobi.py',state,county,tract])
+                p = prun([sys.executable,'s4_run_gurobi.py','--j1','1','--j2',str(S4_J2),state,county,tract])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
 

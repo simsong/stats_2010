@@ -176,7 +176,7 @@ def run():
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:
-                print(f"PROCESS {p.pid} FINISHED: {pcmp(p)} code: {p.returncode}")
+                print(f"PROCESS {p.pid} FINISHED: {pcmd(p)} code: {p.returncode}")
                 if p.returncode!=0:
                     logging.error(f"Process {p.pid} did not exit cleanly ")
                 running.remove(p)

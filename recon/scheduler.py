@@ -149,6 +149,7 @@ def run():
             except KeyError:
                 pass
             time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
+            p.poll()                     # clear the exit code
             continue
             
 
@@ -163,7 +164,11 @@ def run():
                     running_lp.remove(p)
 
         # print current tasks
-        print("{}: load: {}  free_gb: {}".format(time.asctime(),load(),round(freemem()/GB,2)))
+        total_seconds = (time.time() - dbrecon.start_time)
+        hours    = total_seconds // 3600
+        mins     = (total_seconds % 3600) // 60
+        secs     = int(total_seconds % 60)
+        print("Time: {} Running time: {}:{:02}:{:02} load: {}  free_gb: {}".format(time.asctime(),hours,mins,secs,load(),round(freemem()/GB,2)))
         for p in sorted(running, key=lambda p:p.args):
             print(" ".join(p.args))
         print("---")

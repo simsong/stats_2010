@@ -37,6 +37,8 @@ MIN_FREE_MEM_FOR_SOL = 100*GB
 MIN_FREE_MEM_FOR_KILLER = 5*GB  # if less than this, start killing processes
 REPORT_FREQUENCY = 60           # report this often
 PROCESS_DIE_TIME = 5
+S3_J2=4
+S4_J2=4
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
@@ -144,6 +146,10 @@ def report_load_memory(quiet=True):
     return free_mem
     
 
+def pcmd(p):
+    """Return a process command"""
+    return " ".join(p.args)
+
 def run():
     running     = set()
 
@@ -160,6 +166,7 @@ def run():
                 logging.error("No more processes to kill. Exiting")
                 exit(1)
             p = running.pop()
+            logging.warning("KILL "+pcmd(p))
             p.kill()
             time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
             p.poll()                     # clear the exit code
@@ -169,14 +176,17 @@ def run():
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:
-                print(f"PROCESS {p.pid} FINISHED: {','.join(p.args)} code: {p.returncode}")
+                print(f"PROCESS {p.pid} FINISHED: {pcmp(p)} code: {p.returncode}")
                 if p.returncode!=0:
                     logging.error(f"Process {p.pid} did not exit cleanly ")
                 running.remove(p)
 
         print("running:")
         for p in sorted(running, key=lambda p:p.args):
-            print(" ".join(p.args))
+            print(pcmd(p))
+            ps = psutil.Process(pid=p.pid)
+            print("    ",(ps.memory_info().rss * 1024)//GB,"GB")
+            print("    ",ps.memory_info())
 
         clean_exit = os.path.exists(STOP_FILE)
         if clean_exit and len(running)==0:

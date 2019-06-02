@@ -276,7 +276,7 @@ if __name__=="__main__":
     parser.add_argument("--config", help="config file")
     parser.add_argument("state_abbrs",nargs="*",help='Specify states to process')
     parser.add_argument("--all",action='store_true',help='All states')
-    parser.add_argument("--threads", '--j1', type=int, help='Number of states to run at once (defaults to thread count in config file).')
+    parser.add_argument("--j1", type=int, help='Number of states to run at once (defaults to thread count in config file).')
 
     args     = parser.parse_args()
     config   = dbrecon.get_config(filename=args.config)
@@ -303,13 +303,13 @@ if __name__=="__main__":
         print("Specify states to process or --all")
         exit(1)
 
-    if not args.threads:
-        args.threads=config['run'].getint('threads',1)
+    if not args.j1:
+        args.j1=config['run'].getint('threads',1)
 
-    logging.info("Running with {} threads".format(args.threads))
-    if args.threads==1:
+    logging.info("Running with {} threads".format(args.j1))
+    if args.j1==1:
         [process_state(state) for state in states]
     else:
-        with multiprocessing.Pool(args.threads) as p:
+        with multiprocessing.Pool(args.j1) as p:
             p.map(process_state, states)
 

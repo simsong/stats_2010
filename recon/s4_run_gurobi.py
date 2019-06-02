@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import atexit
+import multiprocessing 
 
 import gurobipy as gu
 import dbrecon
@@ -197,8 +198,7 @@ def run_gurobi_for_county(state_abbr, county, tracts):
 
     tracttuples = [(state_abbr, county, tract) for tract in tracts]
     if args.j1>1:
-        from multiprocessing import Pool
-        with Pool(args.j1) as p:
+        with multiprocessing.Pool(args.j1) as p:
             p.map(run_gurobi_tuple, tracttuples)
     else:
         for tt in tracttuples:

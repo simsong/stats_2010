@@ -645,7 +645,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
                     sf1_block_dict[tract]) for tract in tracts]
 
     if args.j2>1:
-        with multiprocessing.Pool( max(args.j2, len(tracttuples))) as p:
+        with multiprocessing.Pool( args.j2 ) as p:
             p.map(build_tract_lp_tuple, tracttuples)
     else:
         list(map(build_tract_lp_tuple, tracttuples))
@@ -722,7 +722,7 @@ if __name__=="__main__":
             state_abbr_county_pairs.extend([(state_abbr,county) 
                                             for county in dbrecon.counties_for_state(state_abbr)])
         if args.j1>1:
-            with multiprocessing.Pool( max(args.j1,len(state_abbr_county_pairs))) as p:
+            with multiprocessing.Pool( j1 ) as p:
                 p.map(recall, state_abbr_county_pairs)
         else:
             for (state_abbr,county) in state_abbr_county_pairs:

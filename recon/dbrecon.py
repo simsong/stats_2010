@@ -158,8 +158,8 @@ def hostname():
 
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL]
-    DB.csfr(f"UPDATE tracts set {what}_start=now(),hostlock=%s where state=%s and county=%s and tract=%s",
-            (hostname(),state_abbr,county,tract),
+    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where state=%s and county=%s and tract=%s",
+            (hostname(),hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {what} {state_abbr} {county} {tract} ")
 
@@ -726,7 +726,8 @@ def dsystem(x):
 ##
 
 def maxrss():
-    return resource.getrusage(resource.RUSAGE_SELF)[2]
+    """Return maxrss in bytes, not KB"""
+    return resource.getrusage(resource.RUSAGE_SELF)[2]*1024 
 
 def print_maxrss():
     for who in ['RUSAGE_SELF','RUSAGE_CHILDREN']:

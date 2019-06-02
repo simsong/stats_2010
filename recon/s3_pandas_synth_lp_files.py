@@ -34,6 +34,8 @@ assert pd.__version__ > '0.19'
 MAX_SF1_ERRORS = 10             # some files may have errors
 MISSING  = 'missing'
 HISPANIC = 'hispanic'
+DEFAULT_J1 = 1
+DEFAULT_J2 = 8
 
 Y = 'Y'
 N = 'N'
@@ -657,11 +659,11 @@ if __name__=="__main__":
     parser.add_argument("--j1", 
                         help="Specifies number of threads for state-county parallelism. "
                         "These threads do not share memory. Specify 1 to disable parallelism.",
-                        type=int,default=4)
+                        type=int,default=DEFAULT_J1)
     parser.add_argument("--j2",
                         help="Specifies number of threads for tract-level parallelism. "
                         "These threads share tract and block statistics. Specify 1 to disable parallelism.",
-                        type=int,default=16)
+                        type=int,default=DEFAULT_J2)
     parser.add_argument("--dry_run", help="don't actually write out the LP files",action='store_true')
     parser.add_argument("--mem",
                         help="enable memory debugging. Print memory usage. "

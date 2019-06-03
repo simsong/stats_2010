@@ -478,6 +478,7 @@ def build_tract_lp_tuple(tracttuple):
     
     lptb = LPTractBuilder(state_abbr, county, tract)
     lptb.build_tract_lp(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
+    dbrecon.check_stop()
 
 """Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""
 def make_state_county_files(state_abbr, county, tractgen='all'):

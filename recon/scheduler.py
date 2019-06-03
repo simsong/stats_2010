@@ -23,7 +23,6 @@ from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
 from dbrecon import DB,LP,SOL,MB,GB,get_config_int
 
-STOP_FILE='stop.txt'
 
 # Tuning parameters
 
@@ -37,8 +36,6 @@ MIN_FREE_MEM_FOR_SOL = 100*GB
 MIN_FREE_MEM_FOR_KILLER = 5*GB  # if less than this, start killing processes
 REPORT_FREQUENCY = 60           # report this often
 PROCESS_DIE_TIME = 5
-S3_J2=4
-S4_J2=4
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
@@ -188,11 +185,14 @@ def run():
             print("    ",ps.memory_info().rss//GB,"GB")
             print("    ",ps.memory_info())
 
-        clean_exit = os.path.exists(STOP_FILE)
-        if clean_exit and len(running)==0:
-            print("Clean exit")
-            os.unlink(STOP_FILE)
-            return
+        if dbrecon.should_stop():
+            if len(running)==0:
+                dbrecon.check_stop()
+            else:
+                print("Waiting for stop...")
+                time.sleep(PROCESS_DIE_TIME)
+                continue
+
 
         # See if we can create another process. 
         # For stability, we create a max of one LP and one SOL each time through.
@@ -210,8 +210,10 @@ def run():
                                "order BY RAND() DESC LIMIT %s", (needed_lp,))
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
+                lp_j1 = get_config_int('run','lp_j1')
+                lp_j2 = get_config_int('run','lp_j2')
                 print("WILL MAKE LP",'s3_pandas_synth_lp_files.py',state,county,"TRACTS:",tract_count)
-                p = prun([sys.executable,'s3_pandas_synth_lp_files.py','--j1','1','--j2',str(S3_J2),state,county])
+                p = prun([sys.executable,'s3_pandas_synth_lp_files.py','--j1', str(lp_j1), '--j2', str(lp_j2), state, county])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME) # give load 5 seconds to adjust
 
@@ -222,12 +224,13 @@ def run():
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0 and (not clean_exit):
             # Run any solvers that we have room for
             needed_sol = 1
+            gurobi_threads = get_config_int('gurobi','threads')
             solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
                                 "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)  "
                                 "ORDER BY sol_start,RAND() LIMIT %s",(needed_sol,))
             for (state,county,tract) in solve_lps:
                 print("WILL SOLVE ",state,county,tract)
-                p = prun([sys.executable,'s4_run_gurobi.py','--j1','1','--j2',str(S4_J2),state,county,tract])
+                p = prun([sys.executable,'s4_run_gurobi.py','--j1','1','--j2',str(gurobi_threads),state,county,tract])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
 

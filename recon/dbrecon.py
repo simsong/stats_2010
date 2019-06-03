@@ -210,6 +210,16 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False):
                 DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
 
+################################################################
+STOP_FILE='stop.txt'
+def should_stop():
+    return os.path.exists(STOP_FILE)
+
+def check_stop():
+    if should_stop():
+        logging.warning("Clean exit")
+        os.unlink(STOP_FILE)
+        exit(0)
 
 ################################################################
 ### functions that return directories. dpath_expand is not called on these.

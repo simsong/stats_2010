@@ -45,7 +45,7 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     state_code  = dbrecon.state_fips(state_abbr)
     geoid_tract = state_code + county + tract
     lp_filename = dbrecon.dpath_expand(lp_filename)
-    ilp_filename= dbrecon.ILPFILENAME(state_abbr=state_abbr, county=county, geo_id=geoid_tract)
+    ilp_filename= dbrecon.ILPFILENAME(state_abbr=state_abbr, county=county, tract=geoid_tract)
     sol_filename= dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)
     solgz_filename= sol_filename+".gz"
     env         = None # Guorbi environment
@@ -71,7 +71,6 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     customer     = config['gurobi']['customer']
     appname      = config['gurobi']['appname']
     log_filename = os.path.splitext(sol_filename)[0]+".log"
-    sol_time     = None
     
     # make sure output directory exists
     dbrecon.dmakedirs( os.path.dirname( sol_filename)) 
@@ -107,19 +106,18 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         model.optimize()
         end_time = time.time()
         sol_time = round(end_time-start_time,4)
-        sol_mtime = sol_time*1000
 
         vars = []
         vals = []
 
         # Model is optimal
         if model.status == 2:
-            logging.info(f'Model {geoid_tract} is optimal. Solve time: {sol_mtime}ms. Writing solution to {sol_filename}')
+            logging.info(f'Model {geoid_tract} is optimal. Solve time: {sol_time}s. Writing solution to {sol_filename}')
             model.write(sol_filename)
-            dbrecon.db_done('sol', state_abbr, county, tract, sol_time)
+            dbrecon.db_done('sol', state_abbr, county, tract)
         # Model is infeasible. This should not happen
         elif model.status == 3:
-            logging.info(f'Model {geoid_tract} is infeasible. Elapsed time: {sol_mtime}ms. Writing ILP to {ilp_filename}')
+            logging.info(f'Model {geoid_tract} is infeasible. Elapsed time: {sol_time}s. Writing ILP to {ilp_filename}')
             dbrecon.dmakedirs( os.path.dirname( ilp_filename)) # make sure output directory exists
             model.computeIIS()
             model.write(dbrecon.dpath_expand(ilp_filename))

@@ -166,14 +166,10 @@ def db_start(what,state_abbr, county, tract):
     logging.info(f"db_start: {what} {state_abbr} {county} {tract} ")
 
     
-def db_done(what, state_abbr, county, tract, t=None):
+def db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
-    if t:
-        DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,{what}_t=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
-                (hostname(),t,state_abbr,county,tract),rowcount=1)
-    else:
-        DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
-                (hostname(),state_abbr,county,tract),rowcount=1)
+    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
+            (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
 def is_db_done(what, state_abbr, county, tract):

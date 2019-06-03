@@ -160,6 +160,7 @@ def run():
 
         if free_mem < MIN_FREE_MEM_FOR_KILLER:
             logging.warning("Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
+            subprocess.call(['ps','auxww'])
             if len(running)==0:
                 logging.error("No more processes to kill. Exiting")
                 exit(1)
@@ -220,7 +221,7 @@ def run():
         if args.nosol:
             needed_sol = 0
         else:
-            needed_sol = get_config_int('run','max_children')-len(running)
+            needed_sol = get_config_int('run','max_jobs')-len(running)
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             needed_sol = 1

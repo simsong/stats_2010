@@ -46,8 +46,10 @@ global dfxml_writer
 dfxml_writer = None
 start_time = time.time()
 
-MB=1024*1024
-GB=1024*1024*1024
+MB=1000*1000
+GB=1000*1000*1000
+MiB=1024*1024
+GiB=1024*1024*1024
 LP='lp'
 SOL='sol'
 

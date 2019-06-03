@@ -203,7 +203,7 @@ def run():
             needed_lp = 0
         else:
             needed_lp =  get_config_int('run','max_lp') - len(running_lp())
-        if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0 and (not clean_exit):
+        if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0:
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
                                "WHERE (lp_end IS NULL) and (hostlock IS NULL) GROUP BY state,county "
@@ -221,7 +221,7 @@ def run():
             needed_sol = 0
         else:
             needed_sol = get_config_int('run','max_children')-len(running)
-        if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0 and (not clean_exit):
+        if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             needed_sol = 1
             gurobi_threads = get_config_int('gurobi','threads')

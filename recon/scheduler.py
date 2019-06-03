@@ -177,6 +177,7 @@ def run():
                 print(f"PROCESS {p.pid} FINISHED: {pcmd(p)} code: {p.returncode}")
                 if p.returncode!=0:
                     logging.error(f"Process {p.pid} did not exit cleanly ")
+                    exit(1)     # hard fail
                 running.remove(p)
 
         print("running:")

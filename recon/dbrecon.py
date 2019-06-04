@@ -148,7 +148,7 @@ def final_pop(state_abbr,county,tract):
             if line.startswith('C') and line.strip().endswith(" 1"):
                 count += 1
     if count==0 or count>100000:
-        logging.warning(f"{sol_filename} has a final pop of {count}. This is invalid, so deleting")
+        logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
         abort()
         dpath_unlink(sol_filenamegz)
         return None
@@ -434,7 +434,7 @@ def tracts_for_state_county(*,state_abbr,county):
 ### LPFile Manipulation
 ################################################################
 
-MIN_LP_SIZE = 10              # smaller than this, the file must be invalid
+MIN_LP_SIZE = 100        # smaller than this, the file must be invalid
 def lpfile_properly_terminated(fname):
     #
     # Small files are not valid LP files

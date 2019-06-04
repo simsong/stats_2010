@@ -17,7 +17,7 @@ import time
 import atexit
 import multiprocessing 
 
-import gurobipy as gu
+import gurobipy
 import dbrecon
 from dbrecon import DB
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
@@ -61,7 +61,11 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
 
     if os.path.getsize(lp_filename) < dbrecon.MIN_LP_SIZE:
         # lp file is too small. Delete it and remove it from the database
-        raise FileNotFoundError("File {} is too small ({})".format(lp_filename,os.path.getsize(lp_filename)))
+        logging.warning("File {} is too small ({}). Removing".format(lp_filename,os.path.getsize(lp_filename)))
+        os.unlink(lp_filename)
+        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where state=%s and county=%s and tract=%s',
+                        (state_abbr,county,tract))
+        return
 
     # Make sure output does not exist
     for fn in [sol_filename,solgz_filename]:
@@ -78,20 +82,20 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     dbrecon.db_start('sol', state_abbr, county, tract)
     atexit.register(db_fail, state_abbr, county, tract)
 
-    env = gu.Env.OtherEnv( log_filename, customer, appname, 0, "")
+    env = gurobipy.Env.OtherEnv( log_filename, customer, appname, 0, "")
     env.setParam("LogToConsole",0)
     if lp_filename.endswith(".lp"):
-        model = gu.read(lp_filename, env=env)
+        model = gurobipy.read(lp_filename, env=env)
     elif lp_filename.endswith(".lp.gz"):
         p = subprocess.Popen(['zcat',lp_filename],stdout=subprocess.PIPE)
         # Because Gurobin must read from a file that ends with a .lp, 
         # make /tmp/stdin.lp a symlink to /dev/stdin, and
         # then read that
-        tempname = f"/tmp/stdin-{p.pid}-{os.getpid()}-{time.time()}.lp"
+        tempname = f"/tmp/stdin-{p.pid}-"+(lp_filename.replace("/","_"))+".lp"
         if os.path.exists(tempname):
             raise RuntimeError(f"File should not exist: {tempname}")
         os.symlink(f"/dev/fd/{p.stdout.fileno()}",tempname)
-        model = gu.read(tempname, env=env)
+        model = gurobipy.read(tempname, env=env)
     else:
         raise RuntimeError("Don't know how to read model from {}".format(lp_filename))
 
@@ -152,7 +156,6 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     atexit.unregister(db_fail)
 
 
-
 def run_gurobi_for_county_tract(state_abbr, county, tract):
     assert len(state_abbr)==2
     assert len(county)==3
@@ -172,7 +175,10 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
     except FileExistsError as e:
         logging.warning(f"solution file exists for {state_abbr}{county}{tract}; updating database")
         dbrecon.rescan_db(state_abbr, county,tract)
-        return
+    except gurobipy.GurobiError as e:
+        logging.error(f"GurobiError in {state_abbr} {county} {tract}")
+        dbrecon.DB.csfr('UPDATE tracts set error=%s where state=%s and county=%s and tract=%s',
+                        (str(e),state_abbr,county,tract))
 
     if args.exit1:
         print("exit1")

@@ -34,6 +34,7 @@ import ctools.clogging as clogging
 from ctools.gzfile import GZFile
 from total_size import total_size
 
+STOP_FILE='stop.txt'
 
 ##
 ## Functions that return paths.
@@ -209,7 +210,6 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False):
                         (final_pop_file,state_abbr,county,tract))
 
 ################################################################
-STOP_FILE='stop.txt'
 def should_stop():
     return os.path.exists(STOP_FILE)
 

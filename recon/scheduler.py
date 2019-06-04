@@ -21,7 +21,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
-from dbrecon import DB,LP,SOL,MB,GB,get_config_int
+from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int
 
 
 # Tuning parameters
@@ -31,9 +31,9 @@ SLEEP_TIME   = 5
 MAX_LOAD     = 32
 MAX_CHILDREN = 10
 PYTHON_START_TIME = 5
-MIN_FREE_MEM_FOR_LP  = 240*GB
-MIN_FREE_MEM_FOR_SOL = 100*GB
-MIN_FREE_MEM_FOR_KILLER = 5*GB  # if less than this, start killing processes
+MIN_FREE_MEM_FOR_LP  = 240*GiB
+MIN_FREE_MEM_FOR_SOL = 100*GiB
+MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
 REPORT_FREQUENCY = 60           # report this often
 PROCESS_DIE_TIME = 5
 
@@ -131,13 +131,14 @@ def report_load_memory(quiet=True):
 
     # print current tasks
     total_seconds = (time.time() - dbrecon.start_time)
-    hours    = total_seconds // 3600
-    mins     = (total_seconds % 3600) // 60
+    hours    = int(total_seconds // 3600)
+    mins     = int((total_seconds % 3600) // 60)
     secs     = int(total_seconds % 60)
-    print("Time: {} Running time: {}:{:02}:{:02} load: {}  free_gb: {}".format(time.asctime(),hours,mins,secs,load(),round(get_free_mem()/GB,2)))
+    print("Time: {} Running time: {}:{:02}:{:02} load: {}  free_GiB: {}".
+          format(time.asctime(),hours,mins,secs,load(),round(get_free_mem()/GiB,2)))
     if last_report < time.time() + REPORT_FREQUENCY:
         dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1", 
-                        [socket.gethostname().partition('.')[0]] + list(os.getloadavg()) + [get_free_mem()//GB],
+                        [socket.gethostname().partition('.')[0]] + list(os.getloadavg()) + [get_free_mem()//GiB],
                         quiet=quiet)
         last_report = time.time()
     return free_mem
@@ -159,6 +160,7 @@ def run():
 
         if free_mem < MIN_FREE_MEM_FOR_KILLER:
             logging.warning("Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
+            subprocess.call(['ps','auxww'])
             if len(running)==0:
                 logging.error("No more processes to kill. Exiting")
                 exit(1)
@@ -176,14 +178,14 @@ def run():
                 print(f"PROCESS {p.pid} FINISHED: {pcmd(p)} code: {p.returncode}")
                 if p.returncode!=0:
                     logging.error(f"Process {p.pid} did not exit cleanly ")
+                    exit(1)     # hard fail
                 running.remove(p)
 
         print("running:")
         for p in sorted(running, key=lambda p:p.args):
             print(pcmd(p))
             ps = psutil.Process(pid=p.pid)
-            print("    ",ps.memory_info().rss//GB,"GB")
-            print("    ",ps.memory_info())
+            print(" {:,} MiB {}  ".format(int(ps.memory_info().rss/MiB),str(ps.memory_info())))
 
         if dbrecon.should_stop():
             if len(running)==0:
@@ -220,7 +222,7 @@ def run():
         if args.nosol:
             needed_sol = 0
         else:
-            needed_sol = get_config_int('run','max_children')-len(running)
+            needed_sol = get_config_int('run','max_jobs')-len(running)
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             needed_sol = 1

@@ -38,6 +38,9 @@ REPORT_FREQUENCY = 60           # report this often
 PROCESS_DIE_TIME = 5
 LONG_SLEEP_MINUTES = 5
 
+S3_SYNTH = 's3_pandas_synth_lp_files.py'
+S4_RUN   = 's4_run_gurobi.py'
+
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
 @dbrecon.Memoize
@@ -115,10 +118,11 @@ def load():
 
 def prun(cmd):
     """Run Popen unless we are in debug mode"""
-    if args.dry_run:
-        print(" ".join(cmd))
-        exit(1)
-    return subprocess.Popen(cmd)
+    p = psutil.Popen(cmd)
+    info = f"PID{p.pid}: LAUNCH {' '.join(cmd)}"
+    logging.info(info)
+    print(info)
+    return p
 
 
 def get_free_mem():
@@ -138,7 +142,8 @@ def report_load_memory(quiet=True):
     print("Time: {} Running time: {}:{:02}:{:02} load: {}  free_GiB: {}".
           format(time.asctime(),hours,mins,secs,load(),round(get_free_mem()/GiB,2)))
     if last_report < time.time() + REPORT_FREQUENCY:
-        dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1", 
+        dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) "
+                        "values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1", 
                         [socket.gethostname().partition('.')[0]] + list(os.getloadavg()) + [get_free_mem()//GiB],
                         quiet=quiet)
         last_report = time.time()
@@ -149,6 +154,35 @@ def pcmd(p):
     """Return a process command"""
     return " ".join(p.args)
 
+def PSTree:
+    """Service class. Given a set of processes (or all of them), find parents that meet certain requirements."""
+    def __init__(self,plist=psutil.process_iter()):
+        self.plist = [(psutil.Process(p) if isinstance(p,int) else p) for p in plist]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return
+
+    def total_rss(self,p):
+        """Return the total rss for the process and all of its children."""
+        return (p.memory_info().rss +
+                sum([child.memory_info().rss for child in p.children(recursive=True)]))
+
+    def total_user_time(self,p):
+        return (p.cpu_times().user + 
+                sum([child.cpu_times().user for child in p.children(recursive=True)]))
+
+    def ps_aux(self):
+        for p in sorted(self.plist, key=lambda p:p.pid):
+            print(pcmd(p))
+            print("PID{}: {:,} MiB {} children {} ".format(
+                p.pid, self.total_rss(p)/MiB, len(p.children(recursive=True)), pcmd(p)))
+
+    def youngest(self):
+        return sorted(self.plist, key=lambda p:self.total_user_time(p))[0]
+
 #
 # Note: change running() into a dictionary where the start time is the key
 # Then report for each job how long it has been running.
@@ -158,44 +192,44 @@ def run():
     running     = set()
 
     def running_lp():
-        return [p for p in running if 's3' in p.args[1]]
+        """Return a list of the runn LP makers"""
+        return [p for p in running if p.args[1]==S3_SYNTH]
 
     while True:
         # Report system usage if necessary
         dbrecon.config_reload()
         free_mem = report_load_memory()
 
-        if free_mem < MIN_FREE_MEM_FOR_KILLER:
-            logging.error("%%%")
-            logging.error("%%% Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
-            logging.error("%%%")
-            subprocess.call(['ps','auxww'])
-            if len(running)==0:
-                logging.error("No more processes to kill. Waiting for {} minutes and restarting".format(LONG_SLEEP_MINUTES))
-                time.sleep(LONG_SLEEP_MINUTES*60)
-                continue
-            p = running.pop()
-            logging.warning("KILL "+pcmd(p))
-            p.kill()
-            time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
-            p.poll()                     # clear the exit code
-            continue
-            
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:
-                print(f"PID{p.pid}: EXITED {pcmd(p)} code: {p.returncode}")
+                logging.info(f"PID{p.pid}: EXITED {pcmd(p)} code: {p.returncode}")
                 if p.returncode!=0:
                     logging.error(f"ERROR: Process {p.pid} did not exit cleanly. retcode={p.returncode} mypid={os.getpid()} ")
                     exit(1)     # hard fail
                 running.remove(p)
 
-        print("running:")
-        for p in sorted(running, key=lambda p:p.pid):
-            print(pcmd(p))
-            ps = psutil.Process(pid=p.pid)
-            print("PID{p.pid}: {:,} MiB {}  ".format(p.pid,int(ps.memory_info().rss/MiB),str(ps.memory_info())))
+        with PSTree(running) as ps:
+            print("running:")
+            ps.ps_aux()
 
+            if free_mem < MIN_FREE_MEM_FOR_KILLER:
+                logging.error("%%%")
+                logging.error("%%% Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
+                logging.error("%%%")
+                subprocess.call(['ps','auxww'])
+                if len(running)==0:
+                    logging.error("No more processes to kill. Waiting for {} minutes and restarting".format(LONG_SLEEP_MINUTES))
+                    time.sleep(LONG_SLEEP_MINUTES*60)
+                    continue
+                p = ps.youngest()
+                logging.warning("KILL "+pcmd(p))
+                p.kill()
+                time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
+                p.poll()                     # clear the exit code
+                running.remote()
+                continue
+            
         if dbrecon.should_stop():
             if len(running)==0:
                 dbrecon.check_stop()
@@ -222,8 +256,10 @@ def run():
                 # If the load average is too high, don't do it
                 lp_j1 = get_config_int('run','lp_j1')
                 lp_j2 = get_config_int('run','lp_j2')
-                print("WILL MAKE LP",'s3_pandas_synth_lp_files.py',state,county,"TRACTS:",tract_count)
-                p = prun([sys.executable,'s3_pandas_synth_lp_files.py','--j1', str(lp_j1), '--j2', str(lp_j2), state, county])
+                print("WILL MAKE LP",S3_SYNTH,
+                      state,county,"TRACTS:",tract_count)
+                p = prun([sys.executable,'s3_pandas_synth_lp_files.py',
+                          '--j1', str(lp_j1), '--j2', str(lp_j2), state, county])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME) # give load 5 seconds to adjust
 
@@ -240,7 +276,7 @@ def run():
                                 "ORDER BY sol_start,RAND() LIMIT %s",(needed_sol,))
             for (state,county,tract) in solve_lps:
                 print("WILL SOLVE ",state,county,tract)
-                p = prun([sys.executable,'s4_run_gurobi.py','--j1','1','--j2',str(gurobi_threads),state,county,tract])
+                p = prun([sys.executable,S4_RUN,'--j1','1','--j2',str(gurobi_threads),state,county,tract])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
 
@@ -282,6 +318,7 @@ if __name__=="__main__":
     parser.add_argument("--county", help="county for rescanning")
     
     args   = parser.parse_args()
+    args.stdout = True          # for now, always log to stdout
     config = dbrecon.setup_logging_and_get_config(args,prefix='sch_')
 
     if args.testdb:

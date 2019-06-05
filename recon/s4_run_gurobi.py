@@ -26,6 +26,9 @@ def db_fail(state_abbr, county, tract):
     DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
 
 
+class InfeasibleError(RuntimeError):
+    pass
+
 # Details on Gurobi output:
 # http://www.gurobi.com/documentation/8.1/refman/mip_logging.html
 GUROBI_THREADS_DEFAULT=16
@@ -127,13 +130,13 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         if model.status == 2:
             logging.info(f'Model {geoid_tract} is optimal. Solve time: {sol_time}s. Writing solution to {sol_filename}')
             model.write(sol_filename)
-            dbrecon.db_done('sol', state_abbr, county, tract)
         # Model is infeasible. This should not happen
         elif model.status == 3:
             logging.info(f'Model {geoid_tract} is infeasible. Elapsed time: {sol_time}s. Writing ILP to {ilp_filename}')
             dbrecon.dmakedirs( os.path.dirname( ilp_filename)) # make sure output directory exists
             model.computeIIS()
             model.write(dbrecon.dpath_expand(ilp_filename))
+            raise InfeasibleError();
         else:
             logging.error(f"Unknown model status code: {model.status}")
 
@@ -141,6 +144,7 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         cmd = ['gzip','-1',sol_filename]
         print("CMD: ",cmd)
         subprocess.check_call(cmd)
+        dbrecon.db_done('sol', state_abbr, county, tract) # indicate we have a solution
 
         # Save model information in the database
         for name in MODEL_ATTRS:
@@ -172,7 +176,7 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
     lp_filename  = dbrecon.LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     if dbrecon.dpath_exists(lp_filename) is None:
         logging.info(f"lp_filename does not exist")
-        dbrecon.rescan_db(state_abbr, county, tract)
+        dbrecon.rescan_files(state_abbr, county, tract)
         return
 
     if dbrecon.is_db_done('sol',state_abbr, county, tract):
@@ -183,11 +187,20 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         run_gurobi(state_abbr, county, tract, lp_filename, args.dry_run)
     except FileExistsError as e:
         logging.warning(f"solution file exists for {state_abbr}{county}{tract}; updating database")
-        dbrecon.rescan_db(state_abbr, county,tract)
+        dbrecon.rescan_files(state_abbr, county,tract)
+    except FileNotFoundError as e:
+        logging.warning(f"LP file not found for {state_abbr}{county}{tract}; updating database")
+        dbrecon.rescan_files(state_abbr, county,tract)
     except gurobipy.GurobiError as e:
         logging.error(f"GurobiError in {state_abbr} {county} {tract}")
         dbrecon.DB.csfr('UPDATE tracts set error=%s where state=%s and county=%s and tract=%s',
                         (str(e),state_abbr,county,tract))
+    except InfeasibleError as e:
+        logging.error(f"Infeasible in {state_abbr} {county} {tract}")
+        dbrecon.DB.csfr('UPDATE tracts set error="infeasible" where state=%s and county=%s and tract=%s',
+                        (str(e),state_abbr,county,tract))
+        
+
     if args.exit1:
         print("exit1")
         exit(0)

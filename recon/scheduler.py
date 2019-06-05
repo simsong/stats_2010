@@ -285,7 +285,7 @@ def run():
         # and repeat
     # Should never get here
 
-def non_running():
+def none_running():
     print("LP in progress:")
     for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL"):
         print(state,county,tract)
@@ -294,8 +294,7 @@ def non_running():
     print("SOL in progress:")
     for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL"):
         print(state,county,tract)
-    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL")
-
+    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL and error IS NULL")
 
 
 if __name__=="__main__":
@@ -340,6 +339,6 @@ if __name__=="__main__":
         clean()
 
     elif args.none_running:
-        non_running()
+        none_running()
     else:
         run()

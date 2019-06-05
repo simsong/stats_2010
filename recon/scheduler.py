@@ -161,6 +161,7 @@ def run():
 
     while True:
         # Report system usage if necessary
+        dbrecon.config_reload()
         free_mem = report_load_memory()
 
         if free_mem < MIN_FREE_MEM_FOR_KILLER:
@@ -180,9 +181,9 @@ def run():
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:
-                print(f"PROCESS {p.pid} FINISHED: {pcmd(p)} code: {p.returncode}")
+                print(f"PID{p.pid}: EXITED {pcmd(p)} code: {p.returncode}")
                 if p.returncode!=0:
-                    logging.error(f"Process {p.pid} did not exit cleanly ")
+                    logging.error(f"ERROR: Process {p.pid} did not exit cleanly ")
                     exit(1)     # hard fail
                 running.remove(p)
 
@@ -213,7 +214,7 @@ def run():
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0:
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
-                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) GROUP BY state,county "
+                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
                                "order BY RAND() DESC LIMIT %s", (needed_lp,))
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
@@ -233,7 +234,7 @@ def run():
             needed_sol = 1
             gurobi_threads = get_config_int('gurobi','threads')
             solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
-                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)  "
+                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) and (error IS NULL) "
                                 "ORDER BY sol_start,RAND() LIMIT %s",(needed_sol,))
             for (state,county,tract) in solve_lps:
                 print("WILL SOLVE ",state,county,tract)

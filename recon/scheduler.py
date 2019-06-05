@@ -148,6 +148,11 @@ def pcmd(p):
     """Return a process command"""
     return " ".join(p.args)
 
+#
+# Note: change running() into a dictionary where the start time is the key
+# Then report for each job how long it has been running.
+# Modify this to track the total number of bytes by all child processes
+
 def run():
     running     = set()
 

@@ -36,6 +36,7 @@ MIN_FREE_MEM_FOR_SOL = 100*GiB
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
 REPORT_FREQUENCY = 60           # report this often
 PROCESS_DIE_TIME = 5
+LONG_SLEEP_MINUTES = 5
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
@@ -148,6 +149,11 @@ def pcmd(p):
     """Return a process command"""
     return " ".join(p.args)
 
+#
+# Note: change running() into a dictionary where the start time is the key
+# Then report for each job how long it has been running.
+# Modify this to track the total number of bytes by all child processes
+
 def run():
     running     = set()
 
@@ -160,11 +166,14 @@ def run():
         free_mem = report_load_memory()
 
         if free_mem < MIN_FREE_MEM_FOR_KILLER:
-            logging.warning("Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
+            logging.error("%%%")
+            logging.error("%%% Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
+            logging.error("%%%")
             subprocess.call(['ps','auxww'])
             if len(running)==0:
-                logging.error("No more processes to kill. Exiting")
-                exit(1)
+                logging.error("No more processes to kill. Waiting for {} minutes and restarting".format(LONG_SLEEP_MINUTES))
+                time.sleep(LONG_SLEEP_MINUTES*60)
+                continue
             p = running.pop()
             logging.warning("KILL "+pcmd(p))
             p.kill()
@@ -172,7 +181,6 @@ def run():
             p.poll()                     # clear the exit code
             continue
             
-
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:
@@ -183,10 +191,10 @@ def run():
                 running.remove(p)
 
         print("running:")
-        for p in sorted(running, key=lambda p:p.args):
+        for p in sorted(running, key=lambda p:p.pid):
             print(pcmd(p))
             ps = psutil.Process(pid=p.pid)
-            print(" {:,} MiB {}  ".format(int(ps.memory_info().rss/MiB),str(ps.memory_info())))
+            print("PID{p.pid}: {:,} MiB {}  ".format(p.pid,int(ps.memory_info().rss/MiB),str(ps.memory_info())))
 
         if dbrecon.should_stop():
             if len(running)==0:
@@ -195,7 +203,6 @@ def run():
                 print("Waiting for stop...")
                 time.sleep(PROCESS_DIE_TIME)
                 continue
-
 
         # See if we can create another process. 
         # For stability, we create a max of one LP and one SOL each time through.

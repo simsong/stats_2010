@@ -157,7 +157,9 @@ def pcmd(p):
 class PSTree():
     """Service class. Given a set of processes (or all of them), find parents that meet certain requirements."""
     def __init__(self,plist=psutil.process_iter()):
+        print("PSTree: ",plist)
         self.plist = [(psutil.Process(p) if isinstance(p,int) else p) for p in plist]
+        print("PSTree: ",self.plist)
 
     def __enter__(self):
         return self
@@ -175,6 +177,7 @@ class PSTree():
                 sum([child.cpu_times().user for child in p.children(recursive=True)]))
 
     def ps_aux(self):
+        print("plist: ",self.plist)
         for p in sorted(self.plist, key=lambda p:p.pid):
             print("PID{}: {:,} MiB {} children {} ".format(
                 p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
@@ -200,6 +203,7 @@ def run():
         free_mem = report_load_memory()
 
         # See if any of the processes have finished
+        print("1.RUnning:",running)
         for p in copy.copy(running):
             if p.poll() is not None:
                 logging.info(f"PID{p.pid}: EXITED {pcmd(p)} code: {p.returncode}")
@@ -208,6 +212,7 @@ def run():
                     exit(1)     # hard fail
                 running.remove(p)
 
+        print("2.RUnning:",running)
         with PSTree(running) as ps:
             print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n\n")
             ps.ps_aux()
@@ -227,7 +232,7 @@ def run():
                 p.kill()
                 time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
                 p.poll()                     # clear the exit code
-                running.remote()
+                running.remove(p)
                 continue
             
         if dbrecon.should_stop():
@@ -266,7 +271,10 @@ def run():
         if args.nosol:
             needed_sol = 0
         else:
+            max_sol    = get_config_int('run','max_sol')
             needed_sol = get_config_int('run','max_jobs')-len(running)
+            if needed_sol > max_sol:
+                needed_sol = max_sol
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             needed_sol = 1
@@ -280,6 +288,7 @@ def run():
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
 
+        print("Running:",running)
         print("="*64)
         time.sleep(SLEEP_TIME)
         # and repeat

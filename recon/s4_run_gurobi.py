@@ -72,17 +72,26 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         if dbrecon.dpath_exists(fn):
             raise FileExistsError(fn)
 
-    customer     = config['gurobi']['customer']
-    appname      = config['gurobi']['appname']
-    log_filename = os.path.splitext(sol_filename)[0]+".log"
-    
     # make sure output directory exists
     dbrecon.dmakedirs( os.path.dirname( sol_filename)) 
-
     dbrecon.db_start('sol', state_abbr, county, tract)
     atexit.register(db_fail, state_abbr, county, tract)
 
-    env = gurobipy.Env.OtherEnv( log_filename, customer, appname, 0, "")
+    try:
+        customer     = dbrecon.get_config_str('gurobi','customer')
+        appname      = dbrecon.get_config_str('gurobi','appname')
+    except KeyError:
+        customer = ''
+        appname = ''
+    log_filename = os.path.splitext(sol_filename)[0]+".log"
+    
+    if customer=='':
+        print("Using gurobipy.Env")
+        env = gurobipy.Env( log_filename )
+    else:
+        print("Using gurobipy.Env.OtherEnv")
+        env = gurobipy.Env.OtherEnv( log_filename, customer, appname, 0, "")
+
     env.setParam("LogToConsole",0)
     if lp_filename.endswith(".lp"):
         model = gurobipy.read(lp_filename, env=env)
@@ -179,7 +188,6 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         logging.error(f"GurobiError in {state_abbr} {county} {tract}")
         dbrecon.DB.csfr('UPDATE tracts set error=%s where state=%s and county=%s and tract=%s',
                         (str(e),state_abbr,county,tract))
-
     if args.exit1:
         print("exit1")
         exit(0)

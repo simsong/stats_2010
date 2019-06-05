@@ -35,6 +35,13 @@ from ctools.gzfile import GZFile
 from total_size import total_size
 
 STOP_FILE='stop.txt'
+# For handling the config file
+SRC_DIRECTORY   = os.path.dirname(__file__)
+CONFIG_FILENAME = "config.ini"
+config_path     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
+config_file     = None              # will become a ConfiParser object
+
+
 
 ##
 ## Functions that return paths.
@@ -70,7 +77,6 @@ RETRIES = 10
 RETRY_DELAY_TIME = 1
 class DB:
     """DB class with singleton pattern"""
-    config = None
     @staticmethod
     def csfr(cmd,vals=None,quiet=False,rowcount=None):
         """Connect, select, fetchall, and retry as necessary"""
@@ -121,7 +127,8 @@ class DB:
 
     def connect(self):
         from ctools.dbfile import DBMySQL
-        mysql_section = self.config_file['mysql']
+        global config_file
+        mysql_section = config_file['mysql']
         self.dbs       = DBMySQL(host=os.path.expandvars(mysql_section['host']),
                                 database=os.path.expandvars(mysql_section['database']),
                                 user=os.path.expandvars(mysql_section['user']),
@@ -300,12 +307,6 @@ SECTION_RUN='run'
 OPTION_NAME='NAME'
 OPTION_SRC='SRC'                # the $SRC is added to the [paths] section of the config file
 
-SRC_DIRECTORY = os.path.dirname(__file__)
-
-# For handling the config file
-CONFIG_FILENAME = "config.ini"
-CONFIG_PATHAME  = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
-config_file     = None              # will become a ConfiParser object
 
 STATE_DATA=[
     "Alabama,AL,01",
@@ -362,26 +363,33 @@ STATE_DATA=[
 STATES=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
 
 # For now, assume that config.ini is in the same directory as the running script
-def get_config(pathname=None,filename=None):
-    global config_file
-    if not config_file:
-        if pathname and filename:
-            raise RuntimeError("Cannot specify both pathname and filename")
-        if not pathname:
-            if not filename:
-                filename = CONFIG_FILENAME
-            pathname = os.path.join(SRC_DIRECTORY, filename ) 
-        if not os.path.exists(pathname):
-            raise FileNotFoundError(pathname)
-        config_file = ConfigParser()
-        config_file.read(pathname)
-        # Add our source directory to the paths
-        config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
-    DB.config_file = config_file
+def config_reload():
+    global config_file,config_path
+    print("config_reload()")
+    config_file = ConfigParser()
+    config_file.read(config_path)
+    # Add our source directory to the paths
+    config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
     return config_file
 
+def get_config(*,filename=None):
+    global config_file,config_path
+    if config_file is not None:
+        return config_file
+    if filename is not None:
+        config_path = filename
+    return config_reload()
+
+def get_config_str(section,name):
+    """Like config[section][name], but looks for [name@hostname] first"""
+    global config_file
+    name_hostname = name + '@' + socket.gethostname()
+    if name_hostname in config_file[section]:
+        name = name_hostname
+    return config_file[section][name]
+
 def get_config_int(section,name):
-    return int(get_config()[section][name])
+    return int(get_config_str(section,name))
 
 def state_rec(key):
     """Return the record in the state database for a key, where key is the state name, abbreviation, or FIPS code."""
@@ -577,21 +585,19 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     # Finally, indicate that we have started up
     logging.info("START %s %s  log level: %s (%s)",sys.executable, " ".join(sys.argv), loglevel,loglevel)
         
+def setup_logging_and_get_config(args,*,prefix=''):
+    config = get_config(filename=args.config)
+    setup_logging(config=config,prefix=prefix,args=args)
+    return 
+
 def add_dfxml_tag(tag,text=None,attrs={}):
     e = ET.SubElement(dfxml_writer.doc, tag, attrs)
     if text:
         e.text = text
 
-
 def logging_exit():
     if hasattr(sys,'last_value'):
         logging.error(sys.last_value)
-
-
-def setup_logging_and_get_config(args,*,prefix=''):
-    config = get_config(filename=args.config)
-    setup_logging(config=config,prefix=prefix,args=args)
-    return 
 
 var_re = re.compile(r"(\$[A-Z_][A-Z_0-9]*)")
 def dpath_expand(path):
@@ -600,7 +606,7 @@ def dpath_expand(path):
     """
 
     # Find and replace all of the dollar variables with those in the config file
-    config_file = get_config()
+    global config_file
     while True:
         m = var_re.search(path)
         if not m:

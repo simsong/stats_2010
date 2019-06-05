@@ -156,6 +156,7 @@ def run():
 
     while True:
         # Report system usage if necessary
+        dbrecon.config_reload()
         free_mem = report_load_memory()
 
         if free_mem < MIN_FREE_MEM_FOR_KILLER:

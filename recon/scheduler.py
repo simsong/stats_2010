@@ -165,7 +165,7 @@ def run():
         free_mem = report_load_memory()
 
         if free_mem < MIN_FREE_MEM_FOR_KILLER:
-            logging.warning("Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
+            logging.error("Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
             subprocess.call(['ps','auxww'])
             if len(running)==0:
                 logging.error("No more processes to kill. Exiting")

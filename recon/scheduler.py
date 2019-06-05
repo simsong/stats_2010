@@ -154,7 +154,7 @@ def pcmd(p):
     """Return a process command"""
     return " ".join(p.args)
 
-def PSTree:
+class PSTree():
     """Service class. Given a set of processes (or all of them), find parents that meet certain requirements."""
     def __init__(self,plist=psutil.process_iter()):
         self.plist = [(psutil.Process(p) if isinstance(p,int) else p) for p in plist]
@@ -176,9 +176,8 @@ def PSTree:
 
     def ps_aux(self):
         for p in sorted(self.plist, key=lambda p:p.pid):
-            print(pcmd(p))
             print("PID{}: {:,} MiB {} children {} ".format(
-                p.pid, self.total_rss(p)/MiB, len(p.children(recursive=True)), pcmd(p)))
+                p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
 
     def youngest(self):
         return sorted(self.plist, key=lambda p:self.total_user_time(p))[0]
@@ -210,8 +209,9 @@ def run():
                 running.remove(p)
 
         with PSTree(running) as ps:
-            print("running:")
+            print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n\n")
             ps.ps_aux()
+            print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n\n")
 
             if free_mem < MIN_FREE_MEM_FOR_KILLER:
                 logging.error("%%%")

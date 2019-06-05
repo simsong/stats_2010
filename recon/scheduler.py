@@ -178,7 +178,7 @@ def run():
             if p.poll() is not None:
                 print(f"PID{p.pid}: EXITED {pcmd(p)} code: {p.returncode}")
                 if p.returncode!=0:
-                    logging.error(f"ERROR: Process {p.pid} did not exit cleanly ")
+                    logging.error(f"ERROR: Process {p.pid} did not exit cleanly. retcode={p.returncode} mypid={os.getpid()} ")
                     exit(1)     # hard fail
                 running.remove(p)
 

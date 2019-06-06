@@ -1,3 +1,6 @@
+* Lock on startup
+* Make sure no python jobs running on startup on that nodes
+* Clear out database for that node
 * Capture solver output.
 * ingest Geo files and report if there are tracts with no population
 * get reading time and presolve time and add those to the database

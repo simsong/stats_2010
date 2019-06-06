@@ -16,6 +16,7 @@ import sys
 import time
 import psutil
 import socket
+import fcntl
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
@@ -23,6 +24,7 @@ from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
 from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int
 
+HOSTNAME = dbrecon.hostname()
 
 # Tuning parameters
 
@@ -144,7 +146,7 @@ def report_load_memory(quiet=True):
     if last_report < time.time() + REPORT_FREQUENCY:
         dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) "
                         "values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1", 
-                        [socket.gethostname().partition('.')[0]] + list(os.getloadavg()) + [get_free_mem()//GiB],
+                        [HOSTNAME] + list(os.getloadavg()) + [get_free_mem()//GiB],
                         quiet=quiet)
         last_report = time.time()
     return free_mem
@@ -179,8 +181,8 @@ class PSTree():
             print("PID{}: {:,} MiB {} children {} ".format(
                 p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
             for pc in [p] + p.children():
-                print("   pid{}: {:,} MiB {} %CPU  {} CPU Time {} "
-                      .format(ps.pid, ps.memory_info().rss, ps.cpu_percent(), ps.cpu_times(), time.asctime(time.localtime(ps.create_time()))))
+                print("   pid{:<5}: {:8,} MiB {} %CPU  {} {} "
+                      .format(pc.pid, pc.memory_info().rss//MiB, pc.cpu_percent(), pc.cpu_times(), time.asctime(time.localtime(pc.create_time()))))
 
     def youngest(self):
         return sorted(self.plist, key=lambda p:self.total_user_time(p))[0]
@@ -222,7 +224,7 @@ def run():
             from unicodedata import lookup
             print("")
             print(lookup('BLACK DOWN-POINTING TRIANGLE')*64)
-            print("{} Free Memory: {:,}   Load: {}".format(time.asctime(), int(free_mem/MiB), os.getloadavg()))
+            print("{} Free Memory: {:,} MiB  Load: {}".format(time.asctime(), free_mem//MiB, os.getloadavg()))
             print("")
             ps.ps_aux()
             print(lookup('BLACK UP-POINTING TRIANGLE')*64+"\n")
@@ -299,17 +301,45 @@ def run():
         # and repeat
     # Should never get here
 
-def none_running():
+def none_running(hostname=None):
+    hostlock = '' if hostname is none else f" hostlock IS '{hostname}' "
     print("LP in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL"):
+    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL " + hostlock):
         print(state,county,tract)
-    DB.csfr("UPDATE tracts set lp_start=NULL WHERE lp_start IS NOT NULL and lp_end is NULL")
+    DB.csfr("UPDATE tracts set lp_start=NULL WHERE lp_start IS NOT NULL and lp_end is NULL " + hostlock)
         
     print("SOL in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL"):
+    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
         print(state,county,tract)
-    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL and error IS NULL")
+    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL and error IS NULL" + hostlock)
 
+
+def get_lock():
+    try:
+        fd = os.open(__file__,os.O_RDONLY)
+        if fd>0:
+            # non-blocking
+            fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB) 
+            return
+    except IOError:
+        pass
+    logger.error("Could not acquire lock. Another copy of %s must be running",(__file__))
+    raise RuntimeError("Could not acquire lock")
+
+def scan_s3_s4():
+    """Look for any running instances of s3 or s4. If they are found, print and abort"""
+    found = 0
+    for p in psutil.process_iter():
+        cmd = p.cmdline()
+        if (len(cmd) > 2) and cmd[0]==sys.executable and cmd[1] in (S3_SYNTH, S4_RUN):
+            found += 1
+            if found==1:
+                print("Killing Running S3 and S4 Processes:")
+            print("PID{} {}".format(p.pid, " ".join(cmd)))
+            p.kill()
+            p.wait()
+
+            
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
@@ -342,7 +372,6 @@ if __name__=="__main__":
         for row in rows:
             print(row)
 
-
     elif args.init:
         init()
 
@@ -355,4 +384,8 @@ if __name__=="__main__":
     elif args.none_running:
         none_running()
     else:
+        get_lock()
+        scan_s3_s4()
+        none_running(
         run()
+        

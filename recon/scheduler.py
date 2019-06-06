@@ -178,6 +178,9 @@ class PSTree():
         for p in sorted(self.plist, key=lambda p:p.pid):
             print("PID{}: {:,} MiB {} children {} ".format(
                 p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
+            for pc in [p] + p.children():
+                print("   pid{}: {:,} MiB {} %CPU  {} CPU Time {} "
+                      .format(ps.pid, ps.memory_info().rss, ps.cpu_percent(), ps.cpu_times(), time.asctime(time.localtime(ps.create_time()))))
 
     def youngest(self):
         return sorted(self.plist, key=lambda p:self.total_user_time(p))[0]
@@ -217,8 +220,10 @@ def run():
 
         with PSTree(running) as ps:
             from unicodedata import lookup
-            print('\n'+lookup('BLACK DOWN-POINTING TRIANGLE')*64)
+            print("")
+            print(lookup('BLACK DOWN-POINTING TRIANGLE')*64)
             print("{} Free Memory: {:,}   Load: {}".format(time.asctime(), int(free_mem/MiB), os.getloadavg()))
+            print("")
             ps.ps_aux()
             print(lookup('BLACK UP-POINTING TRIANGLE')*64+"\n")
 

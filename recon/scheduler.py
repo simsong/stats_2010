@@ -181,6 +181,13 @@ class PSTree():
     def youngest(self):
         return sorted(self.plist, key=lambda p:self.total_user_time(p))[0]
 
+    def kill_tree(self,p):
+        children = p.children(recursive=True)
+        [child.kill() for child in children]
+        [child.wait() for child in children]
+        p.kill()
+        return p.wait()
+
 #
 # Note: change running() into a dictionary where the start time is the key
 # Then report for each job how long it has been running.
@@ -224,9 +231,7 @@ def run():
                     continue
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))
-                p.kill()
-                time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
-                p.poll()                     # clear the exit code
+                ps.kill_tree(p)
                 running.remove(p)
                 continue
             

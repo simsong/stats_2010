@@ -60,10 +60,7 @@ def fmt(r):
 if __name__=="__main__":
     print("Content-Type: text/html;charset=utf-8\r\n\r\n")
     get_pw()
-    config = dbrecon.get_config("config.ini")
-    db = dbrecon.DB()
-    c = db.cursor()
-    c.execute('SET @@session.time_zone = "+00:00"')
+    config = dbrecon.get_config(filename="config.ini")
 
     doc = tydoc.tydoc()
     doc.head.add_tag('meta',attrib={'http-equiv':'refresh','content':'30'})
@@ -72,6 +69,9 @@ if __name__=="__main__":
     table = tydoc.tytable()
     doc.body.append(table)
     vals = {}
+    db = dbrecon.DB()
+    db.connect()
+    c = db.cursor()
     for (label,desc,query) in queries:
         if desc is None:
             table = tydoc.tytable()

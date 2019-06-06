@@ -41,14 +41,6 @@ queries = [
     (None,None,None),
     ]
 
-db_re = re.compile("export (.*)=(.*)")
-def get_pw():
-    with open( os.path.join('/home/simsong', 'dbrecon.bash')) as f:
-        for line in f:
-            m = db_re.search(line.strip())
-            if m:
-                os.environ[m.group(1)] = m.group(2)
-
 def fmt(r):
     if isinstance(r,int):
         return "{:,}".format(r)
@@ -59,7 +51,7 @@ def fmt(r):
 
 if __name__=="__main__":
     print("Content-Type: text/html;charset=utf-8\r\n\r\n")
-    get_pw()
+    dbrecon.get_pw()
     config = dbrecon.get_config(filename="config.ini")
 
     doc = tydoc.tydoc()

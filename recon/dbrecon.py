@@ -75,6 +75,17 @@ class Memoize:
 ### Database management functions
 RETRIES = 10
 RETRY_DELAY_TIME = 1
+
+db_re = re.compile("export (.*)=(.*)")
+def get_pw():
+    import pwd
+    home = pwd.getpwuid(os.getuid()).pw_dir
+    with open( os.path.join( home, 'dbrecon.bash')) as f:
+        for line in f:
+            m = db_re.search(line.strip())
+            if m:
+                os.environ[m.group(1)] = m.group(2)
+
 class DB:
     """DB class with singleton pattern"""
     @staticmethod
@@ -365,7 +376,6 @@ STATES=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(",")))
 # For now, assume that config.ini is in the same directory as the running script
 def config_reload():
     global config_file,config_path
-    print("config_reload()")
     config_file = ConfigParser()
     config_file.read(config_path)
     # Add our source directory to the paths

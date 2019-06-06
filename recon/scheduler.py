@@ -217,9 +217,10 @@ def run():
 
         with PSTree(running) as ps:
             from unicodedata import lookup
-            print(lookup('BLACK DOWN-POINTING TRIANGLE')*64+"\n\n")
+            print('\n'+lookup('BLACK DOWN-POINTING TRIANGLE')*64)
+            print("{} Free Memory: {:,}   Load: {}".format(time.asctime(), int(free_mem/MiB), os.getloadavg()))
             ps.ps_aux()
-            print(lookup('BLACK UP-POINTING TRIANGLE')*64+"\n\n")
+            print(lookup('BLACK UP-POINTING TRIANGLE')*64+"\n")
 
             if free_mem < MIN_FREE_MEM_FOR_KILLER:
                 logging.error("%%%")

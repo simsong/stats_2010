@@ -40,6 +40,7 @@ LONG_SLEEP_MINUTES = 5
 
 S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
+LP_J1    = 1                    # let this program schedule
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
@@ -254,12 +255,11 @@ def run():
                                "order BY RAND() DESC LIMIT %s", (needed_lp,))
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
-                lp_j1 = get_config_int('run','lp_j1')
                 lp_j2 = get_config_int('run','lp_j2')
                 print("WILL MAKE LP",S3_SYNTH,
                       state,county,"TRACTS:",tract_count)
                 p = prun([sys.executable,'s3_pandas_synth_lp_files.py',
-                          '--j1', str(lp_j1), '--j2', str(lp_j2), state, county])
+                          '--j1', str(LP_J1), '--j2', str(lp_j2), state, county])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME) # give load 5 seconds to adjust
 

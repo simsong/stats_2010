@@ -38,7 +38,7 @@ MODEL_ATTRS="NumVars,NumConstrs,NumNZs,NumIntVars,MIPGap,Runtime,IterCount,BarIt
 Note: automatically handles the case where lpfile is compressed by decompressing
 and giving the Gurobi optimizer device to read from.
 """
-def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
+def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
     logging.info(f'RunGurobi({state_abbr},{county},{tract})')
     print(f'RunGurobi({state_abbr},{county},{tract})')
     config      = dbrecon.get_config()
@@ -47,7 +47,7 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     tract       = tract
     state_code  = dbrecon.state_fips(state_abbr)
     geoid_tract = state_code + county + tract
-    lp_filename = dbrecon.dpath_expand(lp_filename)
+    lpgz_filename = dbrecon.dpath_expand(lpgz_filename)
     ilp_filename= dbrecon.ILPFILENAME(state_abbr=state_abbr, county=county, tract=geoid_tract)
     sol_filename= dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)
     solgz_filename= sol_filename+".gz"
@@ -55,17 +55,17 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
     p           = None # subprocess for decompressor
     tempname    = None # symlink that points to decompressed model file
 
-    if lp_filename.startswith("s3:"):
+    if lpgz_filename.startswith("s3:"):
         raise RuntimeError("This must be modified to allow Gurobi to read files from S3 using the stdin hack.")
 
     # make sure input file exists and is valid
-    if not os.path.exists(lp_filename):
-        raise FileNotFoundError("File does not exist: {}".format(lp_filename))
+    if not os.path.exists(lpgz_filename):
+        raise FileNotFoundError("File does not exist: {}".format(lpgz_filename))
 
-    if os.path.getsize(lp_filename) < dbrecon.MIN_LP_SIZE:
+    if os.path.getsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
         # lp file is too small. Delete it and remove it from the database
-        logging.warning("File {} is too small ({}). Removing".format(lp_filename,os.path.getsize(lp_filename)))
-        os.unlink(lp_filename)
+        logging.warning("File {} is too small ({}). Removing".format(lpgz_filename,os.path.getsize(lpgz_filename)))
+        os.unlink(lpgz_filename)
         dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where state=%s and county=%s and tract=%s',
                         (state_abbr,county,tract))
         return
@@ -96,20 +96,20 @@ def run_gurobi(state_abbr, county, tract, lp_filename, dry_run):
         env = gurobipy.Env.OtherEnv( log_filename, customer, appname, 0, "")
 
     env.setParam("LogToConsole",0)
-    if lp_filename.endswith(".lp"):
-        model = gurobipy.read(lp_filename, env=env)
-    elif lp_filename.endswith(".lp.gz"):
-        p = subprocess.Popen(['zcat',lp_filename],stdout=subprocess.PIPE)
+    if lpgz_filename.endswith(".lp"):
+        model = gurobipy.read(lpgz_filename, env=env)
+    elif lpgz_filename.endswith(".lp.gz"):
+        p = subprocess.Popen(['zcat',lpgz_filename],stdout=subprocess.PIPE)
         # Because Gurobin must read from a file that ends with a .lp, 
         # make /tmp/stdin.lp a symlink to /dev/stdin, and
         # then read that
-        tempname = f"/tmp/stdin-{p.pid}-"+(lp_filename.replace("/","_"))+".lp"
+        tempname = f"/tmp/stdin-{p.pid}-"+(lpgz_filename.replace("/","_"))+".lp"
         if os.path.exists(tempname):
             raise RuntimeError(f"File should not exist: {tempname}")
         os.symlink(f"/dev/fd/{p.stdout.fileno()}",tempname)
         model = gurobipy.read(tempname, env=env)
     else:
-        raise RuntimeError("Don't know how to read model from {}".format(lp_filename))
+        raise RuntimeError("Don't know how to read model from {}".format(lpgz_filename))
 
     model.setParam("Threads",args.j2)
 
@@ -173,9 +173,9 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
     assert len(state_abbr)==2
     assert len(county)==3
     assert len(tract)==6
-    lp_filename  = dbrecon.LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
-    if dbrecon.dpath_exists(lp_filename) is None:
-        logging.info(f"lp_filename does not exist")
+    lpgz_filename  = dbrecon.LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    if dbrecon.dpath_exists(lpgz_filename) is None:
+        logging.info(f"lpgz_filename does not exist")
         dbrecon.rescan_files(state_abbr, county, tract)
         return
 
@@ -184,7 +184,7 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         return
 
     try:
-        run_gurobi(state_abbr, county, tract, lp_filename, args.dry_run)
+        run_gurobi(state_abbr, county, tract, lpgz_filename, args.dry_run)
     except FileExistsError as e:
         logging.warning(f"solution file exists for {state_abbr}{county}{tract}; updating database")
         dbrecon.rescan_files(state_abbr, county,tract)

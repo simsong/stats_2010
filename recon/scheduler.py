@@ -99,7 +99,6 @@ def init():
     raise RuntimeError("Don't run init anymore")
     db = dbrecon.DB()
     db.create_schema(open(SCHEMA_FILENAME).read())
-    print("schema loaded")
     for state_abbr in dbrecon.all_state_abbrs():
         for county in dbrecon.counties_for_state(state_abbr=state_abbr):
             for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
@@ -183,6 +182,13 @@ class PSTree():
     def youngest(self):
         return sorted(self.plist, key=lambda p:self.total_user_time(p))[0]
 
+    def kill_tree(self,p):
+        children = p.children(recursive=True)
+        [child.kill() for child in children]
+        [child.wait() for child in children]
+        p.kill()
+        return p.wait()
+
 #
 # Note: change running() into a dictionary where the start time is the key
 # Then report for each job how long it has been running.
@@ -210,9 +216,10 @@ def run():
                 running.remove(p)
 
         with PSTree(running) as ps:
-            print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n\n")
+            from unicodedata import lookup
+            print(lookup('BLACK DOWN-POINTING TRIANGLE')*64+"\n\n")
             ps.ps_aux()
-            print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n\n")
+            print(lookup('BLACK UP-POINTING TRIANGLE')*64+"\n\n")
 
             if free_mem < MIN_FREE_MEM_FOR_KILLER:
                 logging.error("%%%")
@@ -225,10 +232,8 @@ def run():
                     continue
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))
-                p.kill()
-                time.sleep(PROCESS_DIE_TIME) # give process a few moments to adjust
-                p.poll()                     # clear the exit code
-                running.remote()
+                ps.kill_tree(p)
+                running.remove(p)
                 continue
             
         if dbrecon.should_stop():
@@ -266,7 +271,10 @@ def run():
         if args.nosol:
             needed_sol = 0
         else:
+            max_sol    = get_config_int('run','max_sol')
             needed_sol = get_config_int('run','max_jobs')-len(running)
+            if needed_sol > max_sol:
+                needed_sol = max_sol
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             needed_sol = 1

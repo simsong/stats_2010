@@ -262,6 +262,7 @@ def run():
         else:
             needed_lp =  get_config_int('run','max_lp') - len(running_lp())
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0:
+            # For now, only start one lp at a time
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
                                "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
@@ -283,8 +284,10 @@ def run():
             needed_sol = get_config_int('run','max_jobs')-len(running)
             if needed_sol > max_sol:
                 needed_sol = max_sol
+        print("needed_sol=",needed_sol,"max_sol=",max_sol,"max_sol=",max_sol)
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
+            # For now, only launch one solver at a time
             needed_sol = 1
             gurobi_threads = get_config_int('gurobi','threads')
             solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
@@ -302,7 +305,7 @@ def run():
     # Should never get here
 
 def none_running(hostname=None):
-    hostlock = '' if hostname is none else f" hostlock IS '{hostname}' "
+    hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
     print("LP in progress:")
     for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL " + hostlock):
         print(state,county,tract)
@@ -311,19 +314,24 @@ def none_running(hostname=None):
     print("SOL in progress:")
     for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
         print(state,county,tract)
-    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL and error IS NULL" + hostlock)
+    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL " + hostlock)
 
 
 def get_lock():
+    """This version of get_lock() assumes a shared file system, so we can't lock __file__"""
+    lockfile = f"/tmp/lockfile_{HOSTNAME}"
+    if not os.path.exists(lockfile):
+        with open(lockfile,"w") as lf:
+            lf.write("lock")
     try:
-        fd = os.open(__file__,os.O_RDONLY)
+        fd = os.open( lockfile, os.O_RDONLY )
         if fd>0:
             # non-blocking
-            fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB) 
+            fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB) 
             return
     except IOError:
         pass
-    logger.error("Could not acquire lock. Another copy of %s must be running",(__file__))
+    logging.error("Could not acquire lock. Another copy of %s must be running",(__file__))
     raise RuntimeError("Could not acquire lock")
 
 def scan_s3_s4():
@@ -355,7 +363,10 @@ if __name__=="__main__":
     parser.add_argument("--clean",   help="Look for .lp and .sol files that are too slow and delete them, then remove them from the database", action='store_true')
     parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
     parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
-    parser.add_argument("--none_running", help="Run if there are no outstanding LP files being built or Solutions being solved; clears them from database", action='store_true')
+    parser.add_argument("--none_running", help="Run if there are no outstanding LP files being built or Solutions being solved; clears them from database",
+                        action='store_true')
+    parser.add_argument("--none_running-anywhere", help="Run if there are no outstanding LP files being built or Solutions being solved anywhere.",
+                        action='store_true')
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
     parser.add_argument("--state", help="state for rescanning")
     parser.add_argument("--county", help="county for rescanning")
@@ -382,10 +393,14 @@ if __name__=="__main__":
         clean()
 
     elif args.none_running:
+        get_lock()
+        none_running(HOSTNAME)
+    elif args.none_running_anywhere:
+        get_lock()
         none_running()
     else:
         get_lock()
         scan_s3_s4()
-        none_running(
+        none_running(HOSTNAME)
         run()
         

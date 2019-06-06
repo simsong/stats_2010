@@ -34,14 +34,12 @@ import ctools.clogging as clogging
 from ctools.gzfile import GZFile
 from total_size import total_size
 
-STOP_FILE='stop.txt'
+STOP_FILE='/tmp/stop.txt'
 # For handling the config file
 SRC_DIRECTORY   = os.path.dirname(__file__)
 CONFIG_FILENAME = "config.ini"
 config_path     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
 config_file     = None              # will become a ConfiParser object
-
-
 
 ##
 ## Functions that return paths.
@@ -172,7 +170,6 @@ def db_start(what,state_abbr, county, tract):
             (hostname(),hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {what} {state_abbr} {county} {tract} ")
-
     
 def db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
@@ -184,7 +181,6 @@ def is_db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
     row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE state=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
     return len(row)==1
-
 
 def rescan_files(state_abbr, county, tract, check_final_pop=False):
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")

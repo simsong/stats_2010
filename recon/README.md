@@ -20,21 +20,37 @@ but we do not include it here for brevity. For more information, see [dbrecon_RE
 Before you start, look at (config.ini)[config.ini] and make sure that
 all of the paths are good for your system! Then follow these steps:
 
-   STEP 0 - Download the files
+   STEP 0 - Download the files. 
    STEP 1 - Extract the Geography information from the SF files (state CSVs)
    STEP 2 - Create CSV files associated with each state (county CSVs)
-   STEP 3 - Create the LP files associated with each Census tract
-   STEP 4 - Solve the LP files and produce the microdata
+   STEP 3 - Create the .lp.gz files associated with each Census tract
+   STEP 4 - Solve the .lp.gz files to produce the .sol.gz files.
+   STEP 5 - Produce the population files.
 
+## Configuration Information
+Configuration information is kept in the file config.ini.
+
+## Logging
+
+## Paralleism and scheduling
+
+This level of parallelism is sufficient if you have a single cluster
+and with to reconstruct a single state. However, for large jobs, even
+this level of control over the parallelism was insufficient. For these
+situations, we created a scheduler that oversees step 3 and step 4. 
+
+
+
+# Making it all run
 
 ## Step 0 - Download the files
 
 Download the SF1 data from the Census Bureau's website
-http://www2.census.gov/ using the program `00_download_data.py`. This
+http://www2.census.gov/ using the program `s0_download_data.py`. This
 program does not parallelize, but it does check to see if the file you
 are trying to download has already been downloaded.
 
-    python3 00_download_data.py --all
+    python3 s0_download_data.py --all
 
 ## Step 1 - Extract the geography information
 
@@ -43,25 +59,32 @@ file. (It's not clear why we don't use the the original geography
 files, but we don't. This may be changed before the final public
 release.) This is fast, so it is not parallelized.
 
-    python3 01_make_geo_files.py --all
+    python3 s1_make_geo_files.py --all
 
 ## Step 2 - Create CSV files associated with each state
 
-Extract the summary level for STATE, COUNTY, TRACT, BLOCK_GRP,
-BLOCK, SUMLEVEL and LOGRECNO and a data frame with all of the SF1
-measurements.
+This step extracts the summary level for STATE, COUNTY, TRACT,
+BLOCK_GRP, BLOCK, SUMLEVEL and LOGRECNO from all of the SF1 files and
+outputs a two-dimensional table for each county.
 
-This uses pandas and is **the current implementation is memory heavy,** especially for the
-larger states. (CA takes 100GB). The program is multithreaded using
-Python's multiprocessing module, which means that once each state is computed as a whole, each Census county is output. **This should be rewritten so that it is done county-by-county, which will be less efficient, but will not need nearly so much memory.**
+The original implementation of this used pandas and was quite memory
+heavy, especially for the larger states. (CA takes 100GB). You will
+find this implementation in `s2_pandas_build_state_stats.py` and it
+isn included for historical reference only.
 
-The time and memory that this process requires is proportional to the number of census tracts and blocks. We have provided two implementations:
+The rewrite of this performs a purely semantic merging of the
+files. It's much more efficient in both speed and memory. The program
+starts by reading the entire geography file and storing the records in
+memory that hold the block, tract, or county-level records. The
+program then opens 39 input files (1 for each SF1 segment) and an
+output file for every county. It then reads the SF1 records one record
+(39 files), performs a join with the appropriate record in the
+geography file, and writes the output to the appropriate county file.
 
-Pandas Implementation --- 02_pandas_build_state_stats.py.  This implementation is single-threaded. It requires roughly 59GB of RAM to process TX and 49GB of RAM to process CA; other states take less. Time on our high-performance server is
-
-Direct implementation ---
- The direct implementation is complicated by the fact that not every logical record is in every segment file. So we create a reader that, when given a logical record request, returns either blank logical records or the records from the requested file. This means that each reader needs to know the fields in that record. Pandas does this all for us, and we might be able to do a chunked merge, but it wouldn't do all of the recoreds in parallel (which we do, assuming that the logical records are sorted.)
-
+ The direct implementation is complicated by the fact that not every
+ logical record is in every segment file. So we create a reader that,
+ when given a logical record request, returns either blank logical
+ records or the records from the requested file. 
 
 The file `$ROOT/{state_abbr}/completed_{state_abbr}_02` is created when each
 state is completed. (This would take less memory, and be faster, if a
@@ -71,25 +94,29 @@ minutes), but CA took 14844.2 seconds (4.12 hours)
 
     python3 02_build_state_stats.py --all
 
+## Step 3 --- Create the .lp.gz files
 
+The database reconstruct works by creating linear program (LP) files
+that are delivered to the Guorbi optimizer. The structure of these LP
+files makes them quite large---typically between 50MB and
+1GB. However, these files are quite compressible, so we write them as
+compressed files and then (in Step 4) we convince Guorbi to read the
+compressed files. 
 
-
-3. Create the LP files. There is 1 LP file for every census tract. The
-LP files are very large. The model to create the tract-level files are
-created by reading the summary files created in step #2. So we can
-parallelize at the (state,county) level, and we can then parallelize
-within each (state,count) tuple at the tract level. The first set of
-parallelization do not share memory, but the second step do. To handle
-this, we use the 03_synth_lp_files.py program. It has two
-parallelization parameters: --j1, which specifies how many
-(state,county) pairs to run at once, and --j2, which says how many
-tracts to run at once for each (state,county) pair. The default for
-each of these is 8.
+There is 1 .lp.gz file for every census tract. The model to create the
+tract-level files are created by reading the summary files created in
+step #2. So we can parallelize at the (state,county) level, and we can
+then parallelize within each (state,county) tuple at the tract
+level. The first set of parallelization do not share memory, but the
+second step do. To handle this, we use the 03_synth_lp_files.py
+program. It has two parallelization parameters: --j1, which specifies
+how many (state,county) pairs to run at once, and --j2, which says how
+many tracts to run at once for each (state,county) pair. The default
+for each of these is 8.
 
 To give you an idea of how long this takes, know that synthsizing AK 110 (Juno), population 31,275, with 6 census tracts, requires 1183 seconds of CPU and 43GB of RAM with --j2==1.  With --j2=8 it requires 284 seconds of CPU and the same amount of RAM (because the RAM is shared).
 
     python3 03_synth_lp_files.py all all 
-
 
 4. Run the Gurobi on the LP files.
 

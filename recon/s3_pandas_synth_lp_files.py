@@ -483,7 +483,7 @@ def build_tract_lp_tuple(tracttuple):
     except MemoryError as e:
         dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL,error=%s where state=%s and county=%s and tract=%s",
                         (str(e),state_abbr, county, tract))
-        logger.error(f"MEMORY ERROR in {state_abbr} {county} {tract}: {e}")
+        logging.error(f"MEMORY ERROR in {state_abbr} {county} {tract}: {e}")
 
 """Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""
 def make_state_county_files(state_abbr, county, tractgen='all'):

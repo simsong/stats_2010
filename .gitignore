@@ -18,3 +18,4 @@ TAGS
 logs/
 shell.out*
 \#*
+recon/logs

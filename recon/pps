@@ -1,2 +1,3 @@
-ps wwx -o uname,pid,ppid,pcpu,vsz,rss,command --sort=-pcpu
+#!/bin/bash
+ps wwx -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu
 

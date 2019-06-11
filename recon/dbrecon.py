@@ -31,6 +31,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 import ctools.s3 as s3
 import ctools.clogging as clogging
+import ctools.dbfile as dbfile
 from ctools.gzfile import GZFile
 from total_size import total_size
 
@@ -71,9 +72,27 @@ class Memoize:
 
 ################################################################
 ### Database management functions
-RETRIES = 10
-RETRY_DELAY_TIME = 1
 
+class DB:
+    db_auth = None
+    quiet   = False
+    def __init__(self,config=None):
+        global config_file
+        if config==None:
+            config=config_file
+        mysql_section = config['mysql']
+        DB.db_auth = dbfile.DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
+                                database=os.path.expandvars(mysql_section['database']),
+                                user=os.path.expandvars(mysql_section['user']),
+                                password=os.path.expandvars(mysql_section['password']))
+    @staticmethod
+    def csfr(cmd, vals=None, rowcount=None, quiet=None):
+        if DB.db_auth is None:
+            DB()
+        if quiet is None:
+            quiet = DB.quiet
+        return dbfile.DBMySQL.csfr(DB.db_auth, cmd, vals=vals, quiet=quiet, rowcount=rowcount, time_zone='+00:00')
+                                                            
 db_re = re.compile("export (.*)=(.*)")
 def get_pw():
     import pwd
@@ -83,71 +102,6 @@ def get_pw():
             m = db_re.search(line.strip())
             if m:
                 os.environ[m.group(1)] = m.group(2)
-
-class DB:
-    """DB class with singleton pattern"""
-    @staticmethod
-    def csfr(cmd,vals=None,quiet=True,rowcount=None):
-        """Connect, select, fetchall, and retry as necessary"""
-        import mysql.connector.errors
-        for i in range(1,RETRIES):
-            try:
-                db = DB()
-                db.connect()
-                result = None
-                c = db.cursor()
-                try:
-                    logging.info(f"PID{os.getpid()}: {cmd} {vals}")
-                    if quiet==False:
-                        print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
-                    c.execute(cmd,vals)
-                    if rowcount is not None:
-                        if c.rowcount!=rowcount:
-                            raise RuntimeError(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
-                except mysql.connector.errors.ProgrammingError as e:
-                    logging.error("cmd: "+str(cmd))
-                    logging.error("vals: "+str(vals))
-                    logging.error(str(e))
-                    raise e
-                if cmd.upper().startswith("SELECT"):
-                    result = c.fetchall()
-                c.close()       # close the cursor
-                db.close() # close the connection
-                return result
-            except mysql.connector.errors.InterfaceError as e:
-                logging.error(e)
-                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
-                pass
-            except mysql.connector.errors.OperationalError as e:
-                logging.error(e)
-                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
-                pass
-            time.sleep(RETRY_DELAY_TIME)
-        raise e
-
-    def cursor(self):
-        return self.dbs.cursor()
-
-    def commit(self):
-        return self.dbs.commit()
-
-    def create_schema(self,schema):
-        return self.dbs.create_schema(schema)
-
-    def connect(self):
-        from ctools.dbfile import DBMySQL
-        global config_file
-        mysql_section = config_file['mysql']
-        self.dbs       = DBMySQL(host=os.path.expandvars(mysql_section['host']),
-                                database=os.path.expandvars(mysql_section['database']),
-                                user=os.path.expandvars(mysql_section['user']),
-                                password=os.path.expandvars(mysql_section['password']))
-        self.dbs.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
-        self.dbs.cursor().execute('SET autocommit = 1') # autocommit
-
-    def close(self):
-        return self.dbs.close()
-
 
 def filename_mtime(fname):
     if fname is None:

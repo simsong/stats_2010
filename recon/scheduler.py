@@ -131,7 +131,7 @@ def get_free_mem():
     return psutil.virtual_memory().available
 
 last_report = 0
-def report_load_memory(quiet=True):
+def report_load_memory():
     """Report and print the load and free memory; return free memory"""
     global last_report
     free_mem = get_free_mem()
@@ -141,11 +141,10 @@ def report_load_memory(quiet=True):
     hours    = int(total_seconds // 3600)
     mins     = int((total_seconds % 3600) // 60)
     secs     = int(total_seconds % 60)
-    if last_report < time.time() + REPORT_FREQUENCY:
+    if time.time() > last_report + REPORT_FREQUENCY:
         dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) "
                         "values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1", 
-                        [HOSTNAME] + list(os.getloadavg()) + [get_free_mem()//GiB],
-                        quiet=quiet)
+                        [HOSTNAME] + list(os.getloadavg()) + [get_free_mem()//GiB])
         last_report = time.time()
     return free_mem
     
@@ -243,8 +242,10 @@ def run():
                 subprocess.call(['uptime'])
             elif command=='noisy':
                 quiet = False
+                dbrecon.DB.quiet = False
             elif command=='quiet':
                 quiet = True
+                dbrecon.DB.quiet = True
             else:
                 print(f"UNKNOWN COMMAND: '{command}'.  TRY HALT, STOP, PS, LIST, UPTIME, NOISY, QUIET")
 
@@ -430,10 +431,8 @@ if __name__=="__main__":
     config = dbrecon.setup_logging_and_get_config(args,prefix='sch_')
 
     if args.testdb:
-        db = dbrecon.DB(config)
-        c = db.cursor()
         print("Tables:")
-        rows = db.csfr("show tables")
+        rows = DB.csfr("show tables")
         for row in rows:
             print(row)
     elif args.init:

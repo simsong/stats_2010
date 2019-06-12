@@ -91,7 +91,11 @@ class DB:
             DB()
         if quiet is None:
             quiet = DB.quiet
-        return dbfile.DBMySQL.csfr(DB.db_auth, cmd, vals=vals, quiet=quiet, rowcount=rowcount, time_zone='+00:00')
+        try:
+            return dbfile.DBMySQL.csfr(DB.db_auth, cmd, vals=vals, quiet=quiet, rowcount=rowcount, time_zone='+00:00')
+        except RuntimeError as e:
+            logging.error(f"PID{os.getpid()}: ERROR: {e}")
+            return []
                                                             
 db_re = re.compile("export (.*)=(.*)")
 def get_pw():
@@ -581,8 +585,8 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr("INSERT INTO errors (host,error,file,last_value) VALUES (%s,%s,%s,%s)",
-            (hostname(), error, filename, last_value))
+    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s)",
+            (hostname(), error, sys.argv[0], filename, last_value))
 
 def logging_exit():
     if hasattr(sys,'last_value'):

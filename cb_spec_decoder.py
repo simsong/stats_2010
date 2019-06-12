@@ -91,7 +91,7 @@ VAR_PREFIX_RE = re.compile(r"^(?P<prefix>[A-Z]+)")
 
 ### TYPOS and OCR errors
 ## Typo in 2010 SF1 specification. A few variables are mentioned twice; ignore it the second time.
-DUPLICATE_VARIABLES = set(['P027E003', # 2000 SF1
+DUPLICATE_VARIABLES = set(['P027E003',   # 2000 SF1
                            'PCT0200001', # 2010 SF1
                            ])
 
@@ -111,7 +111,7 @@ MISSING_SEGMENT_STARTS = []
 WRONG_CIFSN = [{C.YEAR:2010, C.PRODUCT: C.SF1, C.TABLE: 'PCT23', C.CIFSN:47},
                {C.YEAR:2010, C.PRODUCT: C.SF1, C.TABLE: 'PCT24', C.CIFSN:47}]
 
-## These tables are in the spec, but not included. Delete them from the schema.
+## These tables are in the spec, but only in the UR1. Delete them from the SF1 schema.
 MISSING_TABLES = [{C.YEAR:2010, C.PRODUCT: C.SF1, C.TABLE: 'PCT23'},
                   {C.YEAR:2010, C.PRODUCT: C.SF1, C.TABLE: 'PCT24'}]
 

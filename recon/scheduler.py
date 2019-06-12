@@ -33,7 +33,8 @@ SLEEP_TIME   = 1                # when the memory errors happen, then happen fas
 MAX_LOAD     = 32
 MAX_CHILDREN = 10
 PYTHON_START_TIME = 1
-MIN_FREE_MEM_FOR_LP  = 240*GiB
+MIN_LP_WAIT  = 60
+MIN_FREE_MEM_FOR_LP  = 100*GiB
 MIN_FREE_MEM_FOR_SOL = 100*GiB
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
 REPORT_FREQUENCY = 60           # report this often
@@ -191,14 +192,12 @@ class PSTree():
     def ps_list(self):
         for p in sorted(self.plist, key=lambda p:p.pid):
             try:
-                with p.oneshot():
-                    print("PID{}: {:,} MiB {} children {} ".format(
-                        p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
-                    for pc in [p] + p.children():
-                        with pc.oneshot():
-                            print("   pid{:<5}: {:8,} MiB {} %CPU  {} {} "
-                                  .format(pc.pid, pc.memory_info().rss//MiB, pc.cpu_percent(), 
-                                          pc.cpu_times(), round(time.time() - pc.create_time(), 2)))
+                print("PID{}: {:,} MiB {} children {} ".format(
+                    p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
+                for pc in [p] + p.children():
+                    print("   pid{:<5}: {:8,} MiB {} %CPU  {} {} "
+                          .format(pc.pid, pc.memory_info().rss//MiB, pc.cpu_percent(), 
+                                  pc.cpu_times(), round(time.time() - pc.create_time(), 2)))
             except psutil.NoSuchProcess as e:
                 continue
 
@@ -217,6 +216,7 @@ def run():
     stopping    = False
     last_ps_list     = 0
     quiet       = True
+    last_lp_launch = 0
 
     def running_lp():
         """Return a list of the runn LP makers"""
@@ -234,7 +234,7 @@ def run():
             elif command=='stop':
                 dbrecon.request_stop()
                 stopping = True
-            elif command=='ps':
+            elif command.startswith('ps'):
                 subprocess.call("ps wwx -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu".split())
             elif command=='list':
                 last_ps_list = 0
@@ -311,13 +311,16 @@ def run():
             needed_lp = 0
         else:
             needed_lp =  get_config_int('run','max_lp') - len(running_lp())
-        if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and needed_lp>0:
+        if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
             # For now, only start one lp at a time
             needed_lp = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
                                "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
                                "order BY RAND() DESC LIMIT %s", (needed_lp,))
             for (state,county,tract_count) in make_lps:
+                if last_lp_launch + MIN_LP_WAIT > time.time():
+                    print("LP Launch is too soon.")
+                    break
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
                 print("WILL MAKE LP",S3_SYNTH,
@@ -325,7 +328,7 @@ def run():
                 p = prun([sys.executable,'s3_pandas_synth_lp_files.py',
                           '--j1', str(LP_J1), '--j2', str(lp_j2), state, county])
                 running.add(p)
-                time.sleep(PYTHON_START_TIME) # give load 5 seconds to adjust
+                last_lp_launch = time.time()
 
         ## Evaluate Launching SOLs
 
@@ -373,7 +376,7 @@ def none_running(hostname=None):
     for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
         print(state,county,tract)
     DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL " + hostlock)
-
+    print("Resume...")
 
 def get_lock():
     """This version of get_lock() assumes a shared file system, so we can't lock __file__"""

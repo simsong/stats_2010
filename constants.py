@@ -20,8 +20,8 @@ multiple files for each state are called "segments" and sometimes they
 are called "files". 
 
 We try to consistently use the term:
-  - "file_number" to describe the numbers that go from 1..N. 
-  - segment to describe the name "geo" and the zero-filed representation of the file_number, 
+  - "cifsn" to describe the numbers that go from 1..N. 
+  - segment to describe the name "geo" and the zero-filed representation of the cifsn, 
     which seems to be numbers 00000 through {N:05d}
 """
 
@@ -43,23 +43,39 @@ SF2  = 'sf2'
 SF3  = 'sf3'
 SF4  = 'sf4'
 AIANSF = 'aiansf'
-PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF]
+UR1  = 'ur1'
+PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
 
-PRODUCT_EXTS = {2010: { PL94:'pl',
-                        SF1:'sf1',
-                        SF2:'sf2' }}
+PRODUCT_EXTS = { PL94:'pl',
+                 SF1:'sf1',
+                 SF2:'sf2',
+                 SF3:'sf3',
+                 SF4:'sf4',
+                 UR1:'ur1' }
                     
 # Number of files per data product
-FILES_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
-                                 SF1 : 39},
+SEGMENTS_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
+                                 SF1 : 39,
+                                 SF2 : -1, 
+                                 SF3 : -1,
+                                 SF4 : -1,
+                                 AIANSF: -1 },
                           2010: {PL94: 2,
-                                 SF1 : 47} }
+                                 SF1 : 47,
+                                 UR1 : 48,
+                                 SF2 : -1, 
+                                 AIANSF: -1 } }
 
-MAX_CIFSN = 47                # highest anywhere
+MAX_CIFSN = 49                # highest anywhere
 
 # For self-check, each year/product has a prefix at the beginning of each line
-FILE_LINE_PREFIXES = {2000 : {SF1: "uSF1,"},
-                      2010 : {SF1: "SF1ST"}}
+FILE_LINE_PREFIXES = {2000 : {PL94: "uPL",
+                              SF1: "uSF1,"},
+                      2010 : {PL94: "PLST",
+                              SF1: "SF1ST",
+                              SF2: "SF2ST",
+                              AIANSF: "AIANSF",
+                              UR1: "UR1" }}
 
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary. In some cases, we have just it
@@ -94,7 +110,7 @@ SEGMENT_FORMAT="{segment_number:05d}"
 GEO="geo"
 GEO_TABLE='geo'
 
-FILENAME_2000_SF2 = "{state}{characteristic_iteration}{file_number}_uf2.zip"
+FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
 """
 Naming convention for SF2 data files is ssiiiyy_uf2.zip. 
 iii is the characteristic iteration (total population, race groups, American Indian and Alaska 
@@ -112,43 +128,42 @@ yy is the number of the file
 # - In 2010, each ZIP file contains *all* of the state's segments.
 
 WWW_SERVER_2000 = "https://www2.census.gov/census_2000/datasets/"
-URL_2000_PL94   = WWW_SERVER_2000 + "redistricting_file--pl_94-171/{state_name}/{state}{segment}.upl.zip"
+URL_2000_PL94   = WWW_SERVER_2000 + "redistricting_file--pl_94-171/{state_name}/{state}000{segment}.upl.zip"
 URL_2000_SF1    = WWW_SERVER_2000 + "Summary_File_1/{state_name}/{state}{segment}_uf1.zip"
 URL_2000_SF2    = WWW_SERVER_2000 + "Summary_File_2/{state_name}/{state}{segment}_uf2.zip"
                       
 WWW_SERVER_2010='https://www2.census.gov/census_2010'
 URL_2010_PL94 = WWW_SERVER_2010+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip'
 URL_2010_SF1  = WWW_SERVER_2010+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip'
+URL_2010_UR1  = WWW_SERVER_2010+'/04-Summary_File_1/Urban_Rural_Update/{state_name}/{state}2010.ur1.zip'
 URL_2010_SF2  = WWW_SERVER_2010+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'
 
 ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
 
-SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
-                               SF1 : 40},
-                        2010: {PL94: 3,
-                               SF1 : 48}}
-
-
-
-# SEGMENTS_PER_PRODUCT includes the 'geo' segment, so add 1 to the largest segment number
+# Census 2000 and 2010 packaged differently
 DOWNLOAD_SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
                                         SF1 : 40},
                                  2010: {PL94: 1,
-                                        SF1 : 1}}
+                                        SF1 : 1,
+                                        UR1 : 1 }}
 
-
-                        
 
 DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
                        SF1  : URL_2000_SF1,
                        SF2  : URL_2000_SF2},
                  2010:{PL94 : URL_2010_PL94,
                        SF1  : URL_2010_SF1,
+                       UR1  : URL_2010_UR1,
                        SF2  : URL_2010_SF2 } } 
                  
 # Specifies directory where a zip file is downloaded. The filename is kept from the original download URL
 DEST_ZIPFILE_DIR    = {2000:ROOT_DIR+'/data/{year}_{product}/dist/{state}',
                        2010:ROOT_DIR+'/data/{year}_{product}/dist'}
+
+TABLE='TABLE'
+VARIABLE='VARIABLE'
+DESC='DESC'
+SEGMENT='SEGMENT'
 
 # linkage variables
 FILEID='FILEID'
@@ -156,7 +171,7 @@ STUSAB='STUSAB'
 CHARITER='CHARITER'
 CIFSN='CIFSN'
 LOGRECNO='LOGRECNO'
-LINKAGE_VARIABLES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
+LINKAGE_VARIABLE_NAMES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
 
 # We use the CIFSN 0 for the geo segment
 CIFSN_GEO=0
@@ -205,11 +220,15 @@ def zipfile_name(ypss):
 
 def segmentfile_name(ypss):
     """The name within the zipfile of the requested segment"""
-    ext = PRODUCT_EXTS[ypss.year][ypss.product]
-    return "{state:2}{chariter:03}{segment:02}{year:04}.{ext}".format(
-        state=ypss.state,
-        chariter=int(ypss.chariter),
-        segment=int(ypss.segment),
-        year=int(ypss.year),
-        ext = ext)
+    if ypss.year==2000 and ypss.product==PL94:
+        return "{state:2}000{segment:02}.upl".format(state=ypss.state,
+                                                     segment=int(ypss.segment))
+    if ypss.year==2010:
+        ext = PRODUCT_EXTS[ypss.product]
+        return "{state:2}{chariter:03}{segment:02}{year:04}.{ext}".format(
+            state=ypss.state,
+            chariter=int(ypss.chariter),
+            segment=int(ypss.segment),
+            year=int(ypss.year),
+            ext = ext)
 

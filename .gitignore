@@ -14,3 +14,8 @@ sf1/
 sf2/
 pl94/
 .cache
+TAGS
+logs/
+shell.out*
+\#*
+recon/logs

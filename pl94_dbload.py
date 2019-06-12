@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 #
 """
-pl94_dbload.py: create an SQLite3 database from 2010 PL94 data. Table positions defined by hand.
-This is a legacy program which was written before we could directly parse the PL94 PDF.
-This approach works, but it does not scale very well. 
+dbload.py: create an SQLite3 database from PL94 data. Data loaded includes:
+  STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED
+
+Datasources:
+  STATE|COUNTY|TRACT|BLOCK => LOGRECNO  -- Geography file
+  POP --- File 12010
+  HOUSES|OCCUPIED --- File 22010
 """
 
 __version__ = '0.0.1'
@@ -17,6 +21,10 @@ import sys
 import time
 import zipfile
 import io
+
+from sql import SLGSQL
+
+DBFILE="pl94.sqlite3"
 
 CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
@@ -43,7 +51,6 @@ GEO_BLKGRP=(61,1)
 GEO_BLOCK=(62,4)        # first digit of block is blockgroup
 
 DEBUG_BLOCK=None
-
 
 
 class SLGSQL:
@@ -134,7 +141,7 @@ def process_name(conn,f,name):
 
 def process_file(conn,fname):
     (path,name) = os.path.split(fname)
-    print(name)
+    print(f"process_file{name}")
     if name.lower().endswith(".zip"):
         zf = zipfile.ZipFile(fname)
         for zn in zf.namelist():
@@ -144,18 +151,21 @@ def process_file(conn,fname):
     process_name(conn, open(fname, encoding='latin1'), name)
     
 
+def db_connection(filename=DBFILE):
+    return sqlite3.connect(filename)
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description='Ingest the PL94 block-level population counts',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--db", help="Specify database location", default="data.sqlite3")
-    parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file", 
+    parser.add_argument("--db", help="Specify database location", default=DBFILE)
+    parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file. For best results, use the ZIP file", 
                         nargs="*")
     args = parser.parse_args()
 
     # open database and give me a big cache
-    conn = sqlite3.connect(args.db)
+    conn = db_connection(args.db)
     make_database(conn)
     for fname in args.files:
         process_file(conn,fname)

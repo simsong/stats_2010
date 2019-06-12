@@ -7,16 +7,13 @@ from decimal import Decimal
 
 SF1_CHAPTER6_CSV = CHAPTER6_CSV_FILE.format(year=2010,product=SF1)
 
-# LINES FROM THE 2010 SF1 that did not OCR properly
+# LINES FROM THE 2010 SF1 that did not OCR or match properly
 SF1_P6_LINE='other races                                                                              P0060007              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_P0090058='Race                                                                          P0090058              03          9,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
-SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 
 SF1_LINE_100='"Place (FIPS)7, 8                                                                                    PLACE'
 SF1_LINE_102='FIPS Place Class Code8                                                                 PLACECC,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,2,,,,,,51,,,,,,,,A/N,'
 
-SF1_LINE_4016='FAMILIES (TWO OR MORE RACES HOUSEHOLDER) [1]",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,P035F001,,,,,,,,,,12,,,,,,,9'
-SF1_LINE_7837='PCT12G.   SEX BY AGE (TWO OR MORE RACES) [209]\227Con.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 SF1_GEO_NAME_LINE='Area Name-Legal/Statistical Area Description (LSAD) Term-Part Indicator18,,,,,,,,,,,,,,,,,,,,,,NAME,,,,,,,,,,,,,,,,,90,,,,,,227,,,,,,,,A/N,'
 SF1_GEO_STUSAB_LINE = 'State/U.S. Abbreviation (USPS)                                                    STUSAB                    2                7              A,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,'
 # note that this is not a hyphen:
@@ -60,6 +57,7 @@ def test_sf2_line_102():
     m = GEO_VAR_RE.search( line )
     assert m.group('name') == 'TRACT'
 
+SF1_LINE_4016='FAMILIES (TWO OR MORE RACES HOUSEHOLDER) [1]",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,P035F001,,,,,,,,,,12,,,,,,,9'
 def test_line_4016():
     prepared = csvspec_prepare_csv_line( SF1_LINE_4016)
     print("prepared:",prepared)
@@ -71,21 +69,34 @@ def test_line_4016():
     assert desc=='FAMILIES (TWO OR MORE RACES HOUSEHOLDER)'
     assert segment==12
 
-def test_line_7837():
-    tn = parse_table_name( csvspec_prepare_csv_line( SF1_LINE_7837 ))
-    assert tn[0]=='PCT12G'
-    assert tn[1]=='SEX BY AGE (TWO OR MORE RACES)'
+SF1_LINE_13306='Total:,,,,,,,,,,,,,,,,,,,,,,,,PCT0230001,,,,,,,,,,,,,,48,,,,,,,9,,,,,,,,,'
+def test_line_13306():
+    assert is_variable_name("PCT0230001")
 
+    prepared = csvspec_prepare_csv_line( SF1_LINE_13306 )
+    assert "Total" in prepared
+    assert "PCT0230001" in prepared
+    assert "48" in prepared
+    print(prepared)
+    (name,desc,segment,maxsize) = parse_variable_desc( prepared )
+    assert name=='PCT0230001'
+    assert desc=='Total'
+    assert segment==48
+
+
+SF1_H22_LINE='H22.,,,,"ALLOCATION OF TENURE [3]'
 def test_parse_table_name():
-    assert parse_table_name(csvspec_prepare_csv_line(SF1_H22_LINE))
+    (table,title) = parse_table_name(csvspec_prepare_csv_line(SF1_H22_LINE))
+    assert table=='H22'
+    assert title=='ALLOCATION OF TENURE'
 
 def test_H22_LINE_parses_chapter6():
     for line in csvspec_lines(SF1_CHAPTER6_CSV):
         if line.strip().startswith("H22."):
             # I have the line. Make sure we find the tables in it.
-            tn = parse_table_name(line)
-            assert tn[0]=='H22'
-            assert tn[1]=='ALLOCATION OF TENURE'
+            (table,title) = parse_table_name(line)
+            assert table=='H22'
+            assert title=='ALLOCATION OF TENURE'
             return True
     raise RuntimeError(f"SF1_H22_LINE not found in {SF1_CHAPTER6_CSV}")
     
@@ -100,9 +111,9 @@ def tables_in_file(fname):
     """Give a chapter6 CSV file, return all of the tables in it."""
     tables = {}
     for line in csvspec_lines(fname):
-        tn = parse_table_name(line)
-        if tn is not None:
-            tables[tn[0]] = tn[1]
+        (table,title) = parse_table_name(line)
+        if table:
+            tables[table] = title
     return tables
 
 def test_tables_in_sf1():
@@ -115,7 +126,9 @@ def test_tables_in_sf1():
         assert f"PCT{pct}" in tables
     for i in range(ord('A'),ord('O')+1):
         ch = chr(i)
-        assert f"PCT12{ch}" in tables
+        # We don't parse PCT12G because it OCRs badly
+        if ch!='G':
+            assert f"PCT12{ch}" in tables
     for h in range(1,23):
         assert f"H{h}" in tables
     for i in range(ord('A'),ord('I')+1):
@@ -204,71 +217,73 @@ def Xtest_spottest_2010_sf1():
     assert d17['P0170003'] == Decimal('1.93')
 
     
-TEST_STATE = 'de'
-IGNORE_FILE_NUMBERS = [12]
+TEST_STATE = 'ak'
+TEST_YEAR_PRODUCTS = [(2000,PL94),
+                      (2010,PL94),
+                      (2010,SF1)]
+
 def test_parsed_spec_fields_correct():
-    """For the each of the years and products, look at the ak files and make sure that we can account for every column.
-    Eventually we will want to verify that a line read with the spec scanner from various files match as well.
+    """For the each of the years and products, look at the ak files and
+    make sure that we can account for every column.  Eventually we
+    will want to verify that a line read with the spec scanner from
+    various files match as well.
     """
     errors = 0
-    for year in [2010]:
-        for product in [SF1]:
-            if product==SF1:
-                chariter = '000'
-            ch6file = CHAPTER6_CSV_FILE.format(year=year,product=product)
-            assert os.path.exists(ch6file)
-            schema = schema_for_spec(ch6file, year=year, product=product)
-            for file_number in range(1,FILES_FOR_YEAR_PRODUCT[year][product]+1):
-                if file_number in IGNORE_FILE_NUMBERS:
-                    continue
-                state = TEST_STATE
-                ypss = YPSS(year, product, state, file_number)
-                for line in open_decennial( ypss ):
-                    fields = line.split(",")
-                    assert fields[0] == FILE_LINE_PREFIXES[year][product] # FILEID
-                    assert fields[1].lower() == state                     # STUSAB
-                    assert fields[2] == chariter                          # CHARITER
-                    assert int(fields[3]) == file_number                  # CIFSN
-                    assert int(fields[4]) == 1                            # LOGRECNO
+    for year,product in TEST_YEAR_PRODUCTS:
+        chariter = '000'
+        specfile = get_cvsspec(year=year,product=product)
+        assert os.path.exists(specfile)
+        schema = schema_for_spec(specfile, year=year, product=product)
 
-                    # make sure that the total number of fields matches those for our spec.
-                    # do this by finding all of the tables that have this 
-                    # print the line
-                    total_fields = 0
-                    tables_in_this_file = []
-                    for table in schema.tables():
-                        if table.attrib['CIFSN']==file_number:
-                            tables_in_this_file.append(table)
-                            if total_fields==0:
-                                total_fields += len(table.vars())
-                            else:
-                                total_fields += len(table.vars()) - 5 # we only have these five fields on the first table
-                    if len(fields) != total_fields:
-                        print(f"File {file_number} Found {len(fields)} values in the file; expected {total_fields}")
-                        print(f"Tables found:")
-                        for table in tables_in_this_file:
-                            print(f"{table.name} has {len(table.varnames())} variables according to the specification.")
+        # Get a line from a file and make sure that the fields match
+        for cifsn in range(1,SEGMENTS_FOR_YEAR_PRODUCT[year][product]+1):
+            state  = TEST_STATE
+            ypss   = YPSS(year, product, state, cifsn)
+            line   = open_decennial( ypss ).readline().strip()
+            fields = line.split(",")
+            assert fields[0] == FILE_LINE_PREFIXES[year][product] # FILEID
+            assert fields[1].lower() == state                     # STUSAB
+            assert fields[2] == chariter                          # CHARITER
+            assert int(fields[3]) == cifsn                        # CIFSN
+            assert int(fields[4]) == 1                            # LOGRECNO
+
+            # make sure that the total number of fields matches those for our spec.
+            # do this by finding all of the tables that have this 
+            # print the line
+            total_fields = 0
+            tables_in_this_file = []
+            for table in schema.tables():
+                if table.attrib['CIFSN']==cifsn:
+                    tables_in_this_file.append(table)
+                    if total_fields==0:
+                        total_fields += len(table.vars())
+                    else:
+                        # we only have these five fields on the first table
+                        total_fields += len(table.vars()) - 5 
+            if len(fields) != total_fields:
+                print(f"File {cifsn} Found {len(fields)} values; expected {total_fields}")
+                print(f"Tables found:")
+                for table in tables_in_this_file:
+                    print(f"Spec says {table.name} has {len(table.varnames())} variables.")
+                print()
+                print(f"First line of {TEST_STATE} file part {cifsn}:")
+                print(line)
+                # Make a list of all the variables I think I have, and the value I found
+                file_vars = []
+                for (ct,table) in enumerate(tables_in_this_file):
+                    for var in table.vars():
+                        if ct==0 or var.name not in LINKAGE_VARIABLES:
+                            file_vars.append(var.name)
+                while len(file_vars) < len(fields):
+                    file_vars.append("n/a")
+                while len(file_vars) > len(fields):
+                    fields.append("n/a")
+
+                for (i,(a,b)) in enumerate(zip(file_vars,fields),1):
+                    if a[-3:]=='001':
                         print()
-                        print(f"First line of {TEST_STATE} file part {file_number}:")
-                        print(line)
-                        # Make a list of all the variables I think I have, and the value I found
-                        file_vars = []
-                        for (ct,table) in enumerate(tables_in_this_file):
-                            for var in table.vars():
-                                if ct==0 or var.name not in LINKAGE_VARIABLES:
-                                    file_vars.append(var.name)
-                        while len(file_vars) < len(fields):
-                            file_vars.append("n/a")
-                        while len(file_vars) > len(fields):
-                            fields.append("n/a")
-
-                        for (i,(a,b)) in enumerate(zip(file_vars,fields),1):
-                            if a[-3:]=='001':
-                                print()
-                            print(f"file {file_number} field {i}  {a}   {b}")
-                        errors += 1
-                    # Only look at the first line:
-                    break
+                    print(f"file {cifsn} field {i}  {a}   {b}")
+                errors += 1
     if errors>0:
         raise RuntimeError("Errors found")
                 
@@ -288,6 +303,7 @@ def Xtest_spottest_2010_sf2():
     pco1 = schema.get_table("PCO1")
 
     
+<<<<<<< HEAD
 def Xtest_find_all_data_dictionaries():
     for year in YEARS:
         for product in PRODUCTS:
@@ -309,3 +325,30 @@ def Xtest_find_all_data_dictionaries():
             if not found:
                 raise RuntimeError(f"{filename} does not appear to have a data dictionary")
             print("---")
+=======
+
+def test_find_data_dictionary():
+    assert is_chapter_line(AINSF_LINE_3375)
+    assert is_data_dictionary_line(AINSF_LINE_3376)
+    
+def test_find_all_data_dictionaries():
+    for (year, product) in year_product_iterator():
+        filename = get_cvsspec(year=year, product=product)
+        print(filename)
+        last_line = ""
+        found = False
+        if not any( (is_chapter_line( line) for line in csvspec_lines(filename))) :
+            raise RuntimeError(f"{filename} has no chapter lines in it")
+
+        if not any( (is_data_dictionary_line(line) for line in csvspec_lines(filename))) :
+            raise RuntimeError(f"{filename} has no data dictionary lines in it")
+
+        for line in csvspec_lines(filename):
+            if is_chapter_line(last_line) and is_data_dictionary_line(line):
+                found = True
+                break
+            last_line = line
+        if not found:
+            raise RuntimeError(f"{filename} does not appear to have a data dictionary")
+        print("---")
+>>>>>>> d05b52a072ea443178a2ba4d752746d107e9c7c5

@@ -1,0 +1,19 @@
+May 18
+- Started syntheizing CA 039 files
+- Running out of disk space. Started compressing existant LP files with:
+find . -name '*.lp' -size +1 -mmin +60 -print -exec gzip -1  {} \;
+
+
+May 19
+started synthesizing mt lp files.
+
+May 20, 2019. 8:49
+- noticed that CA 039 crashed during synthesis.
+   - probably should have done -mmin +3600 on find.
+
+- Scanned for incomplete files ending in .lp. None found
+- Scanning for incomplete files ending in in .lp.gz
+shell.out2: - started synthesizing nd with gz output enabled. Let's see if it works.
+
+shell.out3: - compressed rest of mt files; then will run gurobi on all mt files.
+shell.out3: - run gurobi on mt

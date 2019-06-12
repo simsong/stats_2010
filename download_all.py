@@ -58,7 +58,9 @@ if __name__=="__main__":
 
     parser = argparse.ArgumentParser(description='Compute file changes',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("products", help="Specifies what you wish to download. Should be pl94 sf1 sf2 or any combination thereof.",
+    parser.add_argument("products",
+                        help="Specifies what you wish to download. "
+                        "Should be pl94 sf1 sf2 ur1 or any combination thereof.",
                         nargs="*")
     parser.add_argument("--year",  help="Specify year",default=2010, type=int)
     parser.add_argument("--state", help="Just download this state (specify 2-letter abbreviation).")
@@ -66,8 +68,8 @@ if __name__=="__main__":
 
     args = parser.parse_args()
     year = args.year
+    count = 0
     for product in args.products:
-
         # Loop through all states
         for statename_abbrev in STATE_DB.split():
             try:
@@ -87,4 +89,8 @@ if __name__=="__main__":
                 url    = DOWNLOAD_URLS[year][product].format(state_name=state_name,state=state,segment=segment)
                 zipdir = DEST_ZIPFILE_DIR[year].format(year=year, product=product, state=state)
                 download(url,zipdir)
+                count += 1
+    if count==0:
+        print("Nothing downloaded")
+        parser.print_help()
                         

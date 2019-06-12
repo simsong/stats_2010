@@ -16,3 +16,6 @@ clean_data:
 
 download_ak:
 	python download_all.py --state ak pl94 sf1 sf2
+
+tags:
+	etags *.py */*py

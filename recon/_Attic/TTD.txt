@@ -1,0 +1,2 @@
+* zip LP files after used
+

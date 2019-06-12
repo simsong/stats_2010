@@ -58,7 +58,9 @@ if __name__=="__main__":
 
     parser = argparse.ArgumentParser(description='Compute file changes',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("products", help="Specifies what you wish to download. Should be pl94 sf1 sf2 or any combination thereof.",
+    parser.add_argument("products",
+                        help="Specifies what you wish to download. "
+                        "Should be pl94 sf1 sf2 ur1 or any combination thereof.",
                         nargs="*")
     parser.add_argument("--year",  help="Specify year",default=2010, type=int)
     parser.add_argument("--state", help="Just download this state (specify 2-letter abbreviation).")

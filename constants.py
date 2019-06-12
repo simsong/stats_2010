@@ -43,13 +43,15 @@ SF2  = 'sf2'
 SF3  = 'sf3'
 SF4  = 'sf4'
 AIANSF = 'aiansf'
-PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF]
+UR1  = 'ur1'
+PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
 
 PRODUCT_EXTS = { PL94:'pl',
                  SF1:'sf1',
                  SF2:'sf2',
                  SF3:'sf3',
-                 SF4:'sf4'}
+                 SF4:'sf4',
+                 UR1:'ur1' }
                     
 # Number of files per data product
 SEGMENTS_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
@@ -60,10 +62,11 @@ SEGMENTS_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
                                  AIANSF: -1 },
                           2010: {PL94: 2,
                                  SF1 : 47,
+                                 UR1 : 48,
                                  SF2 : -1, 
                                  AIANSF: -1 } }
 
-MAX_CIFSN = 48                # highest anywhere
+MAX_CIFSN = 49                # highest anywhere
 
 # For self-check, each year/product has a prefix at the beginning of each line
 FILE_LINE_PREFIXES = {2000 : {PL94: "uPL",
@@ -71,7 +74,8 @@ FILE_LINE_PREFIXES = {2000 : {PL94: "uPL",
                       2010 : {PL94: "PLST",
                               SF1: "SF1ST",
                               SF2: "SF2ST",
-                              AIANSF: "AIANSF" }}
+                              AIANSF: "AIANSF",
+                              UR1: "UR1" }}
 
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary. In some cases, we have just it
@@ -131,7 +135,7 @@ URL_2000_SF2    = WWW_SERVER_2000 + "Summary_File_2/{state_name}/{state}{segment
 WWW_SERVER_2010='https://www2.census.gov/census_2010'
 URL_2010_PL94 = WWW_SERVER_2010+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip'
 URL_2010_SF1  = WWW_SERVER_2010+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip'
-URL_2010_SF1u = WWW_SERVER_2010+'/04-Summary_File_1/Urban_Rural_Update/{state_name}/{state}2010.ur1.zip'
+URL_2010_UR1  = WWW_SERVER_2010+'/04-Summary_File_1/Urban_Rural_Update/{state_name}/{state}2010.ur1.zip'
 URL_2010_SF2  = WWW_SERVER_2010+'/05-Summary_File_2/{state_name}/{state}2010.sf2.zip'
 
 ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
@@ -140,16 +144,16 @@ ONE_SEGMENT_PER_ZIPFILE = {2000:True, 2010:False}
 DOWNLOAD_SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
                                         SF1 : 40},
                                  2010: {PL94: 1,
-                                        SF1 : 1}}
+                                        SF1 : 1,
+                                        UR1 : 1 }}
 
-
-                        
 
 DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
                        SF1  : URL_2000_SF1,
                        SF2  : URL_2000_SF2},
                  2010:{PL94 : URL_2010_PL94,
-                       SF1  : URL_2010_SF1u,
+                       SF1  : URL_2010_SF1,
+                       UR1  : URL_2010_UR1,
                        SF2  : URL_2010_SF2 } } 
                  
 # Specifies directory where a zip file is downloaded. The filename is kept from the original download URL

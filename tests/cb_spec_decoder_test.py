@@ -141,7 +141,7 @@ def test_schema_segment3():
             varname = f'P{table:03}{v:04}'
             assert varname in t.vardict
 
-def test_spottest_2010_sf1():
+def Xtest_spottest_2010_sf1():
     year = 2010
     product = SF1
     state  = 'ak'
@@ -273,7 +273,12 @@ def test_parsed_spec_fields_correct():
         raise RuntimeError("Errors found")
                 
             
-def test_spottest_2010_sf2():
+def test_find_data_dictionary():
+    assert is_chapter_line(AINSF_LINE_3375)
+    assert is_data_dictionary_line(AINSF_LINE_3376)
+    
+
+def Xtest_spottest_2010_sf2():
     year = 2010
     product = SF1
     state  = 'ak'
@@ -283,12 +288,7 @@ def test_spottest_2010_sf2():
     pco1 = schema.get_table("PCO1")
 
     
-
-def test_find_data_dictionary():
-    assert is_chapter_line(AINSF_LINE_3375)
-    assert is_data_dictionary_line(AINSF_LINE_3376)
-    
-def test_find_all_data_dictionaries():
+def Xtest_find_all_data_dictionaries():
     for year in YEARS:
         for product in PRODUCTS:
             filename = get_cvsspec(year=year, product=product)

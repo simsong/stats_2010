@@ -92,6 +92,10 @@ DUPLICATE_VARIABLES = set(['P027E003', # 2000 SF1
 
                            ])
 
+# These tables don't parse correctly yet
+BAD_TABLES=set(['P35F1'])
+
+
 def open_decennial(ypss):
     """Return an IO object that reads from the specified ZIP file in Unicode.
     This avoids the need to unzip the files.
@@ -418,8 +422,11 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             raise RuntimeError(f"Parser did not find geovariable {varname} in geoheader")
 
     for table in schema.tables():
+        if table in BAD_TABLES:
+            print(f"Ignoring table {table}")
+            continue
         if len(table.vars()) <= len(linkage_vars):
-            raise RuntimeError(f"Table {table.name} does not have enough variables (has {len(table.vars())})")
+            raise RuntimeError(f"{year} {product} Table {table.name} does not have enough variables (has {len(table.vars())})")
 
     if debug:
         print("The following geo columns were not parsed:")

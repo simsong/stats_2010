@@ -112,6 +112,9 @@ MISSING_GEOVARIABLES = [{C.YEAR:2000, C.PRODUCT: C.PL94, C.VARIABLE: place_var},
                         {C.YEAR:2010, C.PRODUCT: C.PL94, C.VARIABLE: sldu_var},
                         {C.YEAR:2010, C.PRODUCT: C.PL94, C.VARIABLE: sldl_var},
                         {C.YEAR:2010, C.PRODUCT: C.PL94, C.VARIABLE: puma_var},
+                        {C.YEAR:2010, C.PRODUCT: C.SF1,  C.VARIABLE: sldu_var},
+                        {C.YEAR:2010, C.PRODUCT: C.SF1,  C.VARIABLE: sldl_var},
+                        {C.YEAR:2010, C.PRODUCT: C.SF1,  C.VARIABLE: puma_var},
                         {C.YEAR:2010, C.PRODUCT: C.SF1,  C.VARIABLE: place_var}]
                         
 

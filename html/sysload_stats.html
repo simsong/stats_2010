@@ -1,0 +1,20 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>Sysload Statistics</title>
+    <link rel="stylesheet" href="index.css">
+    <!-- polyfill is necessary to make Google charts work under IE and Edge -->
+    <script src="https://unpkg.com/unfetch/polyfill"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.0/jquery.min.js"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript" src="sysload_grapher.js"></script>
+  </head>
+  <body>
+    <h2>Sysload Statistics </h2>
+    <div id="sysload_chart" style="width: 900px; height: 500px"></div>
+    <button class='set_time' x-hours='24'>Last 24 hours</button>
+    <button class='set_time' x-hours='168'>Last 168 hours</button>
+    <button class='set_time' x-hours='100000'>Total</button>
+  </body>
+</html>

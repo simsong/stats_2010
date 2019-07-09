@@ -56,11 +56,19 @@ FIELDS = ['GEOID','LOGRECNO','SUMLEV','STATE','COUNTY','TRACT','BLOCK',
           'CSA',    # Combined Statistical Area,
           'UGA',    # Urban Growth Area,
           'PUMA',   # Public Use Microdata Area
-          'PLACE']   # Place (FIPS)
+          'PLACE',  # Place (FIPS)
+          'AIANHH', 
+          'TTRACT',
+          'REGION',
+          'DIVISION'] 
 
 def make_crosswalk(geotable,geofile,args):
-    tt = tydoc.tytable()
-    tt.add_head(FIELDS)
+    if args.format=='csv':
+        f = sys.stdout
+        print(",".join(FIELDS),file=f)
+    else:
+        tt = tydoc.tytable()
+        tt.add_head(FIELDS)
     rows = 0
     try:
         for line in geofile:
@@ -69,13 +77,25 @@ def make_crosswalk(geotable,geofile,args):
                 print(args.sumlev,d['SUMLEV'],args.sumlev==d['SUMLEV'])
             if (args.sumlev==d['SUMLEV']) or (args.sumlev=='any'):
                 d['GEOID'] = d['STATE']+d['COUNTY']+d['TRACT']+d['BLOCK'][0]+d['BLOCK']
-                tt.add_data( [d[field] for field in FIELDS])
+                try:
+                    row = [d[field] for field in FIELDS]
+                except KeyError as e:
+                    print("KeyError: ",e)
+                    print("Available FIELDS:",d.keys())
+                    exit(1)
+                if args.format=='csv':
+                    print(",".join(row),file=f)
+                else:
+                    tt.add_data( )
                 rows += 1
                 if rows==args.limit:
                     break
     except KeyboardInterrupt as e:
-        print(f"*** only read {rows} rows ***")
-    tt.render(sys.stdout, format=args.format)
+        print(f"*** only read {rows} rows ***",file=sys.stderr)
+    if args.format=='csv':
+        pass
+    else:
+        tt.render(sys.stdout, format=args.format)
 
 
 def make_counts(geotable,geofile,args):

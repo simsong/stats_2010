@@ -27,4 +27,4 @@ make_crosswalks:
 	bash make_all_crosswalks
 
 upload:
-	for i in crosswalks/*.csv ; do aws s3 cp $$i $$DAS_S3ROOT/2010/geounit_crosswalks/vars-`date -I`/$$i ; done
+	(cd crosswalks;for i in *.csv ; do aws s3 cp $$i $$DAS_S3ROOT/2010/geounit_crosswalks/vars-`date -I`/$$i ; done)

@@ -1,0 +1,5 @@
+#!/bin/bash
+cd crosswalks
+for fn in *.csv ; do
+  aws s3 cp $fn $DAS_S3ROOT/2010/geounit_crosswalks/24vars/$fn
+done

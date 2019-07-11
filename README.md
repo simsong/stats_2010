@@ -145,8 +145,8 @@ have more than 255 fields. These segments are shown in bold. Some manipulation o
 required for software with a field limit of 255." (p. 2-3)
 
 
-|Field |  Name |
-|------|-------|
+|Field |  Name  |
+|------|--------|
 |1     | FILEID |
 |2     | STUSAB |
 |3     | SUMLEV |

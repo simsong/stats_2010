@@ -95,6 +95,7 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
     env.setParam("LogToConsole",0)
     if lpgz_filename.endswith(".lp"):
         model = gurobipy.read(lpgz_filename, env=env)
+        tempname = None
     elif lpgz_filename.endswith(".lp.gz"):
         p = subprocess.Popen(['zcat',lpgz_filename],stdout=subprocess.PIPE)
         # Because Gurobin must read from a file that ends with a .lp, 
@@ -160,8 +161,9 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
 
         cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where state=%s and county=%s and tract=%s"
         dbrecon.DB.csfr(cmd, vals+[state_abbr,county,tract])
-        
     del env
+    if tempname is not None:
+        os.unlink(tempname)
     atexit.unregister(db_fail)
 
 
@@ -201,9 +203,11 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         logging.error(f"Infeasible in {state_abbr} {county} {tract}")
         dbrecon.DB.csfr('UPDATE tracts set error="infeasible" where state=%s and county=%s and tract=%s',
                         (str(e),state_abbr,county,tract))
+    except Exception as e:
+        logging.error(f"Unknown error: {e}")
         
     if args.exit1:
-        print("exit1")
+        logging.info("clean exit")
         exit(0)
 
 def run_gurobi_tuple(tt):
@@ -280,7 +284,6 @@ if __name__=="__main__":
     parser.add_argument("tracts", help="4-digit tract code[s]; can be 'all'",nargs="*")
     parser.add_argument("--j1", help="Specify number of tracts to solve at once (presolve doesn't parallelize)", default=1, type=int)
     parser.add_argument("--j2", help="Specify number of threads for gurobi to use", default=GUROBI_THREADS_DEFAULT, type=int)
-    parser.add_argument("--config", help="config file")
     parser.add_argument("--dry-run", help="do not run gurobi; just print model stats", action="store_true")
     parser.add_argument("--csv",   help="Make the CSV file from the solutions", action='store_true')
     parser.add_argument("--exit1", help="Exit Gurobi after the first execution", action='store_true')
@@ -294,6 +297,8 @@ if __name__=="__main__":
     state_abbr = dbrecon.state_abbr(args.state_abbr).lower()
     tracts     = args.tracts
     
+    DB.quiet = True
+
     if args.county=='all':
         counties = dbrecon.counties_for_state(state_abbr)
     else:

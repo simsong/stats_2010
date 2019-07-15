@@ -25,8 +25,24 @@ from dbrecon import DB
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
 
 from gurobi_logfile_parser import GurobiLogfileParser
-from ctools.schema.table import Table
 
+import re
+
+MFRE=re.compile("model_(\d\d)(\d\d\d)(\d\d\d\d\d\d)[.]log")
+def model_filename_to_sct(name):
+    m = MFRE.search(fname)
+    (state,county,tract) = m.group(1,2,3)
+    return (dbrecon.state_abbr(state), county, tract)
+    
+
+def scan_root(root):
+    for root, dirs, files in os.walk( dbrecon.dpath_expand("$ROOT") ):
+        for fname in files:
+            if fname.startswith("model") and fname.endswith(".log"):
+                (state,county,tract) = model_filename_to_sct(fname)
+                glog = GurobiLogfileParser(os.path.join(root,fname))
+                (cmd, vals) = glog.sql_insert(name='glog', dialect='mysql')
+                DB.csfr(cmd=cmd, vals=vals)
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
@@ -39,19 +55,20 @@ if __name__=="__main__":
     parser.add_argument("roots", help="directories to scan for logfiles", nargs="*")
 
     args       = parser.parse_args()
+    config     = dbrecon.setup_logging_and_get_config(args,prefix="06analyze")
 
     if args.clear:
-        glog = GurobiLogfileParser("tests/model_04001944300.log")
-        print(glog.sql_insert(table='glog'))
-        exit(0)
-        print(glog.sql_schema())
-        DB.csfr("drop table glog")
-        DB.csfr(glog.sql_schema())
+        fname = "tests/model_04001944300.log"
+        (state,county,tract) = model_filename_to_sct(fname)
+        glog = GurobiLogfileParser(fname)
+        DB.csfr("DROP TABLE IF EXISTS glog")
+        extra= {'state':state, 'county':county, 'tract':tract}
+        DB.csfr(glog.sql_schema(extra=extra))
+        (cmd,vals) = glog.sql_insert(name='glog', dialect='mysql', extra=extra)
+        print("cmd:",cmd)
+        print("vals:",vals)
+        DB.csfr(cmd=cmd, vals=vals)
 
     for root in args.roots:
         scan_root(root)
-    
-    
-
-    print("glob:",glog.dict)
 

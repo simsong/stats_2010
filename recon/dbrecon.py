@@ -35,6 +35,7 @@ import ctools.dbfile as dbfile
 from ctools.gzfile import GZFile
 from total_size import total_size
 
+DEFAULT_QUIET=True
 STOP_FILE='/tmp/stop.txt'
 # For handling the config file
 SRC_DIRECTORY   = os.path.dirname(__file__)
@@ -60,6 +61,10 @@ GiB=1024*1024*1024
 LP='lp'
 SOL='sol'
 
+def hostname():
+    """Hostname without domain"""
+    return socket.gethostname().partition('.')[0]
+
 class Memoize:
     def __init__(self, fn):
         self.fn = fn
@@ -75,7 +80,7 @@ class Memoize:
 
 class DB:
     db_auth = None
-    quiet   = False
+    quiet   = DEFAULT_QUIET
     def __init__(self,config=None):
         global config_file
         if config==None:
@@ -87,6 +92,13 @@ class DB:
                                 password=os.path.expandvars(mysql_section['password']))
     @staticmethod
     def csfr(cmd, vals=None, rowcount=None, quiet=None):
+        import collections.abc
+        if not isinstance(cmd , str):
+            raise RuntimeError(f"not a string: {cmd}")
+        if vals is not None:
+            if not isinstance(vals, collections.abc.Sequence) or isinstance(vals, str):
+                raise RuntimeError(f"not a list: {vals}")
+
         if DB.db_auth is None:
             DB()
         if quiet is None:
@@ -94,7 +106,7 @@ class DB:
         try:
             return dbfile.DBMySQL.csfr(DB.db_auth, cmd, vals=vals, quiet=quiet, rowcount=rowcount, time_zone='+00:00')
         except RuntimeError as e:
-            logging.error(f"PID{os.getpid()}: ERROR: {e}")
+            logging.error(f"PID{os.getpid()}: {sys.argv[0]} {hostname()} ERROR: {e}")
             return []
                                                             
 db_re = re.compile("export (.*)=(.*)")
@@ -129,22 +141,18 @@ def final_pop(state_abbr,county,tract):
         return None
     return count
 
-def hostname():
-    """Hostname without domain"""
-    return socket.gethostname().partition('.')[0]
-
 def db_lock(state_abbr, county, tract):
     DB.csfr(f"UPDATE tracts set hostlock=%s where state=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),
             rowcount=1 )
-    logging.info(f"db_lock: {state_abbr} {county} {tract} ")
+    logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
 
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL]
     DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where state=%s and county=%s and tract=%s",
             (hostname(),hostname(),state_abbr,county,tract),
             rowcount=1 )
-    logging.info(f"db_start: {what} {state_abbr} {county} {tract} ")
+    logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
     
 def db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
@@ -167,7 +175,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
     
     (lp_start,lp_end,sol_start,sol_end,final_pop_db) = rows[0]
-    logging.info("lp_start=%s lp_end=%s sol_start=%s sol_end=%s final_pop_db=%s",(lp_start,lp_end,sol_start,sol_end,final_pop_db))
+    logging.info(f"lp_start={lp_start} lp_end={lp_end} sol_start={sol_start} sol_end={sol_end} final_pop_db={final_pop_db}")
     if dpath_exists(lpfilenamegz):
         if not quiet:
             print(f"{lpfilenamegz} exists")
@@ -518,6 +526,7 @@ def state_has_any_files(state_abbr, county_code, filetype=LP):
 # https://stackoverflow.com/questions/8632354/python-argparse-custom-actions-with-additional-arguments-passed
 def argparse_add_logging(parser):
     clogging.add_argument(parser)
+    parser.add_argument("--config", help="config file")
     parser.add_argument("--stdout", help="Also log to stdout", action='store_true')
     parser.add_argument("--logmem", action='store_true',
                         help="enable memory debugging. Print memory usage. "
@@ -572,7 +581,7 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     atexit.register(logging_exit)
 
     # Finally, indicate that we have started up
-    logging.info("START %s %s  log level: %s (%s)",sys.executable, " ".join(sys.argv), loglevel,loglevel)
+    logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
         
 def setup_logging_and_get_config(args,*,prefix=''):
     config = get_config(filename=args.config)
@@ -585,13 +594,14 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s)",
+    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
             (hostname(), error, sys.argv[0], filename, last_value))
 
 def logging_exit():
     if hasattr(sys,'last_value'):
-        logging.error(sys.last_value)
-        log_error(error='logging_exit', filename=__file__, last_value=str(sys.last_value))
+        msg = f'PID{os.getpid()}: {sys.last_value}'
+        logging.error(msg)
+        log_error(error=msg, filename=__file__, last_value=str(sys.last_value))
 
 
 var_re = re.compile(r"(\$[A-Z_][A-Z_0-9]*)")

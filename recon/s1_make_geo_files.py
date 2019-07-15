@@ -96,7 +96,6 @@ if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Read SF1 geography files and creates the counties geography file. This is pretty fast, so it is not parallelized" )
-    parser.add_argument("--config", help="config file")
     parser.add_argument("--showcounties", help="Display all counties for state frmo files that were created", action='store_true')
     parser.add_argument("state_abbr", nargs='*')
     dbrecon.argparse_add_logging(parser)

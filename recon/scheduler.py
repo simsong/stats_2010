@@ -29,11 +29,11 @@ HOSTNAME = dbrecon.hostname()
 # Tuning parameters
 
 SCHEMA_FILENAME="schema.sql"                
-SLEEP_TIME   = 1                # when the memory errors happen, then happen fast
 MAX_LOAD     = 32
 MAX_CHILDREN = 10
 PYTHON_START_TIME = 1
 MIN_LP_WAIT  = 60
+MIN_SOL_WAIT  = 60
 MIN_FREE_MEM_FOR_LP  = 100*GiB
 MIN_FREE_MEM_FOR_SOL = 100*GiB
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
@@ -194,10 +194,7 @@ class PSTree():
             try:
                 print("PID{}: {:,} MiB {} children {} ".format(
                     p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
-                for pc in [p] + p.children():
-                    print("   pid{:<5}: {:8,} MiB {} %CPU  {} {} "
-                          .format(pc.pid, pc.memory_info().rss//MiB, pc.cpu_percent(), 
-                                  pc.cpu_times(), round(time.time() - pc.create_time(), 2)))
+                subprocess.call(f"ps wwx -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu --ppid={p.pid}".split())
             except psutil.NoSuchProcess as e:
                 continue
 
@@ -217,6 +214,7 @@ def run():
     last_ps_list     = 0
     quiet       = True
     last_lp_launch = 0
+    last_sol_launch = 0
 
     def running_lp():
         """Return a list of the runn LP makers"""
@@ -235,7 +233,7 @@ def run():
                 dbrecon.request_stop()
                 stopping = True
             elif command.startswith('ps'):
-                subprocess.call("ps wwx -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu".split())
+                subprocess.call("ps ww -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu".split())
             elif command=='list':
                 last_ps_list = 0
             elif command=='uptime':
@@ -262,9 +260,10 @@ def run():
                     exit(1)     # hard fail
                 running.remove(p)
 
+        SHOW_PS = False
         with PSTree(running) as ps:
             from unicodedata import lookup
-            if time.time() > last_ps_list + PS_LIST_FREQUENCY:
+            if ((time.time() > last_ps_list + PS_LIST_FREQUENCY) and SHOW_PS) or (last_ps_list==0):
                 print("")
                 print(lookup('BLACK DOWN-POINTING TRIANGLE')*64)
                 print("{}: {} Free Memory: {} GiB  {}% Load: {}".format(
@@ -295,6 +294,7 @@ def run():
         if dbrecon.should_stop():
             print("STOP REQUESTED")
             if len(running)==0:
+                print("NONE LEFT. STOPPING.")
                 dbrecon.check_stop()
                 break;
             else:
@@ -313,14 +313,15 @@ def run():
             needed_lp =  get_config_int('run','max_lp') - len(running_lp())
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
             # For now, only start one lp at a time
-            needed_lp = 1
+            if last_lp_launch + MIN_LP_WAIT > time.time():
+                continue
+            lp_limit = 1
             make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
                                "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
-                               "order BY RAND() DESC LIMIT %s", (needed_lp,))
+                               "order BY RAND() DESC LIMIT %s", (lp_limit,))
+            if (len(make_lps)==0 and needed_lp>0) or not quiet:
+                logging.warning(f"needed_lp: {needed_lp} but search produced 0")
             for (state,county,tract_count) in make_lps:
-                if last_lp_launch + MIN_LP_WAIT > time.time():
-                    print("LP Launch is too soon.")
-                    break
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
                 print("WILL MAKE LP",S3_SYNTH,
@@ -346,22 +347,24 @@ def run():
             # Run any solvers that we have room for
             # For now, only launch one solver at a time
             max_sol_launch = get_config_int('run','max_sol_launch')
-            if needed_sol > max_sol_launch:
-                needed_sol = max_sol_launch
+            limit_sol = max(needed_sol, max_sol_launch)
+            if last_sol_launch + MIN_SOL_WAIT > time.time():
+                continue
             solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
                                 "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) and (error IS NULL) "
-                                "ORDER BY RAND() LIMIT %s",(needed_sol,))
-            if not quiet:
+                                "ORDER BY RAND() LIMIT %s",(limit_sol,))
+            if (len(solve_lps)==0 and needed_sol>0) or not quiet:
                 print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
             for (ct,(state,county,tract)) in enumerate(solve_lps,1):
                 print("WILL SOLVE {} {} {} ({}/{}) {}".format(state,county,tract,ct,len(solve_lps),time.asctime()))
                 gurobi_threads = get_config_int('gurobi','threads')
                 dbrecon.db_lock(state,county,tract)
-                p = prun([sys.executable,S4_RUN,'--j1','1','--j2',str(gurobi_threads),state,county,tract])
+                p = prun([sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),state,county,tract])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
+                last_sol_launch = time.time()
 
-        time.sleep(SLEEP_TIME)
+        time.sleep( get_config_int('run', 'sleep_time' ) )
         # and repeat
     # Should never get here
 
@@ -415,7 +418,6 @@ if __name__=="__main__":
                              "next work if the CPU load and memory use is not too high." ) 
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--init",    help="Clear database and learn the current configuration", action='store_true')
-    parser.add_argument("--config",  help="config file")
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
     parser.add_argument("--rescan", help="scan all of the files and update the database if we find any missing LP or Solution files",
                         action='store_true')
@@ -432,6 +434,7 @@ if __name__=="__main__":
     
     args   = parser.parse_args()
     config = dbrecon.setup_logging_and_get_config(args,prefix='sch_')
+    DB.quiet = True
 
     if args.testdb:
         print("Tables:")

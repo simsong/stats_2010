@@ -8,37 +8,79 @@ parameters, including path names, are stored in the file
 (config.ini)[config.ini]. In this document, config variables are
 indicated **in bold**.
 
-Currently this system is semi-automated, but it becomes a bit more
-automated every time it is run!
+This system is semi-automated, but it becomes a bit more automated
+every time it is run!
 
 Note that this system is designed to work equally well using Amazon
 S3's storage system or using local storage.  We handle this with the
 `dopen` function that is defined in (dbrecon.py)[dbrecon.py]. There is
 a better-developed version of `dopen` in the Census `ctools` package,
-but we do not include it here for brevity. For more information, see [dbrecon_README.md](dbrecon_README.md).
+but we do not include it here for brevity and isolation. 
 
 Before you start, look at (config.ini)[config.ini] and make sure that
 all of the paths are good for your system! Then follow these steps:
 
-   STEP 0 - Download the files. 
-   STEP 1 - Extract the Geography information from the SF files (state CSVs)
-   STEP 2 - Create CSV files associated with each state (county CSVs)
-   STEP 3 - Create the .lp.gz files associated with each Census tract
-   STEP 4 - Solve the .lp.gz files to produce the .sol.gz files.
-   STEP 5 - Produce the population files.
+* STEP 0 - Download the files. 
+* STEP 1 - Extract the geography information from the SF files and create the state-level CSVs
+* STEP 2 - Combines the segments of the each state's SF1 and outputs a set of CSV files for each county that contain the block-level measurements, the tract level measurements, and the county-level measurements. `s2_pandas_build_state_stats.py` was the original version of this program and it was very slow and very memory intensive. `s2_nbuild_state_stats.py` is the rewrite, which is neither slow nor memory intensive. Instead of using pandas, it uses a hand-tuned join and group by written in pure python. It can do the entire state of califronia in 4 hours in a single Python thread and with less than 2 GiB of RAM. 
+* STEP 3 - Create the `.lp.gz` files associated with each Census tract. This is still very memory intensive. We store the LP files compressed because they are quite large (many more than a gigabyte) and highly compressible (typically 20:1). 
+* STEP 4 - Solve the `.lp.gz` files to produce the `.sol.gz` files. Each LP file typically solves in 1-10 seconds. Gurobi won't write out compressed files, so we write them out as `.sol` files and then compress them, which gives us a good way of knowing that the file is complete.
+* STEP 5 - Produce the population files. This step makes the microdata!
+
+Steps 3 and 4 can be run concurrently using the `scheduler.py` program. If you are not using `scheduler.py`, you are wasting machine resources. That's because the CPU and memory requirements of steps 3 and 4 are unpredictable, so the scheduler just launches jobs until some (but not all) of the CPU cores and RAM are in use. If more RAM is needed, it will kill the most recently launched jobs. It's pretty good at following things, but it crashes every now and then and must be manually restarted.
 
 ## Configuration Information
-Configuration information is kept in the file config.ini.
+Configuration information is kept in the file config.ini. The following sections are present:
+
+* `[run]` --- configuration information for the scheduler.py program. 
+* `[urls]` --- download URLs.
+* `[paths]` --- file paths.
+* `[gurobi]` --- configuration informaton for the Gurobi optimizer
+* `[mysql]` --- configuration information for the database used to track progress of steps 3 (`.lp.gz` file creation) and 4 (`.sol.gz` creation).
+
+The configuration file is used by every python program. The `scheduler.py` program re-reads the config file each time through the main event loop, so you can actually change configuration parameters on the fly, without interrupting and restarting the program.
+
+We've made substantial modification to the normal Python procedure for reading configuration files. Specifically:
+
+1. Each configuration variable can include multiple versions which are used on different hosts. For exmaple, if you have 10 machines in your cluster, with `workera` having 64 cores, `workerb` having 32 cores, and the remaining having 16 cores, you might set up your Gurobi section so that Gurobi can use as many threads as there are cores, which is typically the right thing to do. Most runs of Gurobi will use just 1 or 2 threads, so you would run up to to look like this:
+
+    [run]
+    max_sol = 32
+    max_sol@workera: 64
+    max_sol@workerb: 32                    
+    
+    [gurobi]
+    threads: 2
+    threads@workera: 8
+    threads@workerb: 8
+
+This will allow some over-provisioning, but should keep loads under control. Of course, you might want to tune these variables for your systems, and you can tune them while `scheduler.py` is running and they will take effect each time a new step 4 solver is launched.
+
 
 ## Logging
 
+Each run of each program creates two log files, a text-based `.log` file and a `.dfxml` file that captures more detailed information.
+
+Each run of the Gurobi optimizer also creates a Gurobi log file. We will be creating software to analyze these files. 
+
 ## Paralleism and scheduling
 
-This level of parallelism is sufficient if you have a single cluster
-and with to reconstruct a single state. However, for large jobs, even
-this level of control over the parallelism was insufficient. For these
-situations, we created a scheduler that oversees step 3 and step 4. 
+Reconstructing the microdata of the entire United States ia a massive operation and must be parallelized if you want it to complete within a reasonable amount of time.
 
+Originally parallelism was provided by building it directly into step
+3 and step 4. This level of parallelism is sufficient if you have a
+single cluster and with to reconstruct a single state. However, for
+large jobs, even this level of control over the parallelism was
+insufficient. For these situations, we created a scheduler that
+oversees step 3 and step 4.
+
+There are many opportunities for parallelism that are realized in the current code:
+
+* Machine-level parallelism. Run `scheduler.py` on every machine. Every machine should have access to a shared file system that is defined in `config.ini`. This file system is best done with NSF, or with lustre, or with Amazon S3, in that order. 
+
+* Non-shared memory parallelism. This parallelism refers to building multiple county LP files at once, or simultaneous level invocations of Gurobi. This parallelism is specified by the `--j1` parameter if you are relying on the parallelism coming directly from the Python step 2 or step 3 programs, but it's better handled by the `scheduler.py` program, since `scheduler.py` will automatically launch new jobs as needed and kill jobs if too many are running. 
+
+* Shared-memory parallelism. Building the LP files can be parallelized, because the data is read in county-by-county, but we build an LP file for each tract. Solving the LP files can also be parallelized, because Gurobi supports multiple threads. Shared-memory parallelism is specified by the `--j2` parameter or by the `[run].lp_j2` and `[guroobi].threads` parameters in the config files. 
 
 
 # Making it all run

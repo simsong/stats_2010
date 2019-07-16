@@ -34,8 +34,9 @@ def model_filename_to_sct(fname):
     return {'state':dbrecon.state_abbr(state), 'county':county, 'tract':tract}
     
 
-def scan_root(root):
-    for root, dirs, files in os.walk( dbrecon.dpath_expand("$ROOT") ):
+def scan_root(rootdir):
+    for root, dirs, files in os.walk(rootdir):
+        print(root)
         for fname in files:
             if fname.startswith("model") and fname.endswith(".log"):
                 extra = model_filename_to_sct(fname)
@@ -47,15 +48,14 @@ def scan_root(root):
                     print(fname)
                     print(e)
                     exit(1)
-                DB.csfr(cmd=cmd, vals=vals)
+                DB.csfr(cmd=cmd, vals=vals, quiet=True)
+                print(fname)
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Analyze Gurobi logs. " )
     dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--ingest", help="Ingest the logfiles that haven't been ingested yet",
-                            action='store_true')
     parser.add_argument("--schema",  help="drop the table and recreate it", action='store_true')
     parser.add_argument("--clear",  help="delete the records in the database table", action='store_true')
     parser.add_argument("--report", help="Report what's in the database", action='store_true')
@@ -70,7 +70,7 @@ if __name__=="__main__":
             DB.csfr("DROP TABLE IF EXISTS glog")
             DB.csfr(glog.sql_schema())
         if args.clear:
-            DB.csfr("delete from table glog")
+            DB.csfr("delete from glog")
 
     for root in args.roots:
         scan_root(root)

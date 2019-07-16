@@ -35,6 +35,7 @@ import ctools.dbfile as dbfile
 from ctools.gzfile import GZFile
 from total_size import total_size
 
+RETRIES = 10
 DEFAULT_QUIET=True
 STOP_FILE='/tmp/stop.txt'
 # For handling the config file
@@ -170,13 +171,14 @@ class DB:
         return self.dbs.create_schema(schema)
 
     def connect(self):
-        from ctools.dbfile import DBMySQL
+        from ctools.dbfile import DBMySQLAuth,DBMySQL
         global config_file
         mysql_section = config_file['mysql']
-        self.dbs       = DBMySQL(host=os.path.expandvars(mysql_section['host']),
-                                database=os.path.expandvars(mysql_section['database']),
-                                user=os.path.expandvars(mysql_section['user']),
-                                password=os.path.expandvars(mysql_section['password']))
+        auth = DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
+                               database=os.path.expandvars(mysql_section['database']),
+                               user=os.path.expandvars(mysql_section['user']),
+                               password=os.path.expandvars(mysql_section['password']))
+        self.dbs       = DBMySQL(auth)
         self.dbs.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
         self.dbs.cursor().execute('SET autocommit = 1') # autocommit
 

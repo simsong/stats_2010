@@ -124,7 +124,6 @@ def prun(cmd):
     p = psutil.Popen(cmd)
     info = f"PID{p.pid}: LAUNCH {' '.join(cmd)}"
     logging.info(info)
-    print(info)
     return p
 
 

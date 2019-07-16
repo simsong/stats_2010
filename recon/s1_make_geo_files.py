@@ -44,54 +44,43 @@ def make_county_list(state_abbr:str):
 
     # Get layout for geofile. This uses the hard-coded information in the geo_layout.txt file.
     # TODO: move to the learned schema from the PDF
-    names=[]
-    col_starts=[]
-    col_ends=[]
-    colspecs=[]
+    names    = []
+    colspecs = []
 
     for g in csv.DictReader(dopen(GEO_LAYOUT_FILENAME,'r', encoding='latin1'), delimiter=' '):
         names.append(g['field_name'])
-        col_starts.append(int(g['start_pos'])-1)
-        col_ends.append(int(g['start_pos'])+int(g['length'])-2)
         colspecs.append((int(g['start_pos'])-1, int(g['start_pos'])+int(g['length'])-1))
 
     # We use dopen() to open the geography file. It's either in the ZIP archive or its been extracted.
     # dopen handles it either way.
     #
-    # Below is cleaned up from original code, but still converting
-    # line into a dictionary and then writing it out with the
-    # DictWriter.  Presumably this is done to reorder the columns
+    # extract fields from the geofile and write them to the geofile_csv_file.
+    # We do this because the geofile is position-specified and it was harder to use that.
+    # We also extract the county list
 
-    with dopen(sf1_geofile, zipfilename=sf1_zipfilename, encoding='latin1') as sf1file:
-        with dopen(geofile_csv_filename, 'w') as csvfile:
-            writer = None       # will set later
-            for line in sf1file:
-                columns = (colspecs)
-                dataline = collections.OrderedDict(list(zip(names,[line[c[0]:c[1]] for c in colspecs])))
+    sf1file = dopen(sf1_geofile, zipfilename=sf1_zipfilename, encoding='latin1')
+    csvfile = dopen(geofile_csv_filename, 'w')
+    writer  = csv.DictWriter(csvfile, fieldnames=names)
+    writer.writeheader()
+    f       = dopen(state_county_list_filename,'w')
+    writer2 = csv.writer(f)
+    for line in sf1file:
+        columns = (colspecs)
+        dataline = collections.OrderedDict(list(zip(names,[line[c[0]:c[1]] for c in colspecs])))
+        writer.writerow(dataline)
 
-                if not writer:       # we want a header on the output file
-                    row_head = list(dataline.keys())
-                    writer   = csv.DictWriter(csvfile, fieldnames=row_head)
-                    writer.writeheader()
-                writer.writerow(dataline)
-
-    print(f"Creating {state_county_list_filename}")
-
-    # Extract Summary Level 050 (state county) from the csv file that was just created
-    with dopen(state_county_list_filename,'w') as f:
-        writer = csv.writer(f)
-        geo = csv.DictReader(dopen(geofile_csv_filename, 'r', encoding='latin1'))
-        for g in geo:
-            if g['SUMLEV']=='050':
-                row = [g['STATE'], g['COUNTY'],state_abbr]
-                writer.writerow(row)
+        if dataline['SUMLEV']=='050':
+            row = [dataline['STATE'], dataline['COUNTY'],state_abbr]
+            writer2.writerow(row)
+    sf1file.close()
+    csvfile.close()
+    f.close()
 
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Read SF1 geography files and creates the counties geography file. This is pretty fast, so it is not parallelized" )
-    parser.add_argument("--config", help="config file")
     parser.add_argument("--showcounties", 
                         help="Display all counties for state from files that were created", action='store_true')
     parser.add_argument("state_abbr", help="States to process", nargs='*')

@@ -27,3 +27,6 @@ setuptest:
 tags:
 	etags *.py ../ctools/*.py
 
+schema:
+	mysqldump -h$(MYSQL_HOST) -p$(MYSQL_PASSWORD) -u$(MYSQL_USER) -d $(MYSQL_DATABASE)
+

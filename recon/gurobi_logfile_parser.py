@@ -104,7 +104,7 @@ class GurobiLogfileParser:
     def dict(self):
         ret = {field:getattr(self,field) for field in 
                ['gurobi_version','rows','columns','nonzeros','presolve_rows','presolve_NZ',
-                'integer_vars','binary_vars','simplex_iterations','seconds']}
+                'integer_vars','binary_vars','simplex_iterations','seconds'] if getattr(self,field) is not None}
         ret['start'] = self.start.isoformat()[0:19]
         return ret
     

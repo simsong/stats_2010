@@ -154,7 +154,7 @@ def test_schema_segment3():
             varname = f'P{table:03}{v:04}'
             assert varname in t.vardict
 
-def test_spottest_2010_sf1():
+def Xtest_spottest_2010_sf1():
     year = 2010
     product = SF1
     state  = 'ak'
@@ -288,7 +288,12 @@ def test_parsed_spec_fields_correct():
         raise RuntimeError("Errors found")
                 
             
-def test_spottest_2010_sf2():
+def test_find_data_dictionary():
+    assert is_chapter_line(AINSF_LINE_3375)
+    assert is_data_dictionary_line(AINSF_LINE_3376)
+    
+
+def Xtest_spottest_2010_sf2():
     year = 2010
     product = SF1
     state  = 'ak'
@@ -298,6 +303,29 @@ def test_spottest_2010_sf2():
     pco1 = schema.get_table("PCO1")
 
     
+<<<<<<< HEAD
+def Xtest_find_all_data_dictionaries():
+    for year in YEARS:
+        for product in PRODUCTS:
+            filename = get_cvsspec(year=year, product=product)
+            print(filename)
+            last_line = ""
+            found = False
+            if not any( (is_chapter_line( line) for line in csvspec_lines(filename))) :
+                raise RuntimeError(f"{filename} has no chapter lines in it")
+
+            if not any( (is_data_dictionary_line(line) for line in csvspec_lines(filename))) :
+                raise RuntimeError(f"{filename} has no data dictionary lines in it")
+
+            for line in csvspec_lines(filename):
+                if is_chapter_line(last_line) and is_data_dictionary_line(line):
+                    found = True
+                    break
+                last_line = line
+            if not found:
+                raise RuntimeError(f"{filename} does not appear to have a data dictionary")
+            print("---")
+=======
 
 def test_find_data_dictionary():
     assert is_chapter_line(AINSF_LINE_3375)
@@ -323,3 +351,4 @@ def test_find_all_data_dictionaries():
         if not found:
             raise RuntimeError(f"{filename} does not appear to have a data dictionary")
         print("---")
+>>>>>>> d05b52a072ea443178a2ba4d752746d107e9c7c5

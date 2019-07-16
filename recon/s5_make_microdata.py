@@ -40,6 +40,7 @@ and giving the Gurobi optimizer device to read from.
 """
 def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
     logging.info(f'RunGurobi({state_abbr},{county},{tract})')
+    print(f'RunGurobi({state_abbr},{county},{tract})')
     config      = dbrecon.get_config()
     state_abbr  = state_abbr
     county      = county
@@ -88,8 +89,10 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
     log_filename = os.path.splitext(sol_filename)[0]+".log"
     
     if customer=='':
+        print("Using gurobipy.Env")
         env = gurobipy.Env( log_filename )
     else:
+        print("Using gurobipy.Env.OtherEnv")
         env = gurobipy.Env.OtherEnv( log_filename, customer, appname, 0, "")
 
     env.setParam("LogToConsole",0)
@@ -138,7 +141,8 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
             logging.error(f"Unknown model status code: {model.status}")
 
         # Compress the output file
-        cmd = ['gzip','-1f',sol_filename]
+        cmd = ['gzip','-1',sol_filename]
+        print("CMD: ",cmd)
         subprocess.check_call(cmd)
         dbrecon.db_done('sol', state_abbr, county, tract) # indicate we have a solution
 
@@ -182,26 +186,21 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
     try:
         run_gurobi(state_abbr, county, tract, lpgz_filename, args.dry_run)
     except FileExistsError as e:
-        logging.warning(f"solution file exists for {state_abbr}{county}{tract}; rescan_files 1")
+        logging.warning(f"solution file exists for {state_abbr}{county}{tract}; updating database")
         dbrecon.rescan_files(state_abbr, county,tract)
     except FileNotFoundError as e:
-        logging.warning(f"LP file not found for {state_abbr}{county}{tract}; rescan_files 2")
+        logging.warning(f"LP file not found for {state_abbr}{county}{tract}; updating database")
         dbrecon.rescan_files(state_abbr, county,tract)
     except gurobipy.GurobiError as e:
         logging.error(f"GurobiError in {state_abbr} {county} {tract}")
-        dbrecon.log_error(error=str(e), filename=__file__)
-        if str(e)=='Unable to read model':
-            logging.error("Unable to read model. Deleting lp file")
-            dbrecon.dpath_unlink(lpgz_filename)
-            dbrecon.rescan_files(state_abbr, county, tract)
-        else:
-            dbrecon.DB.csfr('UPDATE tracts set error=%s where state=%s and county=%s and tract=%s',
-                            (str(e),state_abbr,county,tract))
+        dbrecon.DB.csfr('UPDATE tracts set error=%s where state=%s and county=%s and tract=%s',
+                        (str(e),state_abbr,county,tract))
     except InfeasibleError as e:
         logging.error(f"Infeasible in {state_abbr} {county} {tract}")
         dbrecon.DB.csfr('UPDATE tracts set error="infeasible" where state=%s and county=%s and tract=%s',
                         (str(e),state_abbr,county,tract))
         
+
     if args.exit1:
         print("exit1")
         exit(0)
@@ -289,7 +288,6 @@ if __name__=="__main__":
         raise RuntimeError("GUROBI_HOME not in environment")
 
     args       = parser.parse_args()
-    t0         = time.time()
     config     = dbrecon.setup_logging_and_get_config(args,prefix="04run")
     state_abbr = dbrecon.state_abbr(args.state_abbr).lower()
     tracts     = args.tracts
@@ -301,10 +299,9 @@ if __name__=="__main__":
 
     for county in counties:
         run_gurobi_for_county(state_abbr, county, tracts)
-        td = round(time.time() - t0,2)
-        print(f"{__file__}: Finished {state_abbr} {county} {tracts} in {td} seconds")
 
     # Create the state-level CSV files
     if args.csv:
         make_csv_file(state_abbr, county)
 
+    print(f"{__file__}: Finished {state_abbr} {county}")

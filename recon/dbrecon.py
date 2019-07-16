@@ -31,10 +31,11 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 import ctools.s3 as s3
 import ctools.clogging as clogging
+import ctools.dbfile as dbfile
 from ctools.gzfile import GZFile
 from total_size import total_size
 
-STOP_FILE='stop.txt'
+STOP_FILE='/tmp/stop.txt'
 # For handling the config file
 SRC_DIRECTORY   = os.path.dirname(__file__)
 CONFIG_FILENAME = "config.ini"
@@ -71,9 +72,31 @@ class Memoize:
 
 ################################################################
 ### Database management functions
-RETRIES = 10
-RETRY_DELAY_TIME = 1
 
+class DB:
+    db_auth = None
+    quiet   = False
+    def __init__(self,config=None):
+        global config_file
+        if config==None:
+            config=config_file
+        mysql_section = config['mysql']
+        DB.db_auth = dbfile.DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
+                                database=os.path.expandvars(mysql_section['database']),
+                                user=os.path.expandvars(mysql_section['user']),
+                                password=os.path.expandvars(mysql_section['password']))
+    @staticmethod
+    def csfr(cmd, vals=None, rowcount=None, quiet=None):
+        if DB.db_auth is None:
+            DB()
+        if quiet is None:
+            quiet = DB.quiet
+        try:
+            return dbfile.DBMySQL.csfr(DB.db_auth, cmd, vals=vals, quiet=quiet, rowcount=rowcount, time_zone='+00:00')
+        except RuntimeError as e:
+            logging.error(f"PID{os.getpid()}: ERROR: {e}")
+            return []
+                                                            
 db_re = re.compile("export (.*)=(.*)")
 def get_pw():
     import pwd
@@ -174,13 +197,18 @@ def hostname():
     """Hostname without domain"""
     return socket.gethostname().partition('.')[0]
 
+def db_lock(state_abbr, county, tract):
+    DB.csfr(f"UPDATE tracts set hostlock=%s where state=%s and county=%s and tract=%s",
+            (hostname(),state_abbr,county,tract),
+            rowcount=1 )
+    logging.info(f"db_lock: {state_abbr} {county} {tract} ")
+
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL]
     DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where state=%s and county=%s and tract=%s",
             (hostname(),hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {what} {state_abbr} {county} {tract} ")
-
     
 def db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
@@ -193,23 +221,35 @@ def is_db_done(what, state_abbr, county, tract):
     row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE state=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
     return len(row)==1
 
-def rescan_files(state_abbr, county, tract, check_final_pop=False):
+def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
     
-    rows = DB.csfr("SELECT lp_end,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",
-                       (state_abbr,county,tract))
+    rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
+                       "FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",
+                       (state_abbr,county,tract),quiet=quiet)
     if len(rows)!=1:
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
     
-    (lp_end,sol_end,final_pop_db) = rows[0]
+    (lp_start,lp_end,sol_start,sol_end,final_pop_db) = rows[0]
+    logging.info("lp_start=%s lp_end=%s sol_start=%s sol_end=%s final_pop_db=%s",(lp_start,lp_end,sol_start,sol_end,final_pop_db))
     if dpath_exists(lpfilenamegz):
+        if not quiet:
+            print(f"{lpfilenamegz} exists")
         if lp_end is None:
             logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
             DB.csfr("UPDATE tracts set lp_end=%s where state=%s and county=%s and tract=%s",
-                    (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract))
-
+                    (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract),quiet=quiet)
+    else:
+        if not quiet:
+            print(f"{lpfilenamegz} does not exist")
+        if (lp_start is not None) or (lp_end is not None):
+            logging.warning(f"{lpfilenamegz} does not exist, but the database says it does. Deleting")
+            DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL "
+                        "WHERE state=%s and county=%s and tract=%s",
+                        (state_abbr,county,tract),quiet=quiet)
+            
     if dpath_exists(solfilenamegz):
         if sol_end is None:
             logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
@@ -223,6 +263,11 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False):
                                 f"for {state_abbr} {county} {tract}. Correcting")
                 DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
+    else:
+        if sol_end is not None:
+            logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
+            DB.csfr("UPDATE tracts set sol_start=NULL,sol_end=NULL,final_pop=NULL where state=%s and county=%s and tract=%s",
+                    (state,county,tract),quiet=quiet)
 
 ################################################################
 def should_stop():
@@ -233,6 +278,11 @@ def check_stop():
         logging.warning("Clean exit")
         os.unlink(STOP_FILE)
         exit(0)
+
+def request_stop():
+    with open(STOP_FILE,"w") as f:
+        f.write("stop")
+        
 
 ################################################################
 ### functions that return directories. dpath_expand is not called on these.
@@ -602,9 +652,15 @@ def add_dfxml_tag(tag,text=None,attrs={}):
     if text:
         e.text = text
 
+def log_error(*,error=None, filename=None, last_value=None):
+    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s)",
+            (hostname(), error, sys.argv[0], filename, last_value))
+
 def logging_exit():
     if hasattr(sys,'last_value'):
         logging.error(sys.last_value)
+        log_error(error='logging_exit', filename=__file__, last_value=str(sys.last_value))
+
 
 var_re = re.compile(r"(\$[A-Z_][A-Z_0-9]*)")
 def dpath_expand(path):

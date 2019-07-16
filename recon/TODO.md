@@ -1,9 +1,9 @@
-* Capture solver output.
+* Append a message to the SOL file so we know that it is complete
 * ingest Geo files and report if there are tracts with no population
 * get reading time and presolve time and add those to the database
 * re-read config file each time through the main loop.
 * read J1 and J2 from config file.
-* Have S3 fork check for stop file.
+* LP memory.
 
 
 Gauges:

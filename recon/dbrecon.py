@@ -119,6 +119,70 @@ def get_pw():
             if m:
                 os.environ[m.group(1)] = m.group(2)
 
+class DB:
+    """DB class with singleton pattern"""
+    @staticmethod
+    def csfr(cmd,vals=None,quiet=False,rowcount=None):
+        """Connect, select, fetchall, and retry as necessary"""
+        import mysql.connector.errors
+        for i in range(1,RETRIES):
+            try:
+                db = DB()
+                db.connect()
+                result = None
+                c = db.cursor()
+                try:
+                    logging.info(f"PID{os.getpid()}: {cmd} {vals}")
+                    if quiet==False:
+                        print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
+                    c.execute(cmd,vals)
+                    if rowcount is not None:
+                        if c.rowcount!=rowcount:
+                            raise RuntimeError(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
+                except mysql.connector.errors.ProgrammingError as e:
+                    logging.error("cmd: "+str(cmd))
+                    logging.error("vals: "+str(vals))
+                    logging.error(str(e))
+                    raise e
+                if cmd.upper().startswith("SELECT"):
+                    result = c.fetchall()
+                c.close()       # close the cursor
+                db.close() # close the connection
+                return result
+            except mysql.connector.errors.InterfaceError as e:
+                logging.error(e)
+                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                pass
+            except mysql.connector.errors.OperationalError as e:
+                logging.error(e)
+                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                pass
+            time.sleep(RETRY_DELAY_TIME)
+        raise e
+
+    def cursor(self):
+        return self.dbs.cursor()
+
+    def commit(self):
+        return self.dbs.commit()
+
+    def create_schema(self,schema):
+        return self.dbs.create_schema(schema)
+
+    def connect(self):
+        from ctools.dbfile import DBMySQL
+        global config_file
+        mysql_section = config_file['mysql']
+        self.dbs       = DBMySQL(host=os.path.expandvars(mysql_section['host']),
+                                database=os.path.expandvars(mysql_section['database']),
+                                user=os.path.expandvars(mysql_section['user']),
+                                password=os.path.expandvars(mysql_section['password']))
+        self.dbs.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
+        self.dbs.cursor().execute('SET autocommit = 1') # autocommit
+
+    def close(self):
+        return self.dbs.close()
+
 def filename_mtime(fname):
     if fname is None:
         return None
@@ -170,7 +234,9 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
     
-    rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",(state_abbr,county,tract),quiet=quiet)
+    rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
+                       "FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",
+                       (state_abbr,county,tract),quiet=quiet)
     if len(rows)!=1:
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
     
@@ -188,8 +254,9 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             print(f"{lpfilenamegz} does not exist")
         if (lp_start is not None) or (lp_end is not None):
             logging.warning(f"{lpfilenamegz} does not exist, but the database says it does. Deleting")
-            DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL where state=%s and county=%s and tract=%s",
-                    (state_abbr,county,tract),quiet=quiet)
+            DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL "
+                        "WHERE state=%s and county=%s and tract=%s",
+                        (state_abbr,county,tract),quiet=quiet)
             
     if dpath_exists(solfilenamegz):
         if sol_end is None:
@@ -200,7 +267,8 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
         if check_final_pop:
             final_pop_file = final_pop(state_abbr,county,tract)
             if final_pop_db!=final_pop_file:
-                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} for {state_abbr} {county} {tract}. Correcting")
+                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
+                                f"for {state_abbr} {county} {tract}. Correcting")
                 DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
     else:

@@ -41,8 +41,6 @@ CONFIG_FILENAME = "config.ini"
 config_path     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
 config_file     = None              # will become a ConfiParser object
 
-
-
 ##
 ## Functions that return paths.
 ## These cannot be constants because they do substituion, and f-strings don't work as macros
@@ -150,7 +148,6 @@ class DB:
     def close(self):
         return self.dbs.close()
 
-
 def filename_mtime(fname):
     if fname is None:
         return None
@@ -196,13 +193,13 @@ def is_db_done(what, state_abbr, county, tract):
     row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE state=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
     return len(row)==1
 
-
 def rescan_files(state_abbr, county, tract, check_final_pop=False):
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
     
-    rows = DB.csfr("SELECT lp_end,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",(state_abbr,county,tract))
+    rows = DB.csfr("SELECT lp_end,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",
+                       (state_abbr,county,tract))
     if len(rows)!=1:
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
     
@@ -213,7 +210,6 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False):
             DB.csfr("UPDATE tracts set lp_end=%s where state=%s and county=%s and tract=%s",
                     (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
-
     if dpath_exists(solfilenamegz):
         if sol_end is None:
             logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
@@ -223,7 +219,8 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False):
         if check_final_pop:
             final_pop_file = final_pop(state_abbr,county,tract)
             if final_pop_db!=final_pop_file:
-                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} for {state_abbr} {county} {tract}. Correcting")
+                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
+                                f"for {state_abbr} {county} {tract}. Correcting")
                 DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
 

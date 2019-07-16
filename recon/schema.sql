@@ -55,7 +55,37 @@ CREATE TABLE `errors` (
   KEY `host` (`host`(255)),
   KEY `file` (`file`),
   KEY `line` (`line`)
-) ENGINE=InnoDB AUTO_INCREMENT=359 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=386 DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `geo`
+--
+
+DROP TABLE IF EXISTS `geo`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `geo` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `STUSAB` varchar(2) NOT NULL,
+  `SUMLEV` varchar(3) NOT NULL,
+  `LOGRECNO` varchar(7) NOT NULL,
+  `STATE` varchar(2) NOT NULL,
+  `COUNTY` varchar(3) NOT NULL,
+  `TRACT` varchar(6) DEFAULT NULL,
+  `BLOCK` varchar(4) DEFAULT NULL,
+  `NAME` varchar(90) DEFAULT NULL,
+  `POP100` int(9) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `STUSAB` (`STUSAB`,`COUNTY`,`TRACT`,`BLOCK`),
+  KEY `STATE` (`STATE`),
+  KEY `LOGRECNO` (`LOGRECNO`),
+  KEY `COUNTY` (`COUNTY`),
+  KEY `TRACT` (`TRACT`),
+  KEY `BLOCK` (`BLOCK`),
+  KEY `NAME` (`NAME`),
+  KEY `POP100` (`POP100`)
+) ENGINE=InnoDB AUTO_INCREMENT=193206 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -160,4 +190,4 @@ CREATE TABLE `tracts` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-07-16  9:45:15
+-- Dump completed on 2019-07-16 17:09:54

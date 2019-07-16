@@ -79,37 +79,7 @@ class Memoize:
 ################################################################
 ### Database management functions
 
-class DB:
-    db_auth = None
-    quiet   = DEFAULT_QUIET
-    def __init__(self,config=None):
-        global config_file
-        if config==None:
-            config=config_file
-        mysql_section = config['mysql']
-        DB.db_auth = dbfile.DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
-                                database=os.path.expandvars(mysql_section['database']),
-                                user=os.path.expandvars(mysql_section['user']),
-                                password=os.path.expandvars(mysql_section['password']))
-    @staticmethod
-    def csfr(cmd, vals=None, rowcount=None, quiet=None):
-        import collections.abc
-        if not isinstance(cmd , str):
-            raise RuntimeError(f"not a string: {cmd}")
-        if vals is not None:
-            if not isinstance(vals, collections.abc.Sequence) or isinstance(vals, str):
-                raise RuntimeError(f"not a list: {vals}")
-
-        if DB.db_auth is None:
-            DB()
-        if quiet is None:
-            quiet = DB.quiet
-        try:
-            return dbfile.DBMySQL.csfr(DB.db_auth, cmd, vals=vals, quiet=quiet, rowcount=rowcount, time_zone='+00:00')
-        except RuntimeError as e:
-            logging.error(f"PID{os.getpid()}: {sys.argv[0]} {hostname()} ERROR: {e}")
-            return []
-                                                            
+                                                           
 db_re = re.compile("export (.*)=(.*)")
 def get_pw():
     import pwd

@@ -22,82 +22,79 @@ from ctools.timer import Timer
 GEO_LAYOUT_FILENAME="$SRC/layouts/geo_layout.txt"
 
 def make_county_list(state_abbr:str):
+    """Given a state abbreviation, find the geo file, extract information, and store in the CSV files
+    and in the SQL database."""
 
-    # Find our input files
-
+    # Input files
     state_code       = dbrecon.state_fips(state_abbr)
     sf1_zipfilename  = dbrecon.dpath_expand("$SF1_DIST/{state_abbr}2010.sf1.zip").format(state_abbr=state_abbr)
-    sf1_input_file   = dbrecon.dpath_expand("$SF1_DIST/{state_abbr}geo2010.sf1").format(state_abbr=state_abbr)
+    sf1_geofile      = dbrecon.dpath_expand("$SF1_DIST/{state_abbr}geo2010.sf1").format(state_abbr=state_abbr)
 
-    # Get output files
-    geo_filename               = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
+    # Output files
+    geofile_csv_filename               = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
     state_county_list_filename = f'$ROOT/{state_abbr}/state_county_list_{state_code}.csv'
 
     # If the output files exist, return
-    if dbrecon.dpath_exists(geo_filename) and dbrecon.dpath_exists(state_county_list_filename):
-        logging.warning(f"{geo_filename} exists; {state_county_list_filename} exists; will not overwrite")
+    if dbrecon.dpath_exists(geofile_csv_filename) and dbrecon.dpath_exists(state_county_list_filename):
+        logging.warning(f"{geofile_csv_filename} exists; {state_county_list_filename} exists; will not overwrite")
         return
 
-    logging.info(f"Creating {geo_filename}")
+    logging.info(f"Creating {geofile_csv_filename}")
     dbrecon.dmakedirs(f"$ROOT/{state_abbr}") # make sure we can create the output file
 
-    with Timer() as timer:
+    # Get layout for geofile. This uses the hard-coded information in the geo_layout.txt file.
+    # TODO: move to the learned schema from the PDF
+    names=[]
+    col_starts=[]
+    col_ends=[]
+    colspecs=[]
 
-        # Get layout for geofile. This uses the hard-coded information in the geo_layout.txt file
-        # move to the learned schema from the PDF
-        names=[]
-        col_starts=[]
-        col_ends=[]
-        colspecs=[]
+    for g in csv.DictReader(dopen(GEO_LAYOUT_FILENAME,'r', encoding='latin1'), delimiter=' '):
+        names.append(g['field_name'])
+        col_starts.append(int(g['start_pos'])-1)
+        col_ends.append(int(g['start_pos'])+int(g['length'])-2)
+        colspecs.append((int(g['start_pos'])-1, int(g['start_pos'])+int(g['length'])-1))
 
-        for g in csv.DictReader(dopen(GEO_LAYOUT_FILENAME,'r', encoding='latin1'), delimiter=' '):
-            names.append(g['field_name'])
-            col_starts.append(int(g['start_pos'])-1)
-            col_ends.append(int(g['start_pos'])+int(g['length'])-2)
-            colspecs.append((int(g['start_pos'])-1, int(g['start_pos'])+int(g['length'])-1))
+    # We use dopen() to open the geography file. It's either in the ZIP archive or its been extracted.
+    # dopen handles it either way.
+    #
+    # Below is cleaned up from original code, but still converting
+    # line into a dictionary and then writing it out with the
+    # DictWriter.  Presumably this is done to reorder the columns
 
-        # We use dopen() to open the geography file. It's either in the ZIP archive or its been extracted.
-        # dopen handles it either way.
-        #
-        # Below is cleaned up from original code, but still converting
-        # line into a dictionary and then writing it out with the
-        # DictWriter.  Presumably this is done to reorder the columns
+    with dopen(sf1_geofile, zipfilename=sf1_zipfilename, encoding='latin1') as sf1file:
+        with dopen(geofile_csv_filename, 'w') as csvfile:
+            writer = None       # will set later
+            for line in sf1file:
+                columns = (colspecs)
+                dataline = collections.OrderedDict(list(zip(names,[line[c[0]:c[1]] for c in colspecs])))
 
-        with dopen(sf1_input_file, zipfilename=sf1_zipfilename, encoding='latin1') as sf1file:
-            with dopen(geo_filename, 'w') as csvfile:
-                writer = None       # will set later
-                for line in sf1file:
-                    columns = (colspecs)
-                    dataline = collections.OrderedDict(list(zip(names,[line[c[0]:c[1]] for c in colspecs])))
+                if not writer:       # we want a header on the output file
+                    row_head = list(dataline.keys())
+                    writer   = csv.DictWriter(csvfile, fieldnames=row_head)
+                    writer.writeheader()
+                writer.writerow(dataline)
 
-                    if not writer:       # we want a header on the output file
-                        row_head = list(dataline.keys())
-                        writer   = csv.DictWriter(csvfile, fieldnames=row_head)
-                        writer.writeheader()
-                    writer.writerow(dataline)
+    print(f"Creating {state_county_list_filename}")
 
-
-        print(f"Creating {state_county_list_filename}")
-        geo = csv.DictReader(dopen(geo_filename, 'r', encoding='latin1'))
-        state_abbr_dict={}
-        for s in dbrecon.STATES:
-            state_abbr_dict[s['fips_state']]=s['state_abbr'].lower()
-
-        # Extract Summary Level 050 (state county)
-        with dopen(state_county_list_filename,'w') as f:
-            writer = csv.writer(f)
-            for g in geo:
-                if g['SUMLEV']=='050':
-                    row = [g['STATE'], g['COUNTY'],state_abbr_dict[g['STATE']]]
-                    writer.writerow(row)
+    # Extract Summary Level 050 (state county) from the csv file that was just created
+    with dopen(state_county_list_filename,'w') as f:
+        writer = csv.writer(f)
+        geo = csv.DictReader(dopen(geofile_csv_filename, 'r', encoding='latin1'))
+        for g in geo:
+            if g['SUMLEV']=='050':
+                row = [g['STATE'], g['COUNTY'],state_abbr]
+                writer.writerow(row)
 
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Read SF1 geography files and creates the counties geography file. This is pretty fast, so it is not parallelized" )
-    parser.add_argument("--showcounties", help="Display all counties for state frmo files that were created", action='store_true')
-    parser.add_argument("state_abbr", nargs='*')
+    parser.add_argument("--config", help="config file")
+    parser.add_argument("--showcounties", 
+                        help="Display all counties for state from files that were created", action='store_true')
+    parser.add_argument("state_abbr", help="States to process", nargs='*')
     dbrecon.argparse_add_logging(parser)
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args,prefix="01mak")
@@ -114,12 +111,15 @@ if __name__=="__main__":
     else:
         states = dbrecon.all_state_abbrs()
               
-    # Make sure the output directory for the layouts exists
-
-    for state_abbr in states:
-        if args.showcounties:
+    # Are we just printing status reports?
+    if args.showcounties:
+        for state_abbr in states:
             print(dbrecon.counties_for_state(state_abbr))
-        else:
+        exit(0)
+
+    # Generate the CSV files. This may be parallelized in the future
+    for state_abbr in states:
+        with Timer() as timer:
             make_county_list(state_abbr)
 
     print("Made geofiles for: {}".format(" ".join(states)))

@@ -73,7 +73,6 @@ if __name__=="__main__":
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--all",action='store_true',help='All states')
     parser.add_argument("state_abbrs",nargs="*",help='Specify states to download on')
-    parser.add_argument("--config", help="config file")
     parser.add_argument("--validate",action='store_true',help='Validate the ZIP files and delete those that are incomplete')
     args = parser.parse_args()
 

@@ -336,7 +336,6 @@ if __name__=="__main__":
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Create per-county county, block and tract count files." )
     dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--config", help="config file")
     parser.add_argument("--all",action='store_true',help='All states')
     parser.add_argument('--j1', type=int, help='Number of states to run in parallel (states do not share memory)',default=1)
     parser.add_argument('--j2', type=int, help='Number of counties to output in parallel (counties share memory)',default=16)

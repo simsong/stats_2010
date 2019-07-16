@@ -272,12 +272,10 @@ if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Create per-county county, block and tract count files from the state-level SF1 files." )
-    dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--config", help="config file")
     parser.add_argument("state_abbrs",nargs="*",help='Specify states to process')
     parser.add_argument("--all",action='store_true',help='All states')
     parser.add_argument("--j1", type=int, help='Number of states to run at once (defaults to thread count in config file).')
-
+    dbrecon.argparse_add_logging(parser)
     args     = parser.parse_args()
     config   = dbrecon.get_config(filename=args.config)
     dbrecon.setup_logging(config=config,loglevel=args.loglevel,prefix="02red")

@@ -352,20 +352,22 @@ class LPTractBuilder:
         """Main entry point for building a new tract LP file.
         Modified to write gzipped LP files because the LP files are so large
         """
-        if dbrecon.is_db_done('lp',state_abbr, county, tract):
-            logging.warning(f"note: LP file exists in database: {state_abbr}{county}{tract}; "
-                            "will not create another one.")
-            return
-
-        t0         = time.time()
-        lpdir      = LPDIR(state_abbr=state_abbr,county=county)
-        dmakedirs(lpdir)  
 
         state_code    = dbrecon.state_fips(state_abbr)
         geo_id        = sf1_tract_data[0][GEOID]
         lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
         tmpgzfilename = lpfilenamegz.replace(".gz",".tmp.gz")
         outfilename   = tmpgzfilename
+        lpfileexists  = dbrecon.dpath_exists(lpfilenamegz)
+
+        if dbrecon.is_db_done('lp',state_abbr, county, tract):
+            logging.warning(f"note: LP file exists in database: {state_abbr}{county}{tract}  exists in file system: {lpfileexists}; "
+                            "will not create another one.")
+            return
+
+        t0         = time.time()
+        lpdir      = LPDIR(state_abbr=state_abbr,county=county)
+        dmakedirs(lpdir)  
 
         # file exists and it is good. Note that in the database
         try:
@@ -661,7 +663,6 @@ if __name__=="__main__":
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Synthesize LP files for all of the tracts in the given state and county." )
     dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--config", help="config file", default='config.ini')
     parser.add_argument("--j1", 
                         help="Specifies number of threads for state-county parallelism. "
                         "These threads do not share memory. Specify 1 to disable parallelism.",
@@ -679,6 +680,7 @@ if __name__=="__main__":
     parser.add_argument("county", help="3-digit county code; specify next for next; all for all. Multiple counties may be separated by commas")
     parser.add_argument("tract", help="Just synthesize for this specific 4-digit tract code",nargs="?")
     
+    DB.quiet = True
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args,prefix="03syn")
     

@@ -4,6 +4,9 @@ import re
 from datetime import datetime
 import dbrecon
 
+from ctools.schema.table import Table
+
+
 @dbrecon.Memoize
 def compile(rexp):
     return re.compile(rexp)
@@ -101,17 +104,21 @@ class GurobiLogfileParser:
     def dict(self):
         ret = {field:getattr(self,field) for field in 
                ['gurobi_version','rows','columns','nonzeros','presolve_rows','presolve_NZ',
-                'integer_vars','binary_vars','simplex_iterations','seconds']}
+                'integer_vars','binary_vars','simplex_iterations','seconds'] if getattr(self,field) is not None}
         ret['start'] = self.start.isoformat()[0:19]
         return ret
     
-    def sql_schema(self):
-        table = Table.FromDict(name="glog",dict=self.dict)
-        return table.sql_schema()
+    def sql_table(self, name='glog'):
+        return Table.FromDict(name=name,dict=self.dict)
 
-    def sql_insert(self,table='glog'):
-        ldict = self.dict
-        vars    = list(ldict.keys())
-        params  = ','.join(['?' for var in vars])
-        vals    = [ldict[var] for var in vars]
-        return (f"INSERT INTO {table} ({','.join(vars)}) VALUES ({params})", vals)
+    def sql_schema(self, name='glog', extra={}):
+        return self.sql_table(name=name).sql_schema(extra=extra)
+
+    def sql_insert(self, name='glog', dialect='mysql', extra={}):
+        # return (cmd, args)
+        cmd = self.sql_table(name=name).sql_insert(dialect='mysql', extra=extra.keys())
+        args = list(self.dict.values()) + list(extra.values())
+        assert len(self.dict) + len(extra) == len(args)
+        return (cmd, args)
+                
+

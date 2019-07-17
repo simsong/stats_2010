@@ -19,3 +19,4 @@ logs/
 shell.out*
 \#*
 recon/logs
+recon.bash

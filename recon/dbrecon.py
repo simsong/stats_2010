@@ -178,27 +178,27 @@ def final_pop(state_abbr,county,tract):
     return count
 
 def db_lock(state_abbr, county, tract):
-    DB.csfr(f"UPDATE tracts set hostlock=%s where state=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE tracts set hostlock=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
 
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL]
-    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where state=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
     
 def db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
-    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
 def is_db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
-    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE state=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
+    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
     return len(row)==1
 
 def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
@@ -207,7 +207,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
     
     rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
-                       "FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",
+                       "FROM tracts where stusab=%s and county=%s and tract=%s LIMIT 1",
                        (state_abbr,county,tract),quiet=quiet)
     if len(rows)!=1:
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
@@ -219,7 +219,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             print(f"{lpfilenamegz} exists")
         if lp_end is None:
             logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set lp_end=%s where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set lp_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract),quiet=quiet)
     else:
         if not quiet:
@@ -227,13 +227,13 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
         if (lp_start is not None) or (lp_end is not None):
             logging.warning(f"{lpfilenamegz} does not exist, but the database says it does. Deleting")
             DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL "
-                        "WHERE state=%s and county=%s and tract=%s",
+                        "WHERE stusab=%s and county=%s and tract=%s",
                         (state_abbr,county,tract),quiet=quiet)
             
     if dpath_exists(solfilenamegz):
         if sol_end is None:
             logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set sol_end=%s where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set sol_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
         if check_final_pop:
@@ -241,12 +241,12 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             if final_pop_db!=final_pop_file:
                 logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
                                 f"for {state_abbr} {county} {tract}. Correcting")
-                DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
+                DB.csfr("UPDATE tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
     else:
         if sol_end is not None:
             logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
-            DB.csfr("UPDATE tracts set sol_start=NULL,sol_end=NULL,final_pop=NULL where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set sol_start=NULL,sol_end=NULL,final_pop=NULL where stusab=%s and county=%s and tract=%s",
                     (state,county,tract),quiet=quiet)
 
 ################################################################
@@ -472,7 +472,7 @@ def counties_for_state(state_abbr):
 
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr("select tract from tracts where state=%s and county=%s",(state_abbr,county))
+    rows = DB.csfr("select tract from tracts where stusab=%s and county=%s",(state_abbr,county))
     return [row[0] for row in rows]
 
 ################################################################

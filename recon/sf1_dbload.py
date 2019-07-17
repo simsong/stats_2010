@@ -89,13 +89,13 @@ def decode_geo_line(conn,c,line):
     if exi(GEO_SUMLEV) in [750]:
         try:
             if DEBUG_BLOCK and exi(GEO_BLOCK)==DEBUG_BLOCK:
-                print("INSERT INTO blocks (state,county,tract,block,logrecno) values ({},{},{},{},{})".format(
+                print("INSERT INTO blocks (stusab,county,tract,block,logrecno) values ({},{},{},{},{})".format(
                     ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
-            c.execute("INSERT INTO blocks (state,county,tract,block,logrecno) values (?,?,?,?,?)",
+            c.execute("INSERT INTO blocks (stusab,county,tract,block,logrecno) values (?,?,?,?,?)",
                       (ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
         except sqlite3.IntegrityError as e:
             conn.commit()          # save where we are
-            print("INSERT INTO blocks (state,county,tract,block,logrecno) values ({},{},{},{},{})".format(
+            print("INSERT INTO blocks (stusab,county,tract,block,logrecno) values ({},{},{},{},{})".format(
                 ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
             raise e
             
@@ -104,7 +104,7 @@ def decode_12010(conn,c,line):
     fields = line.split(",")
     (fileid,stusab,chariter,cifsn,logrecno,p0010001) = fields[0:6]
     assert fileid=='PLST'
-    c.execute("UPDATE blocks set pop=? where state=? and logrecno=?",
+    c.execute("UPDATE blocks set pop=? where stusab=? and logrecno=?",
               (p0010001,stusab,logrecno))
 
 def decode_22010(conn,c,line):
@@ -113,7 +113,7 @@ def decode_22010(conn,c,line):
     (fileid,stusab,chariter,cifsn,logrecno) = fields[0:5]
     (h0010001,h0010002,h0010003) = fields[-3:]
     assert fileid=='PLST'
-    c.execute("UPDATE blocks set houses=?,occupied=? where state=? and logrecno=?",
+    c.execute("UPDATE blocks set houses=?,occupied=? where stusab=? and logrecno=?",
               (h0010001,h0010002,stusab,logrecno))
 
 def load_file(conn,f,func):

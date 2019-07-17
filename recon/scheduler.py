@@ -61,7 +61,7 @@ def init_sct(c,state_abbr,county,tract):
     lpfilename = dbrecon.find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
     lptime = filename_mtime( lpfilename )
     soltime = filename_mtime( dbrecon.SOLFILENAME(state_abbr=state_abbr,county=county, tract=tract) )
-    DB.csfr("INSERT INTO tracts (state,county,tract,lp_end,sol_end,final_pop) values (%s,%s,%s,%s,%s,%s)",
+    DB.csfr("INSERT INTO tracts (stusab,county,tract,lp_end,sol_end,final_pop) values (%s,%s,%s,%s,%s,%s)",
             (state_abbr,county,tract,lptime,soltime, final_pop(state_abbr,county,tract)))
 
 def rescan():
@@ -94,7 +94,7 @@ def clean():
                 (state_abbr,county,tract) = m
                 what = "sol" if "sol" in path else "lp"
                 DB.csfr(f"UPDATE tracts SET {what}_start=NULL,{what}_end=NULL "
-                        "where state=%s and county=%s and tract=%s",
+                        "where stusab=%s and county=%s and tract=%s",
                         (state_abbr, county, tract))
                 os.unlink(path)
 

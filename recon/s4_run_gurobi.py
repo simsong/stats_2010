@@ -23,7 +23,7 @@ from dbrecon import DB
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
 
 def db_fail(state_abbr, county, tract):
-    DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
+    DB.csfr("UPDATE tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",(state_abbr,county,tract))
 
 
 class InfeasibleError(RuntimeError):
@@ -65,7 +65,7 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
         # lp file is too small. Delete it and remove it from the database
         logging.warning("File {} is too small ({}). Removing".format(lpgz_filename,os.path.getsize(lpgz_filename)))
         os.unlink(lpgz_filename)
-        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where state=%s and county=%s and tract=%s',
+        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where stusab=%s and county=%s and tract=%s',
                         (state_abbr,county,tract))
         return
 
@@ -159,7 +159,7 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
         vars.append("sol_gb")
         vals.append(dbrecon.maxrss() // GB)
 
-        cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where state=%s and county=%s and tract=%s"
+        cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
         dbrecon.DB.csfr(cmd, vals+[state_abbr,county,tract])
     del env
     if tempname is not None:
@@ -197,11 +197,11 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
             dbrecon.dpath_unlink(lpgz_filename)
             dbrecon.rescan_files(state_abbr, county, tract)
         else:
-            dbrecon.DB.csfr('UPDATE tracts set error=%s where state=%s and county=%s and tract=%s',
+            dbrecon.DB.csfr('UPDATE tracts set error=%s where stusab=%s and county=%s and tract=%s',
                             (str(e),state_abbr,county,tract))
     except InfeasibleError as e:
         logging.error(f"Infeasible in {state_abbr} {county} {tract}")
-        dbrecon.DB.csfr('UPDATE tracts set error="infeasible" where state=%s and county=%s and tract=%s',
+        dbrecon.DB.csfr('UPDATE tracts set error="infeasible" where stusab=%s and county=%s and tract=%s',
                         (str(e),state_abbr,county,tract))
     except Exception as e:
         logging.error(f"Unknown error: {e}")
@@ -219,13 +219,13 @@ def run_gurobi_tuple(tt):
 def run_gurobi_for_county(state_abbr, county, tracts):
     logging.info(f"run_gurobi_for_county({state_abbr},{county})")
     if (tracts==[]) or (tracts==['all']):
-        tracts = [row[0] for row in DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND state=%s AND county=%s",
+        tracts = [row[0] for row in DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND stusab=%s AND county=%s",
                                             (state_abbr, county))]
 
         logging.info(f"Tracts require solving in {state_abbr} {county}: {tracts}")
         if tracts==[]:
             # No tracts. Report if there are tracts in county missing LP files
-            rows = DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NULL) AND state=%s AND county=%s",(state_abbr,county))
+            rows = DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NULL) AND stusab=%s AND county=%s",(state_abbr,county))
             if rows:
                 logging.warning(f"run_gurobi_for_county({state_abbr},{county}): {len(rows)} tracts do not have LP files")
             return

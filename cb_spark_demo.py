@@ -25,6 +25,67 @@ if 'DAS_S3ROOT' in os.environ:
 else:
     DATAROOT = os.path.join( os.path.dirname(__file__), 'data')
 
+def smallCellStructure_PersonsSF2000():
+    # From a list of tables with integer counts, find those with small counts in 2000 SF1
+    # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
+    tables = [  
+                "P3",       # Race                          [[[Block level tables begin]]]
+                "P4",       # HISP x Race
+                "P5",       # Race for Pop 18+
+                "P6",       # HISP x Race for Pop 18+
+                "P12",      # Sex by Age (2-5 year buckets)
+                "P14",      # Sex by Age for Pop <20
+                "P16",      # Pop in HHs
+                # P27-P30, P32, P36; REL not yet in schema
+                "P37",      # Pop in GQs
+                "P38",      # Pop in GQs by Sex by Age
+                "P12A-F",   # Sex by Age (Major Race Alone)
+                "P12G",     # Sex by Age (2+ races)
+                "P12H",     # Sex by Age (HISP)
+                "P12I",     # Sex by Age (White Alone, Not HISP)
+                # P27A-P30I, P32A-I; REL not yet in schema
+                "PCT12",    # Sex by Age (1 year buckets)   [[[Tract level tables begin]]]
+                "PCT13",    # Sex by Age, Pop in HHs
+                # PCT16-PCT17; 3-digit GQs not yet in schema
+                "PCT12A-F", # Sex by Age (Major Race Alone)
+                "PCT12G",   # Sex by Age (2+ races)
+                "PCT12H",   # Sex by Age (HISP)
+                "PCT12I-N", # Sex by Age (Major Race Alone, Not HISP)
+                "PCT12O",   # Sex by Age (2+ races, Not HISP)
+                "PCT13A-I", # Sex by Age (Major Race Alone), Pop in HHs
+                "PCT13G",   # Sex by Age (2+ races), Pop in HHs
+                "PCT13H",   # Sex by Age (HISP), Pop in HHs
+                "PCT13I"    # Sex by Age (White Alone, Not HISP), Pop in HHs
+                # PCT17A-I; 3-digit GQs not yet in schema
+             ]
+
+    year = 2000
+    product = SF1
+    sf1_2010 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=year,product=product)
+
+    print("Geolevels by state and summary level:")
+    sf1_2010.get_df(tableName = GEO_TABLE, sqlName='GEO_2010')
+
+    print("Table P2 just has counts. Here we dump the first 10 records:")
+    sf1_2010.get_df(tableName="P2", sqlName='P2_2010')
+    d1 = spark.sql("SELECT * FROM P2_2010 LIMIT 10")
+    d1.show()
+    sf1_2010.print_legend(d1)
+
+    print("Table P2 counts by state and county:")
+    res = spark.sql("SELECT GEO_2010.STUSAB,GEO_2010.COUNTY,GEO_2010.NAME,P0020001,P0020002,P0020003,P0020004,P0020005,P0020006 FROM GEO_2010 "
+                    "INNER JOIN P2_2010 ON GEO_2010.STUSAB=P2_2010.STUSAB and GEO_2010.LOGRECNO=P2_2010.LOGRECNO "
+                    "WHERE GEO_2010.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
+
+    tt = tydoc.tytable()
+    tt.add_head( res.columns )
+    for row in res.collect():
+        tt.add_data(row)
+    tt.render(sys.stdout, format='md')
+    sf1_2010.print_legend(res)
+
+
+
 def demo():
     # Get a schema object associated with the SF1 for 2010
 
@@ -39,7 +100,6 @@ def demo():
     for _ in spark.sql("SELECT * from GEO_2010 LIMIT 10").collect():
         print(_)
     #spark.sql("SELECT FILEID,STUSAB,LOGRECNO,STATE,COUNTYCC,TRACT,BLKGRP,BLOCK FROM GEO_2010 LIMIT 10").show()
-
 
     tt = tydoc.tytable()
     tt.add_head(['State','Summary Level','Count'])

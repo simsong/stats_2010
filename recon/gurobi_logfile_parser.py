@@ -102,7 +102,7 @@ class GurobiLogfileParser:
     
     @property
     def nodes(self):
-        return self.find(r"Explored (\d+) nodes")
+        return self.find(r"Explored (\d+) node")
 
     @property
     def dict(self):

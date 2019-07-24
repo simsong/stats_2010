@@ -22,6 +22,7 @@ def test_parser():
     assert p.binary_vars == 585
     assert p.simplex_iterations == 0
     assert p.seconds == 51.80
+    assert p.nodes   == 0
     
     
     

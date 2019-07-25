@@ -10,9 +10,6 @@ ZIPFILE=../stats_2010.zip
 export ZIPFILE
 zip -r -q $ZIPFILE . -i '*.py' '*.sh' '*.ini'
 
-CONFIG_DIR=configs
-DEFAULT_CONFIG=test_RA_config_cluster.ini
-
 DEFAULT_OUTPUT=das_output.out
 
 #output=$1

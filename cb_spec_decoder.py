@@ -686,7 +686,7 @@ class DecennialData:
             if "." in varName:
                 varName = varName.split(".")[-1] # take the last name
             rows.append( self.find_variable_by_name(varName) )
-        rows.sort()
+        #rows.sort()
         old_table = None
         for (table, var) in rows:
             if table!= old_table:

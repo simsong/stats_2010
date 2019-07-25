@@ -61,30 +61,28 @@ def smallCellStructure_PersonsSF2000():
 
     year = 2000
     product = SF1
-    sf1_2010 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=year,product=product)
+    sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=year,product=product)
 
     print("Geolevels by state and summary level:")
-    sf1_2010.get_df(tableName = GEO_TABLE, sqlName='GEO_2010')
+    sf1_2000.get_df(tableName = GEO_TABLE, sqlName='GEO_2000')
 
     print("Table P2 just has counts. Here we dump the first 10 records:")
-    sf1_2010.get_df(tableName="P2", sqlName='P2_2010')
-    d1 = spark.sql("SELECT * FROM P2_2010 LIMIT 10")
+    sf1_2000.get_df(tableName="P2", sqlName='P2_2000')
+    d1 = spark.sql("SELECT * FROM P2_2000 LIMIT 10")
     d1.show()
-    sf1_2010.print_legend(d1)
+    sf1_2000.print_legend(d1)
 
     print("Table P2 counts by state and county:")
-    res = spark.sql("SELECT GEO_2010.STUSAB,GEO_2010.COUNTY,GEO_2010.NAME,P0020001,P0020002,P0020003,P0020004,P0020005,P0020006 FROM GEO_2010 "
-                    "INNER JOIN P2_2010 ON GEO_2010.STUSAB=P2_2010.STUSAB and GEO_2010.LOGRECNO=P2_2010.LOGRECNO "
-                    "WHERE GEO_2010.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
+    res = spark.sql("SELECT GEO_2000.STUSAB,GEO_2000.COUNTY,GEO_2000.NAME,P0020001,P0020002,P0020003,P0020004,P0020005,P0020006 FROM GEO_2000 "
+                    "INNER JOIN P2_2000 ON GEO_2000.STUSAB=P2_2000.STUSAB and GEO_2000.LOGRECNO=P2_2000.LOGRECNO "
+                    "WHERE GEO_2000.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
 
     tt = tydoc.tytable()
     tt.add_head( res.columns )
     for row in res.collect():
         tt.add_data(row)
     tt.render(sys.stdout, format='md')
-    sf1_2010.print_legend(res)
-
-
+    sf1_2000.print_legend(res)
 
 def demo():
     # Get a schema object associated with the SF1 for 2010

@@ -647,6 +647,12 @@ class DecennialData:
                                        C.CIFSN:C.CIFSN_GEO,
                                        C.YEAR:2000,         # Hacky hard-code..
                                        C.PRODUCT:C.SF1})    # Product seems to be u/r update to sf1. Not sure if this will work
+                if len(filename)==15:
+                    self.files.append({'path':path,
+                                       C.STATE:state,
+                                       C.CIFSN:int(filename[2:7]),
+                                       C.YEAR:2000,
+                                       C.PRODUCT:C.SF1})
             except ValueError as e:
                 if debug:
                     print("bad filename:",path)

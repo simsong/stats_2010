@@ -85,7 +85,7 @@ def smallCellStructure_PersonsSF2000():
         sf1_2000.print_legend(d1)
 
         print(f"Table {table} contains the following variables:")
-        print(sf1_2000.get_table(table).varnames + '\n')
+        print(sf1_2000.get_table(table).varnames() + '\n')
 
         """
         print(f"Table {table} counts by state and county:")

@@ -641,13 +641,14 @@ class DecennialData:
             state = filename[0:2]
             try:
                 if len(filename)==9 and filename[2:5]=='geo':
-                    print(f"Found file {filename} ending with .uf1 & path {path}")
+                    print(f"Found len 9 file {filename} ending with .uf1 & path {path}")
                     self.files.append({'path':path,
                                        C.STATE:state,
                                        C.CIFSN:C.CIFSN_GEO,
                                        C.YEAR:2000,         # Hacky hard-code..
                                        C.PRODUCT:C.SF1})    # Product seems to be u/r update to sf1. Not sure if this will work
-                if len(filename)==15:
+                if len(filename)==11:
+                    print(f"Found len 11 file {filename} ending with .uf1 & path {path}")
                     self.files.append({'path':path,
                                        C.STATE:state,
                                        C.CIFSN:int(filename[2:7]),

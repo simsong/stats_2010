@@ -81,7 +81,13 @@ def smallCellStructure_PersonsSF2000():
         print(f"Table {table} just has counts. Here we dump the first 10 records:")
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         d1 = spark.sql(f"SELECT * FROM {table}_2000 LIMIT 10")
-        d1.show()
+        
+        tt = tydoc.tytable()
+        tt.add_head( d1.columns )
+        for row in d1.collect():
+            tt.add_data(row)
+        tt.render(sys.stdout, format='md')
+
         sf1_2000.print_legend(d1)
 
         print(f"Table {table} contains the following variables:")

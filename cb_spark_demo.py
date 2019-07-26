@@ -77,21 +77,36 @@ def smallCellStructure_PersonsSF2000():
     print("Geolevels by state and summary level:")
     sf1_2000.get_df(tableName = GEO_TABLE, sqlName='GEO_2000')
 
-    for table in tables:
-        print(f"Table {table} just has counts. Here we dump the first 10 records:")
-        sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
-        d1 = spark.sql(f"SELECT * FROM {table}_2000 LIMIT 10")
-        
-        tt = tydoc.tytable()
-        tt.add_head( d1.columns )
-        for row in d1.collect():
-            tt.add_data(row)
-        tt.render(sys.stdout, format='md')
+    # Temp just do P3
+    table_P3 = "P3"
+    sf1_2000.get_df(tableName=f"{table_P3}", sqlName=f"{table_P3}_2000")
 
-        sf1_2000.print_legend(d1)
+    result = spark.sql(f"SELECT GEO_2000.STUSAB,GEO_2000.COUNTY,GEO_2000.NAME, P003003,P003004,P003005,P003006,P003007,P003008 FROM GEO_2000"
+                       f"INNER JOIN {table_P3}_2000 ON GEO_2000.STUSAB={table_P3}_2000.STUSAB and GEO_2000.LOGRECNO={table_P3}_2000.LOGRECNO "
+                       f"WHERE GEO_2000.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
+    tt = tydoc.tytable()
+    tt.add_head( result.columns )
+    for row in result.collect():
+        tt.add_data(row)
+    tt.render(sys.stdout, format='md')
+    sf1_2000.print_legend(result)
 
-        print(f"Table {table} contains the following variables:")
-        print(sf1_2000.get_table(table).varnames() + '\n')
+
+    # for table in tables:
+    #     print(f"Table {table} just has counts. Here we dump the first 10 records:")
+    #     sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+    #     d1 = spark.sql(f"SELECT * FROM {table}_2000 LIMIT 10")
+
+    #     tt = tydoc.tytable()
+    #     tt.add_head( d1.columns )
+    #     for row in d1.collect():
+    #         tt.add_data(row)
+    #     tt.render(sys.stdout, format='md')
+
+    #     sf1_2000.print_legend(d1)
+
+        #print(f"Table {table} contains the following variables:")
+        #print(sf1_2000.get_table(table).varnames() + '\n')
 
         """
         print(f"Table {table} counts by state and county:")

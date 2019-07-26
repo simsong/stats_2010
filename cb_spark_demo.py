@@ -29,6 +29,7 @@ def smallCellStructure_PersonsSF2000():
     # From a list of tables with integer counts, find those with small counts in 2000 SF1
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
     from string import ascii_uppercase
+    import re
     tables =    [  
                     "P3",       # Race                          [[[Block level tables begin]]]
                     "P4",       # HISP x Race
@@ -76,51 +77,64 @@ def smallCellStructure_PersonsSF2000():
 
     print("Geolevels by state and summary level:")
     sf1_2000.get_df(tableName = GEO_TABLE, sqlName='GEO_2000')
+    
+    #Loop the tables
+    for table in tables:
+        #Just wanted to break after first loop to stop for testing.
+        if table != "P3":
+            break
+        print(f'Current Table: {table}')
+        sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+        regex = re.compile(r'^[P]')
+        current_table_var_names = list( filter(regex.search, list(sf1_2000.get_table(table).varnames())) )
+        current_table_var_string = ",".join(current_table_var_names)
+        print(current_table_var_names)
+        print(current_table_var_string)
+        #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
+        #the output with the tytable which has problems if you have alot of variables.
+        for current_var in current_table_var_names:
+            print(f'Current Table: {table}. Current Var: {current_var}')
+            result = spark.sql(f"SELECT GEO_2000.STUSAB,GEO_2000.COUNTY,GEO_2000.NAME,{current_var} FROM GEO_2000 "
+                        f"INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
+                        f"WHERE GEO_2000.SUMLEV='050' and {current_var} = 0 ORDER BY STUSAB")
+            tt = tydoc.tytable()
+            tt.add_head( result.columns )
+            for row in result.collect():
+                tt.add_data(row)
+            tt.render(sys.stdout, format='md')
+            sf1_2000.print_legend(result)
 
-    # Temp just do P3
-    table_P3 = "P3"
-    sf1_2000.get_df(tableName=f"{table_P3}", sqlName=f"{table_P3}_2000")
-
-    result = spark.sql(f"SELECT GEO_2000.STUSAB,GEO_2000.COUNTY,GEO_2000.NAME, P003003,P003004,P003005,P003006,P003007,P003008 FROM GEO_2000"
-                       f"INNER JOIN {table_P3}_2000 ON GEO_2000.STUSAB={table_P3}_2000.STUSAB and GEO_2000.LOGRECNO={table_P3}_2000.LOGRECNO "
-                       f"WHERE GEO_2000.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
-    tt = tydoc.tytable()
-    tt.add_head( result.columns )
-    for row in result.collect():
-        tt.add_data(row)
-    tt.render(sys.stdout, format='md')
-    sf1_2000.print_legend(result)
 
 
     # for table in tables:
-    #     print(f"Table {table} just has counts. Here we dump the first 10 records:")
-    #     sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
-    #     d1 = spark.sql(f"SELECT * FROM {table}_2000 LIMIT 10")
+#     print(f"Table {table} just has counts. Here we dump the first 10 records:")
+#     sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+#     d1 = spark.sql(f"SELECT * FROM {table}_2000 LIMIT 10")
 
-    #     tt = tydoc.tytable()
-    #     tt.add_head( d1.columns )
-    #     for row in d1.collect():
-    #         tt.add_data(row)
-    #     tt.render(sys.stdout, format='md')
+#     tt = tydoc.tytable()
+#     tt.add_head( d1.columns )
+#     for row in d1.collect():
+#         tt.add_data(row)
+#     tt.render(sys.stdout, format='md')
 
-    #     sf1_2000.print_legend(d1)
+#     sf1_2000.print_legend(d1)
 
-        #print(f"Table {table} contains the following variables:")
-        #print(sf1_2000.get_table(table).varnames() + '\n')
+    #print(f"Table {table} contains the following variables:")
+    #print(sf1_2000.get_table(table).varnames() + '\n')
 
-        """
-        print(f"Table {table} counts by state and county:")
-        res = spark.sql("SELECT GEO_2000.STUSAB,GEO_2000.COUNTY,GEO_2000.NAME,P0020001,P0020002,P0020003,P0020004,P0020005,P0020006 FROM GEO_2000 "
-                        "INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
-                        "WHERE GEO_2000.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
+    """
+    print(f"Table {table} counts by state and county:")
+    res = spark.sql("SELECT GEO_2000.STUSAB,GEO_2000.COUNTY,GEO_2000.NAME,P0020001,P0020002,P0020003,P0020004,P0020005,P0020006 FROM GEO_2000 "
+                    "INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
+                    "WHERE GEO_2000.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
 
-        tt = tydoc.tytable()
-        tt.add_head( res.columns )
-        for row in res.collect():
-            tt.add_data(row)
-        tt.render(sys.stdout, format='md')
-        sf1_2000.print_legend(res)
-        """
+    tt = tydoc.tytable()
+    tt.add_head( res.columns )
+    for row in res.collect():
+        tt.add_data(row)
+    tt.render(sys.stdout, format='md')
+    sf1_2000.print_legend(res)
+    """
 
 def demo():
     # Get a schema object associated with the SF1 for 2010

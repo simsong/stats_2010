@@ -80,7 +80,7 @@ FILE_LINE_PREFIXES = {2000 : {PL94: "uPL",
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary. In some cases, we have just it
 
-SPEC_CSV_FILE     = DOC_DIR + "/{year}/{product}.csv"
+SPEC_CSV_FILE     = DOC_DIR + "/{year}/{product}_philManualEdits.csv"
 CHAPTER6_CSV_FILE = DOC_DIR + "/{year}/{product}_chapter6.csv"
 CHAPTER7_CSV_FILE = DOC_DIR + "/{year}/{product}_chapter7.csv"
 SPEC_FILES = [SPEC_CSV_FILE,

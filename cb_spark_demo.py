@@ -79,8 +79,8 @@ def smallCellStructure_PersonsSF2000():
 
     for table in tables:
         print(f"Table {table} just has counts. Here we dump the first 10 records:")
-        sf1_2000.get_df(tableName="{table}", sqlName='{table}_2000')
-        d1 = spark.sql("SELECT * FROM {table}_2000 LIMIT 10")
+        sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+        d1 = spark.sql(f"SELECT * FROM {table}_2000 LIMIT 10")
         d1.show()
         sf1_2000.print_legend(d1)
 

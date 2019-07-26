@@ -76,11 +76,11 @@ SEGMENT_START_RE = re.compile(r"^File (\d+)")
 TABLE_RE      = re.compile(r"(?P<table>(P|PL|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(?P<title>[A-Z()0-9 ]+)")
 VAR_RE        = re.compile(r"^("
                            r"(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
-                           r"([PH]\d{7,8})|"
-                           r"(PCO\d{7})|"
-                           r"(PCT\d{7,8})|"
+                           r"([PH]\d{6,8})|"
+                           r"(PCO\d{6})|"
+                           r"(PCT\d{6,8})|"
                            r"(PCT\d{3}[A-Z]\d{3})|"
-                           r"(H\d{3}[A-Z]\d{4})|"
+                           r"(H\d{3}[A-Z]\d{3,4})|"
                            r"(P\d{3}[A-Z]\d{3})|"
                            r"(HCT\d{3}\d{4})"
                            r")$")
@@ -310,7 +310,9 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     table           = None
     in_data_dictionary = False
     last_line       = ""
+    #debug = True
 
+    print(f"csv filename: {csv_filename}")
     ### UR1 and SF1 use the same spec
     if product==C.UR1:
         product = C.SF1
@@ -351,7 +353,8 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             cifsn  = new_cifsn
             table  = None
             continue
-        
+       
+        #print(f"Debug is {debug}; cifsn is {cifsn}") 
         # If not yet in a file, check for geoheader line
         if cifsn is False:
             m = GEO_VAR_RE.search(line)
@@ -365,7 +368,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                               width = width,
                               vtype = TYPE_VARCHAR) 
                 if debug:
-                    print(f"Adding variable {v} to geotable")
+                    print(f"Adding variable {v} to geotable {geotable}")
                 geotable.add_variable( v )
 
                 # Add these columns from the set of geo column we are using
@@ -392,7 +395,10 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         # Check for start of a new table, as indicated by table name.
         (new_table_name,new_table_desc) = parse_table_name(line)
 
+        #if not new_table_name:
+        #    print(f"Not new. Table was: {table}")
         if new_table_name:
+            print(f"Discovered new table {table}")
             ### Patch as necessary for missing segment starts
             for mss in MISSING_SEGMENT_STARTS:
                 if mss[C.YEAR]==year and mss[C.PRODUCT] == product and mss[C.TABLE] == new_table_name:
@@ -432,6 +438,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         ### HANDLE ERRORS IN PDF AND OCR
         ###
 
+        #print(f"At mts in missing, table was {table}")
         for mts in MISSING_TABLE_STARTS:
             if mts[C.YEAR]==year and mts[C.PRODUCT] == product and mts[C.VARIABLE] == var_name:
                 table = add_named_table(schema, mts[C.TABLE], mts[C.DESC], linkage_vars, cifsn)
@@ -541,7 +548,9 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             print(f"Ignoring table {table}")
             continue
         if len(table.vars()) <= len(linkage_vars):
-            raise RuntimeError(f"{year} {product} Table {table.name} does not have enough variables (has {len(table.vars())})")
+            print(f"detected table vars: {table.varnames()}")
+            print(f"and linkage_vars {str(linkage_vars)}")
+            raise RuntimeError(f"{year} {product} Table {table.name} does not have enough variables (has {len(table.vars())}, vs # expected links {len(linkage_vars)})")
 
     if debug:
         print("The following geo columns were not parsed:")
@@ -628,7 +637,20 @@ class DecennialData:
             except ValueError as e:
                 if debug:
                     print("bad filename:",path)
-            
+        elif filename.endswith(".uf1"):
+            state = filename[0:2]
+            try:
+                if len(filename)==9 and filename[2:5]=='geo':
+                    print(f"Found file {filename} ending with .uf1 & path {path}")
+                    self.files.append({'path':path,
+                                       C.STATE:state,
+                                       C.CIFSN:C.CIFSN_GEO,
+                                       C.YEAR:2000,         # Hacky hard-code..
+                                       C.PRODUCT:C.SF1})    # Product seems to be u/r update to sf1. Not sure if this will work
+            except ValueError as e:
+                if debug:
+                    print("bad filename:",path)
+           
     def unique_selector(self,selector):
         """Return the unique values for a given selector"""
         return set( [obj[selector] for obj in self.files] )

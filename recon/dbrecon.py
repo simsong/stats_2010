@@ -178,21 +178,21 @@ def final_pop(state_abbr,county,tract):
     return count
 
 def db_lock(state_abbr, county, tract):
-    DB.csfr(f"UPDATE tracts set hostlock=%s where state=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE tracts set hostlock=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
 
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL]
-    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where state=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
     
 def db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
-    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
@@ -202,6 +202,7 @@ def is_db_done(what, state_abbr, county, tract):
     return len(row)==1
 
 def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
+    raise RuntimeError("don't do at the moment")
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
@@ -219,7 +220,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             print(f"{lpfilenamegz} exists")
         if lp_end is None:
             logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set lp_end=%s where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set lp_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract),quiet=quiet)
     else:
         if not quiet:
@@ -233,7 +234,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
     if dpath_exists(solfilenamegz):
         if sol_end is None:
             logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set sol_end=%s where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set sol_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
         if check_final_pop:
@@ -241,12 +242,12 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             if final_pop_db!=final_pop_file:
                 logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
                                 f"for {state_abbr} {county} {tract}. Correcting")
-                DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
+                DB.csfr("UPDATE tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
     else:
         if sol_end is not None:
             logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
-            DB.csfr("UPDATE tracts set sol_start=NULL,sol_end=NULL,final_pop=NULL where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set sol_start=NULL,sol_end=NULL,final_pop=NULL where stusab=%s and county=%s and tract=%s",
                     (state,county,tract),quiet=quiet)
 
 ################################################################
@@ -480,6 +481,7 @@ def tracts_for_state_county(*,state_abbr,county):
 ################################################################
 
 MIN_LP_SIZE = 100        # smaller than this, the file must be invalid
+MIN_SOL_SIZE = 1000      # smaller than this, the file is invalid
 def lpfile_properly_terminated(fname):
     #
     # Small files are not valid LP files
@@ -573,7 +575,7 @@ def argparse_add_logging(parser):
                         "Write output to temp file and compare with correct file.")
 
 
-def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None):
+def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None,error_alert=True):
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
 
@@ -617,15 +619,16 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     dfxml_handler   = dfxml_writer.logHandler()
     logger.addHandler(dfxml_handler)
 
-    # Log exit codes
-    atexit.register(logging_exit)
+    if error_alert:
+        # Log exit codes
+        atexit.register(logging_exit)
 
     # Finally, indicate that we have started up
     logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
         
-def setup_logging_and_get_config(args,*,prefix=''):
+def setup_logging_and_get_config(*,args,**kwargs):
     config = get_config(filename=args.config)
-    setup_logging(config=config,prefix=prefix,args=args)
+    setup_logging(config=config,**kwargs)
     return 
 
 def add_dfxml_tag(tag,text=None,attrs={}):
@@ -634,8 +637,8 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
-            (hostname(), error, sys.argv[0], filename, last_value))
+    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)", (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
+    print("LOG ERROR:",error,file=sys.stderr)
 
 def logging_exit():
     if hasattr(sys,'last_value'):

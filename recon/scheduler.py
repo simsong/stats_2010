@@ -94,7 +94,7 @@ def clean():
                 (state_abbr,county,tract) = m
                 what = "sol" if "sol" in path else "lp"
                 DB.csfr(f"UPDATE tracts SET {what}_start=NULL,{what}_end=NULL "
-                        "where state=%s and county=%s and tract=%s",
+                        "where stusab=%s and county=%s and tract=%s",
                         (state_abbr, county, tract))
                 os.unlink(path)
 
@@ -315,7 +315,7 @@ def run():
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
             lp_limit = 1
-            make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
+            make_lps = DB.csfr("SELECT stusab,county,count(*) FROM tracts "
                                "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
                                "order BY RAND() DESC LIMIT %s", (lp_limit,))
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
@@ -349,7 +349,7 @@ def run():
             limit_sol = max(needed_sol, max_sol_launch)
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 continue
-            solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
+            solve_lps = DB.csfr("SELECT stusab,county,tract FROM tracts "
                                 "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) and (error IS NULL) "
                                 "ORDER BY RAND() LIMIT %s",(limit_sol,))
             if (len(solve_lps)==0 and needed_sol>0) or not quiet:
@@ -370,12 +370,12 @@ def run():
 def none_running(hostname=None):
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
     print("LP in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL " + hostlock):
+    for (state,county,tract) in  DB.csfr("SELECT stusab,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL " + hostlock):
         print(state,county,tract)
     DB.csfr("UPDATE tracts set lp_start=NULL WHERE lp_start IS NOT NULL and lp_end is NULL " + hostlock)
         
     print("SOL in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
+    for (state,county,tract) in  DB.csfr("SELECT stusab,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
         print(state,county,tract)
     DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL " + hostlock)
     print("Resume...")
@@ -432,7 +432,7 @@ if __name__=="__main__":
     parser.add_argument("--county", help="county for rescanning")
     
     args   = parser.parse_args()
-    config = dbrecon.setup_logging_and_get_config(args,prefix='sch_')
+    config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
     DB.quiet = True
 
     if args.testdb:

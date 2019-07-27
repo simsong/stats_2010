@@ -1,4 +1,4 @@
--- MySQL dump 10.13  Distrib 5.6.44, for Linux (x86_64)
+-- MySQL dump 10.13  Distrib 5.6.43, for Linux (x86_64)
 --
 -- Host: mysql.simson.net    Database: recon
 -- ------------------------------------------------------
@@ -14,24 +14,6 @@
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
-
---
--- Table structure for table `blocks`
---
-
-DROP TABLE IF EXISTS `blocks`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `blocks` (
-  `STUSAB` varchar(2) NOT NULL,
-  `STATE` varchar(2) NOT NULL,
-  `LOGRECNO` varchar(7) NOT NULL,
-  `COUNTY` varchar(3) NOT NULL,
-  `TRACT` varchar(6) NOT NULL,
-  `BLOCK` varchar(4) NOT NULL,
-  PRIMARY KEY (`STUSAB`,`COUNTY`,`TRACT`,`BLOCK`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `errors`
@@ -55,7 +37,7 @@ CREATE TABLE `errors` (
   KEY `host` (`host`(255)),
   KEY `file` (`file`),
   KEY `line` (`line`)
-) ENGINE=InnoDB AUTO_INCREMENT=386 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=418 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -67,7 +49,7 @@ DROP TABLE IF EXISTS `geo`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `geo` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `STUSAB` varchar(2) NOT NULL,
+  `STUSAB` char(2) NOT NULL,
   `SUMLEV` varchar(3) NOT NULL,
   `LOGRECNO` varchar(7) NOT NULL,
   `STATE` varchar(2) NOT NULL,
@@ -84,9 +66,62 @@ CREATE TABLE `geo` (
   KEY `TRACT` (`TRACT`),
   KEY `BLOCK` (`BLOCK`),
   KEY `NAME` (`NAME`),
-  KEY `POP100` (`POP100`)
-) ENGINE=InnoDB AUTO_INCREMENT=193206 DEFAULT CHARSET=utf8;
+  KEY `POP100` (`POP100`),
+  KEY `SUMLEV` (`SUMLEV`),
+  KEY `STATE_2` (`STATE`,`COUNTY`,`TRACT`,`BLOCK`)
+) ENGINE=InnoDB AUTO_INCREMENT=13151296 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Temporary table structure for view `geo_blocks`
+--
+
+DROP TABLE IF EXISTS `geo_blocks`;
+/*!50001 DROP VIEW IF EXISTS `geo_blocks`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+/*!50001 CREATE VIEW `geo_blocks` AS SELECT 
+ 1 AS `geocode`,
+ 1 AS `state`,
+ 1 AS `county`,
+ 1 AS `tract`,
+ 1 AS `block`,
+ 1 AS `name`,
+ 1 AS `pop100`*/;
+SET character_set_client = @saved_cs_client;
+
+--
+-- Temporary table structure for view `geo_counties`
+--
+
+DROP TABLE IF EXISTS `geo_counties`;
+/*!50001 DROP VIEW IF EXISTS `geo_counties`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+/*!50001 CREATE VIEW `geo_counties` AS SELECT 
+ 1 AS `geocode`,
+ 1 AS `state`,
+ 1 AS `county`,
+ 1 AS `name`,
+ 1 AS `pop100`*/;
+SET character_set_client = @saved_cs_client;
+
+--
+-- Temporary table structure for view `geo_tracts`
+--
+
+DROP TABLE IF EXISTS `geo_tracts`;
+/*!50001 DROP VIEW IF EXISTS `geo_tracts`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+/*!50001 CREATE VIEW `geo_tracts` AS SELECT 
+ 1 AS `geocode`,
+ 1 AS `state`,
+ 1 AS `county`,
+ 1 AS `tract`,
+ 1 AS `name`,
+ 1 AS `pop100`*/;
+SET character_set_client = @saved_cs_client;
 
 --
 -- Table structure for table `glog`
@@ -146,9 +181,11 @@ DROP TABLE IF EXISTS `tracts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `tracts` (
-  `state` varchar(2) NOT NULL,
-  `county` varchar(3) NOT NULL,
-  `tract` varchar(6) NOT NULL,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `stusab` varchar(2) NOT NULL,
+  `state` char(2) NOT NULL,
+  `county` char(3) NOT NULL,
+  `tract` char(6) NOT NULL,
   `lp_start` datetime DEFAULT NULL,
   `lp_end` datetime DEFAULT NULL,
   `lp_gb` int(6) DEFAULT NULL,
@@ -171,15 +208,105 @@ CREATE TABLE `tracts` (
   `hostlock` varchar(64) DEFAULT NULL,
   `error` varchar(64) DEFAULT NULL,
   `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`state`,`county`,`tract`),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `state` (`stusab`,`county`,`tract`),
   KEY `lp_start` (`lp_start`),
   KEY `lp_end` (`lp_end`),
   KEY `sol_start` (`sol_start`),
   KEY `sol_end` (`sol_end`),
   KEY `final_pop` (`final_pop`),
   KEY `hostlock` (`hostlock`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=73058 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Temporary table structure for view `tracts_geostatus`
+--
+
+DROP TABLE IF EXISTS `tracts_geostatus`;
+/*!50001 DROP VIEW IF EXISTS `tracts_geostatus`*/;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+/*!50001 CREATE VIEW `tracts_geostatus` AS SELECT 
+ 1 AS `geocode`,
+ 1 AS `state`,
+ 1 AS `county`,
+ 1 AS `tract`,
+ 1 AS `lp_end`,
+ 1 AS `sol_end`*/;
+SET character_set_client = @saved_cs_client;
+
+--
+-- Final view structure for view `geo_blocks`
+--
+
+/*!50001 DROP VIEW IF EXISTS `geo_blocks`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = latin1 */;
+/*!50001 SET character_set_results     = latin1 */;
+/*!50001 SET collation_connection      = latin1_swedish_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
+/*!50001 VIEW `geo_blocks` AS select concat(`geo`.`STATE`,`geo`.`COUNTY`,`geo`.`TRACT`,`geo`.`BLOCK`) AS `geocode`,`geo`.`STATE` AS `state`,`geo`.`COUNTY` AS `county`,`geo`.`TRACT` AS `tract`,`geo`.`BLOCK` AS `block`,`geo`.`NAME` AS `name`,`geo`.`POP100` AS `pop100` from `geo` where (`geo`.`SUMLEV` = '101') */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
+-- Final view structure for view `geo_counties`
+--
+
+/*!50001 DROP VIEW IF EXISTS `geo_counties`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = latin1 */;
+/*!50001 SET character_set_results     = latin1 */;
+/*!50001 SET collation_connection      = latin1_swedish_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
+/*!50001 VIEW `geo_counties` AS select concat(`geo`.`STATE`,`geo`.`COUNTY`) AS `geocode`,`geo`.`STATE` AS `state`,`geo`.`COUNTY` AS `county`,`geo`.`NAME` AS `name`,`geo`.`POP100` AS `pop100` from `geo` where (`geo`.`SUMLEV` = '050') */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
+-- Final view structure for view `geo_tracts`
+--
+
+/*!50001 DROP VIEW IF EXISTS `geo_tracts`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = latin1 */;
+/*!50001 SET character_set_results     = latin1 */;
+/*!50001 SET collation_connection      = latin1_swedish_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
+/*!50001 VIEW `geo_tracts` AS select concat(`geo`.`STATE`,`geo`.`COUNTY`,`geo`.`TRACT`) AS `geocode`,`geo`.`STATE` AS `state`,`geo`.`COUNTY` AS `county`,`geo`.`TRACT` AS `tract`,`geo`.`NAME` AS `name`,`geo`.`POP100` AS `pop100` from `geo` where (`geo`.`SUMLEV` = '140') */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+
+--
+-- Final view structure for view `tracts_geostatus`
+--
+
+/*!50001 DROP VIEW IF EXISTS `tracts_geostatus`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = latin1 */;
+/*!50001 SET character_set_results     = latin1 */;
+/*!50001 SET collation_connection      = latin1_swedish_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
+/*!50001 VIEW `tracts_geostatus` AS select concat(`tracts`.`state`,`tracts`.`county`,`tracts`.`tract`) AS `geocode`,`tracts`.`state` AS `state`,`tracts`.`county` AS `county`,`tracts`.`tract` AS `tract`,`tracts`.`lp_end` AS `lp_end`,`tracts`.`sol_end` AS `sol_end` from `tracts` */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -190,4 +317,4 @@ CREATE TABLE `tracts` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-07-16 17:09:54
+-- Dump completed on 2019-07-18 16:35:45

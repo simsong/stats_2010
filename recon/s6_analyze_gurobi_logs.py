@@ -62,7 +62,7 @@ if __name__=="__main__":
     parser.add_argument("roots", help="directories to scan for logfiles", nargs="*")
 
     args       = parser.parse_args()
-    config     = dbrecon.setup_logging_and_get_config(args,prefix="06analyze")
+    config     = dbrecon.setup_logging_and_get_config(args=args,prefix="06analyze")
 
     if args.clear or args.schema:
         glog = GurobiLogfileParser("tests/model_04001944300.log")

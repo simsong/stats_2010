@@ -20,7 +20,7 @@ from dbrecon import dopen,dpath_expand,dmakedirs,DB
 from ctools.timer import Timer
 
 GEO_LAYOUT_FILENAME="$SRC/layouts/geo_layout.txt"
-
+TRANSACTION_RECORDS = 20
 def fields_str(field_count,record_count=1):
     fields = "(" + ",".join(['%s']*field_count) + ")"
     fields_str = ",".join([fields] * record_count)
@@ -80,6 +80,7 @@ def make_county_list(state_abbr:str):
 
     vals = []
     count = 0
+    total_count = 0
     for line in sf1file:
         # convert the column-specified line to a dict
         dataline = collections.OrderedDict(list(zip(names,[line[c[0]:c[1]] for c in colspecs])))
@@ -95,13 +96,16 @@ def make_county_list(state_abbr:str):
         if (dataline['SUMLEV'] in ['040', '050', '140', '750', '101']) and (dataline['GEOCOMP']=='00'):
             vals   += [dataline[field].strip() for field in DB_FIELDS_ARRAY]
             count  += 1
-            if count == 20:
+            total_count += 1
+            if count >= TRANSACTION_RECORDS:
                 c.execute("INSERT INTO geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
                 vals = []
                 count = 0
 
     # Finish up database transaction
-    c.execute("INSERT INTO geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+    print("Total: {}".format(total_count))
+    if count>0:
+        c.execute("INSERT INTO geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
     db.commit()
     sf1file.close()
     if args.csv:
@@ -120,7 +124,7 @@ if __name__=="__main__":
     parser.add_argument("state_abbr", help="States to process. Say 'all' for all", nargs='*')
     dbrecon.argparse_add_logging(parser)
     args     = parser.parse_args()
-    config   = dbrecon.setup_logging_and_get_config(args,prefix="01mak")
+    config   = dbrecon.setup_logging_and_get_config(args=args,prefix="01mak")
 
     args.csv = not args.nocsv
 
@@ -144,7 +148,7 @@ if __name__=="__main__":
 
     # Generate the CSV files. This may be parallelized in the future
     for state_abbr in states:
-        with Timer() as timer:
+        with Timer() as t:
             make_county_list(state_abbr)
 
     print("Made geofiles for: {}".format(" ".join(states)))

@@ -89,7 +89,7 @@ if __name__=="__main__":
     parser.add_argument("--j1", help="Specify number of counties to create CSV files at once", default=1, type=int)
 
     args       = parser.parse_args()
-    config     = dbrecon.setup_logging_and_get_config(args,prefix="04run")
+    config     = dbrecon.setup_logging_and_get_config(args=args,prefix="04run")
 
     # Get a list of the state/county pairs to make
     pairs = []

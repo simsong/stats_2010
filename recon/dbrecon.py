@@ -198,7 +198,7 @@ def db_done(what, state_abbr, county, tract):
     
 def is_db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL]
-    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE state=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
+    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
     return len(row)==1
 
 def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
@@ -208,7 +208,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
     
     rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
-                       "FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",
+                       "FROM tracts where stusab=%s and county=%s and tract=%s LIMIT 1",
                        (state_abbr,county,tract),quiet=quiet)
     if len(rows)!=1:
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
@@ -228,7 +228,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
         if (lp_start is not None) or (lp_end is not None):
             logging.warning(f"{lpfilenamegz} does not exist, but the database says it does. Deleting")
             DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL "
-                        "WHERE state=%s and county=%s and tract=%s",
+                        "WHERE stusab=%s and county=%s and tract=%s",
                         (state_abbr,county,tract),quiet=quiet)
             
     if dpath_exists(solfilenamegz):
@@ -473,7 +473,7 @@ def counties_for_state(state_abbr):
 
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr("select tract from tracts where state=%s and county=%s",(state_abbr,county))
+    rows = DB.csfr("select tract from tracts where stusab=%s and county=%s",(state_abbr,county))
     return [row[0] for row in rows]
 
 ################################################################

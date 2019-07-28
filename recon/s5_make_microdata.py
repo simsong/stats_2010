@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 #
-# Read the processed SF1 dat and syntheize the LP file that will be input to the optimizer.
-#
-# When all solutions are present, creates the CSV file
+"""
+Make the microdata on a county-by-county basis. 
+"""
 
 import csv
 import dbrecon

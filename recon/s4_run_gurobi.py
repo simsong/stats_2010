@@ -58,25 +58,21 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
         raise RuntimeError("This must be modified to allow Gurobi to read files from S3 using the stdin hack.")
 
     # make sure input file exists and is valid
-    if not os.path.exists(lpgz_filename):
-        raise FileNotFoundError("File does not exist: {}".format(lpgz_filename))
-
-    if dpath.dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
-        # lp file is too small. Delete it and remove it from the database
-        logging.warning("File {} is too small ({}). Removing".format(lpgz_filename,os.path.getsize(lpgz_filename)))
-        os.unlink(lpgz_filename)
-        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where stusab=%s and county=%s and tract=%s',
+    if not os.path.exists(lpgz_filename) or dbrecon.dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
+        if os.path.exists(lpgz_filename):
+            logging.warning("File {} is too small ({}). Removing and updating database.".format(lpgz_filename,os.path.getsize(lpgz_filename)))
+            os.unlink(lpgz_filename)
+        else:
+            logging.warning("File does not exist: {}. Updating database.".format(lpgz_filename))
+        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL,error=NULL where stusab=%s and county=%s and tract=%s',
                         (state_abbr,county,tract))
         return
 
-    # Make sure output does not exist. If it exists and it is too small, delete it, otherwise give an error
+    # Make sure output does not exist. If it exists, delete it, otherwise give an error
     for fn in [sol_filename,solgz_filename]:
         if dbrecon.dpath_exists(fn):
-            if dpath.dgetsize(fn) < dbrecon.MIN_SOL_SIZE:
-                logging.warning("File {} exists but is too small ({}). Removing.".format(fn,dpath.dgetsize(fn)))
-                dpath.unlink(fn)
-            else:
-                raise FileExistsError(fn)
+            logging.warning("File {} exists but is too small ({}). Removing.".format(fn,dbrecon.dgetsize(fn)))
+            dbrecon.dpath_unlink(fn)
 
     # make sure output directory exists
     dbrecon.dmakedirs( os.path.dirname( sol_filename)) 
@@ -157,7 +153,7 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
 
         # Get the final pop
         vars.append("final_pop")
-        vals.append(dbrecon.final_pop(state_abbr,county,tract))
+        vals.append(dbrecon.get_final_pop_from_sol(state_abbr,county,tract))
 
         # Get the sol_gb
         vars.append("sol_gb")

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 #
-"""
-scheduler.py:
+"""scheduler.py:
 
-Synthesize the LP files and run Gurobi on a tract-by-tract basis. 
+The two time-consuming parts of the reconstruction are building and
+solving the LP files. This schedules the jobs on multiple machines
+using a MySQL database for coordination.
+
 """
 
 import copy
@@ -57,12 +59,6 @@ def tracts_with_files(s, c, w):
     return dbrecon.tracts_with_files(s, c, w)
 
 from dbrecon import filename_mtime,final_pop
-def init_sct(c,state_abbr,county,tract):
-    lpfilename = dbrecon.find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
-    lptime = filename_mtime( lpfilename )
-    soltime = filename_mtime( dbrecon.SOLFILENAME(state_abbr=state_abbr,county=county, tract=tract) )
-    DB.csfr("INSERT INTO tracts (stusab,county,tract,lp_end,sol_end,final_pop) values (%s,%s,%s,%s,%s,%s)",
-            (state_abbr,county,tract,lptime,soltime, final_pop(state_abbr,county,tract)))
 
 def rescan():
     states = [args.state] if args.state else dbrecon.all_state_abbrs()
@@ -97,16 +93,6 @@ def clean():
                         "where stusab=%s and county=%s and tract=%s",
                         (state_abbr, county, tract))
                 os.unlink(path)
-
-def init():
-    raise RuntimeError("Don't run init anymore")
-    db = dbrecon.DB()
-    db.create_schema(open(SCHEMA_FILENAME).read())
-    for state_abbr in dbrecon.all_state_abbrs():
-        for county in dbrecon.counties_for_state(state_abbr=state_abbr):
-            for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
-                init_sct(c,state_abbr,county,tract)
-        db.commit()
 
                       
 class SCT:
@@ -319,7 +305,8 @@ def run():
                                "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
                                "order BY RAND() DESC LIMIT %s", (lp_limit,))
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
-                logging.warning(f"needed_lp: {needed_lp} but search produced 0")
+                logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
+                last_lp_launch = time.time()
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
@@ -416,7 +403,6 @@ if __name__=="__main__":
                              description="Maintains a database of reconstruction and schedule "
                              "next work if the CPU load and memory use is not too high." ) 
     dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--init",    help="Clear database and learn the current configuration", action='store_true')
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
     parser.add_argument("--rescan", help="scan all of the files and update the database if we find any missing LP or Solution files",
                         action='store_true')
@@ -440,8 +426,6 @@ if __name__=="__main__":
         rows = DB.csfr("show tables")
         for row in rows:
             print(row)
-    elif args.init:
-        init()
     elif args.rescan:
         rescan()
     elif args.clean:

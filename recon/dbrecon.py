@@ -105,7 +105,10 @@ class DB:
                 try:
                     logging.info(f"PID{os.getpid()}: {cmd} {vals}")
                     if quiet==False:
-                        print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
+                        try:
+                            print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
+                        except BlockingIOError as e:
+                            pass
                     c.execute(cmd,vals)
                     if rowcount is not None:
                         if c.rowcount!=rowcount:
@@ -163,7 +166,7 @@ def filename_mtime(fname):
     except FileNotFoundError:
         return None
 
-def final_pop(state_abbr,county,tract):
+def get_final_pop_from_sol(state_abbr,county,tract):
     count = 0
     sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     with dopen(sol_filenamegz) as f:
@@ -238,7 +241,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
                     (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
         if check_final_pop:
-            final_pop_file = final_pop(state_abbr,county,tract)
+            final_pop_file = get_final_pop_from_sol(state_abbr,county,tract)
             if final_pop_db!=final_pop_file:
                 logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
                                 f"for {state_abbr} {county} {tract}. Correcting")
@@ -407,6 +410,8 @@ def config_reload():
     config_file = ConfigParser()
     config_file.read(config_path)
     # Add our source directory to the paths
+    if SECTION_PATHS not in config_file:
+        config_file.add_section(SECTION_PATHS)
     config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
     return config_file
 

@@ -448,7 +448,7 @@ class LPTractBuilder:
         f.write('End\n')
         f.close()
         dbrecon.db_done('lp',state_abbr, county, tract)
-        dbrecon.DB.csfr("UPDATE tracts set lp_gb=%s,hostlock=NULL,error=NULL where stusab=%s and county=%s and tract=%s",
+        dbrecon.DB.csfr("UPDATE tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
                         (dbrecon.maxrss()//GB,state_abbr, county, tract), rowcount=1)
 
         if args.mem:
@@ -480,8 +480,8 @@ def build_tract_lp_tuple(tracttuple):
         lptb.build_tract_lp(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
         dbrecon.check_stop()
     except MemoryError as e:
-        dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL,error=%s where stusab=%s and county=%s and tract=%s",
-                        (str(e),state_abbr, county, tract))
+        dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL where stusab=%s and county=%s and tract=%s",
+                        (state_abbr, county, tract))
         logging.error(f"MEMORY ERROR in {state_abbr} {county} {tract}: {e}")
 
 """Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""

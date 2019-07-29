@@ -58,8 +58,6 @@ def county_csv_exists(state_abbr,county):
 def tracts_with_files(s, c, w):
     return dbrecon.tracts_with_files(s, c, w)
 
-from dbrecon import filename_mtime,final_pop
-
 def rescan():
     states = [args.state] if args.state else dbrecon.all_state_abbrs()
     for state_abbr in states:
@@ -236,6 +234,12 @@ def run():
         dbrecon.config_reload()
         free_mem = report_load_memory()
 
+        # Are we done yet?
+        remain = dbrecon.DB.csfr("select count(*) from tracts where sol_end is null",quiet=True)
+        if remain[0][0]==0:
+            print("All done!")
+            break
+
         # See if any of the processes have finished
         for p in copy.copy(running):
             if p.poll() is not None:
@@ -302,7 +306,7 @@ def run():
                 continue
             lp_limit = 1
             make_lps = DB.csfr("SELECT stusab,county,count(*) FROM tracts "
-                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
+                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) GROUP BY state,county "
                                "order BY RAND() DESC LIMIT %s", (lp_limit,))
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
@@ -337,7 +341,7 @@ def run():
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 continue
             solve_lps = DB.csfr("SELECT stusab,county,tract FROM tracts "
-                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) and (error IS NULL) "
+                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) "
                                 "ORDER BY RAND() LIMIT %s",(limit_sol,))
             if (len(solve_lps)==0 and needed_sol>0) or not quiet:
                 print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")

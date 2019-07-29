@@ -166,22 +166,28 @@ def filename_mtime(fname):
     except FileNotFoundError:
         return None
 
-def get_final_pop_from_sol(state_abbr,county,tract):
+def get_final_pop_for_gzfile(sol_filenamegz):
     count = 0
-    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     with dopen(sol_filenamegz) as f:
         for line in f:
             if line.startswith('C') and line.strip().endswith(" 1"):
                 count += 1
+    return count
+
+def get_final_pop_from_sol(state_abbr,county,tract,delete=True):
+    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
-        abort()
-        dpath_unlink(sol_filenamegz)
+        if delete:
+            dpath_unlink(sol_filenamegz)
+        DB.csfr("UPDATE tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
+                (state_abbr,county,tract))
         return None
     return count
 
 def db_lock(state_abbr, county, tract):
-    DB.csfr(f"UPDATE tracts set hostlock=%s where stusab=%s and county=%s and tract=%s",
+    DB.csfr("UPDATE tracts set hostlock=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
@@ -827,3 +833,9 @@ def mem_info(what,df,dump=True):
         df.info(verbose=False,max_cols=160,memory_usage='deep',null_counts=True)
     print("elapsed time at {}: {:.2f}".format(what,time.time() - start_time))
     print("==============================")
+
+
+if __name__=="__main__":
+    final_pop = get_final_pop_for_gzfile(sys.argv[1])
+    print(final_pop)
+

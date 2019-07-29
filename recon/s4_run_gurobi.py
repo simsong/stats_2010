@@ -64,7 +64,7 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
             os.unlink(lpgz_filename)
         else:
             logging.warning("File does not exist: {}. Updating database.".format(lpgz_filename))
-        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL,error=NULL where stusab=%s and county=%s and tract=%s',
+        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where stusab=%s and county=%s and tract=%s',
                         (state_abbr,county,tract))
         return
 
@@ -152,8 +152,11 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
                 pass
 
         # Get the final pop
+        final_pop = dbrecon.get_final_pop_from_sol(state_abbr,county,tract,delete=False);
+        if final_pop==0:
+            raise RuntimeError("final pop cannot be 0")
         vars.append("final_pop")
-        vals.append(dbrecon.get_final_pop_from_sol(state_abbr,county,tract))
+        vals.append(final_pop)
 
         # Get the sol_gb
         vars.append("sol_gb")
@@ -197,12 +200,15 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
             dbrecon.dpath_unlink(lpgz_filename)
             dbrecon.rescan_files(state_abbr, county, tract)
         else:
-            dbrecon.DB.csfr('UPDATE tracts set error=%s where stusab=%s and county=%s and tract=%s',
+            dbrecon.DB.csfr('INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                             (str(e),state_abbr,county,tract))
+            
+            raise e;
     except InfeasibleError as e:
         logging.error(f"Infeasible in {state_abbr} {county} {tract}")
-        dbrecon.DB.csfr('UPDATE tracts set error="infeasible" where stusab=%s and county=%s and tract=%s',
+        dbrecon.DB.csfr('INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                         (str(e),state_abbr,county,tract))
+        raise e
     except Exception as e:
         logging.error(f"Unknown error: {e}")
         

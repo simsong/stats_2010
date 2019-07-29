@@ -16,6 +16,21 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
+-- Table structure for table `addme`
+--
+
+DROP TABLE IF EXISTS `addme`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `addme` (
+  `stusab` varchar(2) DEFAULT NULL,
+  `state` varchar(2) DEFAULT NULL,
+  `county` varchar(3) DEFAULT NULL,
+  `tract` varchar(6) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `errors`
 --
 
@@ -32,12 +47,16 @@ CREATE TABLE `errors` (
   `line` int(11) DEFAULT NULL,
   `stack` mediumtext,
   `last_value` mediumtext,
+  `stusab` varchar(2) DEFAULT NULL,
+  `state` varchar(2) DEFAULT NULL,
+  `county` varchar(3) DEFAULT NULL,
+  `tract` varchar(6) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `t` (`t`),
   KEY `host` (`host`(255)),
   KEY `file` (`file`),
   KEY `line` (`line`)
-) ENGINE=InnoDB AUTO_INCREMENT=442 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=456 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -170,7 +189,7 @@ CREATE TABLE `sysload` (
   KEY `min5` (`min5`),
   KEY `min15` (`min15`),
   KEY `freegb` (`freegb`)
-) ENGINE=InnoDB AUTO_INCREMENT=489237 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=490218 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -202,21 +221,24 @@ CREATE TABLE `tracts` (
   `NumIntVars` int(11) DEFAULT NULL,
   `MIPGap` float DEFAULT NULL,
   `Runtime` float DEFAULT NULL,
+  `Nodes` int(11) DEFAULT NULL,
   `IterCount` float DEFAULT NULL,
   `BarIterCount` float DEFAULT NULL,
   `isMIP` int(11) DEFAULT NULL,
   `hostlock` varchar(64) DEFAULT NULL,
-  `error` varchar(64) DEFAULT NULL,
+  `PID` int(11) DEFAULT NULL,
   `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `state` (`stusab`,`county`,`tract`),
+  UNIQUE KEY `state_2` (`state`,`county`,`tract`),
   KEY `lp_start` (`lp_start`),
   KEY `lp_end` (`lp_end`),
   KEY `sol_start` (`sol_start`),
   KEY `sol_end` (`sol_end`),
   KEY `final_pop` (`final_pop`),
-  KEY `hostlock` (`hostlock`)
-) ENGINE=InnoDB AUTO_INCREMENT=73058 DEFAULT CHARSET=utf8;
+  KEY `hostlock` (`hostlock`),
+  KEY `PID` (`PID`)
+) ENGINE=InnoDB AUTO_INCREMENT=74081 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -317,4 +339,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-07-27 18:43:04
+-- Dump completed on 2019-07-29  0:05:58

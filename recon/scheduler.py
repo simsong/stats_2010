@@ -230,6 +230,9 @@ def run():
             else:
                 print(f"UNKNOWN COMMAND: '{command}'.  TRY HALT, STOP, PS, LIST, UPTIME, NOISY, QUIET")
 
+        # Clean database if necessary
+        dbrecon.db_clean()
+
         # Report system usage if necessary
         dbrecon.config_reload()
         free_mem = report_load_memory()

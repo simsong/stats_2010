@@ -51,16 +51,22 @@ def glog_scan_root(rootdir):
                 DB.csfr(cmd=cmd, vals=vals, quiet=True)
                 print(fname)
 
+def final_pop_scan_sct(sct):
+    (stusab,county,tract) = sct
+    try:
+        final_pop = dbrecon.get_final_pop_from_sol(stusab, county, tract)
+    except FileNotFoundError:
+        print(f"{stusab} {county} {tract} has no solution. Removing")
+        DB.csfr("UPDATE tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
+    else:
+        print(f"{stusab} {county} {tract} = {final_pop}")
+        DB.csfr("UPDATE tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",(final_pop,stusab,county,tract))
+
 def final_pop_scan():
+    """This should be parallelized"""
     rows = DB.csfr("SELECT stusab, county, tract from tracts where final_pop is null")
-    for (stusab,county,tract) in rows:
-        try:
-            final_pop = dbrecon.get_final_pop_from_sol(stusab, county, tract)
-        except FileNotFoundError:
-            print(f"{stusab} {county} {tract} has no solution. Removing")
-            DB.csfr("UPDATE tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
-        else:
-            DB.csfr("UPDATE tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",(final_pop,stusab,county,tract))
+    for row in rows:
+        final_pop_scan_sct(row)
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
@@ -74,6 +80,7 @@ if __name__=="__main__":
     parser.add_argument("--final_pop", help="Update final_pop in the tracts database for every tract that doesn't have final pop set", action='store_true')
     parser.add_argument("--validate", help="Show those tracts where final_pop != pop100", action='store_true')
     parser.add_argument("--rm", help="Remove the bad ones", action='store_true')
+    parser.add_argument("--clean", help="Clear hostlock for this host if process is not live", action='store_true')
 
     args       = parser.parse_args()
     config     = dbrecon.setup_logging_and_get_config(args=args,prefix="06analyze")
@@ -90,16 +97,20 @@ if __name__=="__main__":
         final_pop_scan()
         exit(0)
 
+    if args.clean:
+        dbrecon.db_clean()
+        exit(0)
+
     if args.validate:
         bad = DB.csfr("SELECT t.stusab,t.county,t.tract,t.final_pop,g.pop100 FROM tracts t LEFT JOIN geo g "
                       "ON t.state=g.state AND t.county=g.county AND t.tract=g.tract WHERE g.sumlev=140 AND t.final_pop != g.pop100")
         for (stusab,county,tract,final_pop,pop100) in bad:
             print(f"{stusab} {county} {tract} {final_pop} != {pop100}")
             if args.rm:
-                DB.csfr("UPDATE tracts set lp_start=Null,lp_end=null,sol_start=null,sol_end=null,hostlock=null where stusab=%s and county=%s and tract=%s",
+                DB.csfr("UPDATE tracts set lp_start=Null,lp_end=null,sol_start=null,sol_end=null,hostlock=null,final_pop=null where stusab=%s and county=%s and tract=%s",
                         (stusab,county,tract))
-                dbrecon.dpath_unlink(LPFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))
-                dbrecon.dpath_unlink(SOLFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))
+                dbrecon.dpath_unlink(dbrecon.LPFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))
+                dbrecon.dpath_unlink(dbrecon.SOLFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))
 
     if args.glog:
         for root in args.roots:

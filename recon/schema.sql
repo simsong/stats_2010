@@ -56,7 +56,7 @@ CREATE TABLE `errors` (
   KEY `host` (`host`(255)),
   KEY `file` (`file`),
   KEY `line` (`line`)
-) ENGINE=InnoDB AUTO_INCREMENT=456 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=473 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -189,7 +189,7 @@ CREATE TABLE `sysload` (
   KEY `min5` (`min5`),
   KEY `min15` (`min15`),
   KEY `freegb` (`freegb`)
-) ENGINE=InnoDB AUTO_INCREMENT=490218 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=490435 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -226,7 +226,7 @@ CREATE TABLE `tracts` (
   `BarIterCount` float DEFAULT NULL,
   `isMIP` int(11) DEFAULT NULL,
   `hostlock` varchar(64) DEFAULT NULL,
-  `PID` int(11) DEFAULT NULL,
+  `pid` int(11) DEFAULT NULL,
   `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `state` (`stusab`,`county`,`tract`),
@@ -237,7 +237,7 @@ CREATE TABLE `tracts` (
   KEY `sol_end` (`sol_end`),
   KEY `final_pop` (`final_pop`),
   KEY `hostlock` (`hostlock`),
-  KEY `PID` (`PID`)
+  KEY `PID` (`pid`)
 ) ENGINE=InnoDB AUTO_INCREMENT=74081 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -339,4 +339,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-07-29  0:05:58
+-- Dump completed on 2019-07-29 17:34:49

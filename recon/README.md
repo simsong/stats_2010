@@ -43,17 +43,17 @@ The configuration file is used by every python program. The `scheduler.py` progr
 We've made substantial modification to the normal Python procedure for reading configuration files. Specifically:
 
 1. Each configuration variable can include multiple versions which are used on different hosts. For exmaple, if you have 10 machines in your cluster, with `workera` having 64 cores, `workerb` having 32 cores, and the remaining having 16 cores, you might set up your Gurobi section so that Gurobi can use as many threads as there are cores, which is typically the right thing to do. Most runs of Gurobi will use just 1 or 2 threads, so you would run up to to look like this:
-
- >   [run]
- >   max_sol = 32
- >   max_sol@workera: 64
- >   max_sol@workerb: 32                    
+```
+    [run]
+    max_sol = 32
+    max_sol@workera: 64
+    max_sol@workerb: 32                    
     
- >   [gurobi]
- >   threads: 2
- >   threads@workera: 8
- >   threads@workerb: 8
-
+    [gurobi]
+    threads: 2
+    threads@workera: 8
+    threads@workerb: 8
+```
 This will allow some over-provisioning, but should keep loads under control. Of course, you might want to tune these variables for your systems, and you can tune them while `scheduler.py` is running and they will take effect each time a new step 4 solver is launched.
 
 

@@ -62,6 +62,7 @@ MiB=1024*1024
 GiB=1024*1024*1024
 LP='lp'
 SOL='sol'
+CSV='csv'
 
 ################################################################
 ### Utility Functions ##########################################
@@ -221,20 +222,20 @@ def db_unlock(state_abbr, county, tract):
             rowcount = 1 )
 
 def db_start(what,state_abbr, county, tract):
-    assert what in [LP, SOL]
+    assert what in [LP, SOL, CSV]
     DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),hostname(),os.getpid(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
     
 def db_done(what, state_abbr, county, tract):
-    assert what in [LP,SOL]
+    assert what in [LP,SOL, CSV]
     DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
 def is_db_done(what, state_abbr, county, tract):
-    assert what in [LP,SOL]
+    assert what in [LP,SOL, CSV]
     row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", 
                   (state_abbr,county,tract))
     return len(row)==1

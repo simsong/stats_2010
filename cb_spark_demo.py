@@ -98,7 +98,7 @@ def smallCellStructure_PersonsSF2000():
         print(f'Current Table: {table}. Current Variable: {current_table_var_string}')
         result = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, {current_table_var_string} FROM GEO_2000 "
                     f"INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
-                    f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.LOGRECNO='0000001' AND ORDER BY GEO_2000.STUSAB")
+                    f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.LOGRECNO='0000001' ORDER BY GEO_2000.STUSAB")
         print_table(result)
         work_with_df(result.toPandas(), table, current_table_var_names)
 

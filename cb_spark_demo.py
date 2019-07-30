@@ -92,17 +92,33 @@ def smallCellStructure_PersonsSF2000():
         print(current_table_var_string)
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
-        for current_var in current_table_var_names:
-            print(f'Current Table: {table}. Current Var: {current_var}')
-            result = spark.sql(f"SELECT GEO_2000.STUSAB,GEO_2000.NAME,{current_var} FROM GEO_2000 "
+        for table in tables:
+            #Just wanted to break after first loop to stop for testing.
+            if table != "P3":
+                break
+            print(f'Current Table: {table}')
+            sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+            regex = re.compile(r'^[P]')
+            current_table_var_names = list( filter(regex.search, list(sf1_2000.get_table(table).varnames())) )
+            current_table_var_string = ",".join(current_table_var_names)
+            print(current_table_var_names)
+            print(current_table_var_string)
+            #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
+            #the output with the tytable which has problems if you have alot of variables.
+            #for current_var in current_table_var_names:
+            print(f'Current Table: {table}.')
+            result = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, " + current_table_var_string + " FROM GEO_2000 "
                         f"INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
-                        f"WHERE GEO_2000.SUMLEV='040' and {current_var} = 0 ORDER BY STUSAB")
+                        f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.LOGRECNO='0000001' ORDER BY GEO_2000.STUSAB")
+            pan = result.toPandas()
+            print(pan)
             tt = tydoc.tytable()
             tt.add_head( result.columns )
             for row in result.collect():
                 tt.add_data(row)
             tt.render(sys.stdout, format='md')
             sf1_2000.print_legend(result)
+
 
     """
     print(f"Table {table} counts by state and county:")

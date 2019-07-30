@@ -2,7 +2,7 @@
 #
 """
 Read the processed SF1 dat and syntheize the LP file that will be input to the optimizer.
-
+This is currently done with pandas and by buffering much in memory, both of which are quite memory intensive. 
 """
 
 from collections import defaultdict
@@ -92,7 +92,6 @@ def make_attributes_categories(df):
     return df
 
     
-
 ################################################################
 ## 
 ## code to build the LP files
@@ -198,8 +197,6 @@ class LPTractBuilder:
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         DB.csfr("UPDATE tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
                 (self.state_abbr,self.county,self.tract),rowcount=1)
-        
-        
 
     def get_constraint_summary(self, level, p01_data, data_dict, summary_nums):
         """
@@ -451,7 +448,7 @@ class LPTractBuilder:
         f.write('End\n')
         f.close()
         dbrecon.db_done('lp',state_abbr, county, tract)
-        dbrecon.DB.csfr("UPDATE tracts set lp_gb=%s,hostlock=NULL,error=NULL where stusab=%s and county=%s and tract=%s",
+        dbrecon.DB.csfr("UPDATE tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
                         (dbrecon.maxrss()//GB,state_abbr, county, tract), rowcount=1)
 
         if args.mem:
@@ -483,8 +480,8 @@ def build_tract_lp_tuple(tracttuple):
         lptb.build_tract_lp(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
         dbrecon.check_stop()
     except MemoryError as e:
-        dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL,error=%s where stusab=%s and county=%s and tract=%s",
-                        (str(e),state_abbr, county, tract))
+        dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL where stusab=%s and county=%s and tract=%s",
+                        (state_abbr, county, tract))
         logging.error(f"MEMORY ERROR in {state_abbr} {county} {tract}: {e}")
 
 """Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""
@@ -498,18 +495,20 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     logging.info(f"make_state_county_files({state_abbr},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
-    rows = DB.csfr("SELECT tract from tracts where stusab=%s and county=%s and (lp_end IS NULL)",(state_abbr,county))
+    rows = DB.csfr("SELECT tract FROM tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(state_abbr,county))
     tracts_needing_lp_files = [row[0] for row in rows]
     if tractgen=='all':
         if len(tracts_needing_lp_files)==0:
             logging.warning(f"make_state_county_files({state_abbr},{county},{tractgen}) "
                             f"- No more tracts need LP files")
             return
+        tracts = tracts_needing_lp_files
     else:
         if tractgen not in tracts_needing_lp_files:
             logging.warning(f"make_state_county_files({state_abbr},{county},{tractgen}) "
                             f"- tract {tractgen} not in {tracts_needing_lp_files}")
             return
+        tracts = [tractgen]
     
     state_code = dbrecon.state_fips(state_abbr)
 
@@ -642,15 +641,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ### We have now made the data for this county.
     ### We now make LP files for a specific set of tracts, or all the tracts.
 
-    if tractgen=='all':
-        tracts = sf1_tract_dict.keys()
-        logging.info(f"Number of all tracts in {state_abbr} {county}: {len(tracts)}")
-    else:
-        tracts = [tractgen]
-        logging.info(f"Only processing tract {tractgen}")
-
-    tracttuples = [(state_abbr, county, tract, sf1_tract_dict[tract],
-                    sf1_block_dict[tract]) for tract in tracts]
+    tracttuples = [(state_abbr, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract]) for tract in tracts]
 
     if args.j2>1:
         with multiprocessing.Pool( args.j2 ) as p:
@@ -676,69 +667,26 @@ if __name__=="__main__":
                         help="enable memory debugging. Print memory usage. "
                         "Write output to temp file and compare with correct file.", action='store_true')
 
-    parser.add_argument("state", help="2-character state abbreviation; all for all. Multiple states may be separated by commas.")
-    parser.add_argument("county", help="3-digit county code; specify next for next; all for all. Multiple counties may be separated by commas")
-    parser.add_argument("tract", help="Just synthesize for this specific 4-digit tract code",nargs="?")
+    parser.add_argument("state",  help="2-character state abbreviation.")
+    parser.add_argument("county", help="3-digit county code")
+    parser.add_argument("tract",  help="If provided, just synthesize for this specific 4-digit tract code. Otherwise do all in the county",nargs="?")
     
     DB.quiet = True
     args     = parser.parse_args()
-    config   = dbrecon.setup_logging_and_get_config(args,prefix="03syn")
+    config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03syn")
     
     if args.mem:
         logging.info("Memory debugging mode. Setting j1=1 and j2=1")
         args.j1 = 1
         args.j2 = 1
 
-    if args.state=='all':
-        state_abbrs = dbrecon.all_state_abbrs()
-    else:
-        state_abbrs = dbrecon.parse_state_abbrs(args.state)
-
-    if len(state_abbrs)>1 and args.county!='all':
-        logging.info("if more than one state_abbr is specified, then county must be all",file=sys.stderr)
-        exit(1)
-    
-    DB.csfr("UPDATE tracts set hostlock=%s where stusab=%s and county=%s",(dbrecon.hostname(),args.state,args.county))
-
     # If we are doing a specific tract
     if args.tract:
-        if len(state_abbrs)!=1:
-            logging.error("Can only specify a single, specific state if a tract is specified.")
-            exit(1)
-        if args.county=='all':
-            logging.error("May not specify all county codes if you are specifying a tract")
-            exit(1)
-        make_state_county_files(state_abbrs[0], args.county, args.tract)
+        dbrecon.db_lock(args.state, args.county, args.tract)
+        make_state_county_files(args.state, args.county, args.tract)
         exit(0)
 
-    # If we are doing multiple states, spin off a different thread for each state/county code combination.
-    # This lets us get multiprocessing here and in the per-tract multiprocessing
-    if args.county=='all':
-        def recall(pair):
-            from subprocess import check_call
-            (state_abbr,county) = pair
-            cmd = [sys.executable,__file__,'--config',args.config,state_abbr,county,'all','--j2',str(args.j2)]
-            if args.dry_run:
-                cmd.append("--dry_run")
-            if args.stdout:
-                cmd.append("--stdout")
-            logging.info(" ".join(cmd))
-            check_call(cmd)
-
-        state_abbr_county_pairs = []
-        for state_abbr in state_abbrs:
-            state_abbr_county_pairs.extend([(state_abbr,county) 
-                                            for county in dbrecon.counties_for_state(state_abbr)])
-        if args.j1>1:
-            with multiprocessing.Pool( j1 ) as p:
-                p.map(recall, state_abbr_county_pairs)
-        else:
-            for (state_abbr,county) in state_abbr_county_pairs:
-                make_state_county_files(state_abbr, county)
-        exit(0)
-
-    # We are doing a single state/county pair. We may do each tract multithreaded.
-    assert args.county!='all'
-    make_state_county_files(state_abbrs[0], args.county)
-    
-
+    # We are doing a single state/county pair. We may do each tract multithreaded. Lock the tracts...
+    DB.csfr("UPDATE tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
+            (dbrecon.hostname(),os.getpid(),args.state,args.county))
+    make_state_county_files(args.state, args.county)

@@ -25,6 +25,7 @@ import time
 import urllib.parse 
 import xml.etree.ElementTree as ET
 import zipfile
+import psutil
 from configparser import ConfigParser
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
@@ -61,10 +62,11 @@ MiB=1024*1024
 GiB=1024*1024*1024
 LP='lp'
 SOL='sol'
+CSV='csv'
 
-def hostname():
-    """Hostname without domain"""
-    return socket.gethostname().partition('.')[0]
+################################################################
+### Utility Functions ##########################################
+################################################################
 
 class Memoize:
     def __init__(self, fn):
@@ -76,8 +78,22 @@ class Memoize:
             self.memo[args] = self.fn(*args)
         return self.memo[args]
 
+def hostname():
+    """Hostname without domain"""
+    return socket.gethostname().partition('.')[0]
+
+def filename_mtime(fname):
+    """Return a file's mtime as a unix time_t"""
+    if fname is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(int(os.stat(fname).st_mtime))
+    except FileNotFoundError:
+        return None
+
 ################################################################
-### Database management functions
+### Database management functions ##############################
+################################################################
 
                                                            
 db_re = re.compile("export (.*)=(.*)")
@@ -105,11 +121,13 @@ class DB:
                 try:
                     logging.info(f"PID{os.getpid()}: {cmd} {vals}")
                     if quiet==False:
-                        print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
+                        try:
+                            print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
+                        except BlockingIOError as e:
+                            pass
                     c.execute(cmd,vals)
-                    if rowcount is not None:
-                        if c.rowcount!=rowcount:
-                            raise RuntimeError(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
+                    if (rowcount is not None) and ( c.rowcount!=rowcount):
+                        logging.error(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
                 except mysql.connector.errors.ProgrammingError as e:
                     logging.error("cmd: "+str(cmd))
                     logging.error("vals: "+str(vals))
@@ -155,53 +173,87 @@ class DB:
     def close(self):
         return self.dbs.close()
 
-def filename_mtime(fname):
-    if fname is None:
-        return None
-    try:
-        return datetime.datetime.fromtimestamp(int(os.stat(fname).st_mtime))
-    except FileNotFoundError:
-        return None
+################################################################
+### Understanding LP and SOL files #############################
+################################################################
 
-def final_pop(state_abbr,county,tract):
+def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
     count = 0
-    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    errors = 0
     with dopen(sol_filenamegz) as f:
-        for line in f:
-            if line.startswith('C') and line.strip().endswith(" 1"):
-                count += 1
+        for (num,line) in enumerate(f,1):
+            if line.startswith('C'):
+                line = line.strip()
+                if line.endswith(" 1"):
+                    count += 1
+                elif line.endswith(" 0"):
+                    pass
+                else:
+                    if errors==0:
+                        logging.error("non-integer solutions in file "+sol_filenamegz)
+                    logging.error("line {}: {}".format(num,line))
+                    count += round(float(line.split()[1]))
+                    errors += 1
+    if errors>0 and requireInt:
+        raise RuntimeError(f"errors: {errors}")
+    return count
+
+def get_final_pop_from_sol(state_abbr,county,tract,delete=True):
+    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
-        abort()
-        dpath_unlink(sol_filenamegz)
+        if delete:
+            dpath_unlink(sol_filenamegz)
+        DB.csfr("UPDATE tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
+                (state_abbr,county,tract))
         return None
     return count
 
 def db_lock(state_abbr, county, tract):
-    DB.csfr(f"UPDATE tracts set hostlock=%s where stusab=%s and county=%s and tract=%s",
-            (hostname(),state_abbr,county,tract),
+    DB.csfr("UPDATE tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+            (hostname(),os.getpid(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
 
+def db_unlock(state_abbr, county, tract):
+    DB.csfr("UPDATE tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+            (state_abbr,county,tract),
+            rowcount = 1 )
+
 def db_start(what,state_abbr, county, tract):
-    assert what in [LP, SOL]
-    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where stusab=%s and county=%s and tract=%s",
-            (hostname(),hostname(),state_abbr,county,tract),
+    assert what in [LP, SOL, CSV]
+    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+            (hostname(),hostname(),os.getpid(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
     
 def db_done(what, state_abbr, county, tract):
-    assert what in [LP,SOL]
-    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
+    assert what in [LP,SOL, CSV]
+    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
 def is_db_done(what, state_abbr, county, tract):
-    assert what in [LP,SOL]
-    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
+    assert what in [LP,SOL, CSV]
+    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", 
+                  (state_abbr,county,tract))
     return len(row)==1
 
+def db_clean():
+    """Clear hostlock if PID is gone"""
+    rows = DB.csfr("SELECT pid,stusab,county,tract FROM tracts WHERE hostlock=%s",(hostname(),),quiet=True)
+    for (pid,stusab,country,tract) in rows:
+        if not pid:
+            db_unlock(stusab,county,tract)
+            continue
+        try:
+            p = psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            db_unlock(stusab,county,tract)
+
 def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
+    raise RuntimeError("don't do at the moment")
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
@@ -237,7 +289,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
                     (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
         if check_final_pop:
-            final_pop_file = final_pop(state_abbr,county,tract)
+            final_pop_file = get_final_pop_from_sol(state_abbr,county,tract)
             if final_pop_db!=final_pop_file:
                 logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
                                 f"for {state_abbr} {county} {tract}. Correcting")
@@ -406,6 +458,8 @@ def config_reload():
     config_file = ConfigParser()
     config_file.read(config_path)
     # Add our source directory to the paths
+    if SECTION_PATHS not in config_file:
+        config_file.add_section(SECTION_PATHS)
     config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
     return config_file
 
@@ -480,6 +534,7 @@ def tracts_for_state_county(*,state_abbr,county):
 ################################################################
 
 MIN_LP_SIZE = 100        # smaller than this, the file must be invalid
+MIN_SOL_SIZE = 1000      # smaller than this, the file is invalid
 def lpfile_properly_terminated(fname):
     #
     # Small files are not valid LP files
@@ -573,7 +628,7 @@ def argparse_add_logging(parser):
                         "Write output to temp file and compare with correct file.")
 
 
-def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None):
+def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None,error_alert=True):
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
 
@@ -617,15 +672,16 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     dfxml_handler   = dfxml_writer.logHandler()
     logger.addHandler(dfxml_handler)
 
-    # Log exit codes
-    atexit.register(logging_exit)
+    if error_alert:
+        # Log exit codes
+        atexit.register(logging_exit)
 
     # Finally, indicate that we have started up
     logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
         
-def setup_logging_and_get_config(args,*,prefix=''):
+def setup_logging_and_get_config(*,args,**kwargs):
     config = get_config(filename=args.config)
-    setup_logging(config=config,prefix=prefix,args=args)
+    setup_logging(config=config,**kwargs)
     return 
 
 def add_dfxml_tag(tag,text=None,attrs={}):
@@ -634,8 +690,8 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
-            (hostname(), error, sys.argv[0], filename, last_value))
+    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)", (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
+    print("LOG ERROR:",error,file=sys.stderr)
 
 def logging_exit():
     if hasattr(sys,'last_value'):
@@ -819,3 +875,9 @@ def mem_info(what,df,dump=True):
         df.info(verbose=False,max_cols=160,memory_usage='deep',null_counts=True)
     print("elapsed time at {}: {:.2f}".format(what,time.time() - start_time))
     print("==============================")
+
+
+if __name__=="__main__":
+    final_pop = get_final_pop_for_gzfile(sys.argv[1])
+    print(sys.argv[1],':',final_pop)
+

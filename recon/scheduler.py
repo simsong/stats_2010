@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 #
-"""
-scheduler.py:
+"""scheduler.py:
 
-Synthesize the LP files and run Gurobi on a tract-by-tract basis. 
+The two time-consuming parts of the reconstruction are building and
+solving the LP files. This schedules the jobs on multiple machines
+using a MySQL database for coordination.
+
 """
 
 import copy
@@ -56,14 +58,6 @@ def county_csv_exists(state_abbr,county):
 def tracts_with_files(s, c, w):
     return dbrecon.tracts_with_files(s, c, w)
 
-from dbrecon import filename_mtime,final_pop
-def init_sct(c,state_abbr,county,tract):
-    lpfilename = dbrecon.find_lp_filename(state_abbr=state_abbr,county=county,tract=tract)
-    lptime = filename_mtime( lpfilename )
-    soltime = filename_mtime( dbrecon.SOLFILENAME(state_abbr=state_abbr,county=county, tract=tract) )
-    DB.csfr("INSERT INTO tracts (stusab,county,tract,lp_end,sol_end,final_pop) values (%s,%s,%s,%s,%s,%s)",
-            (state_abbr,county,tract,lptime,soltime, final_pop(state_abbr,county,tract)))
-
 def rescan():
     states = [args.state] if args.state else dbrecon.all_state_abbrs()
     for state_abbr in states:
@@ -97,16 +91,6 @@ def clean():
                         "where stusab=%s and county=%s and tract=%s",
                         (state_abbr, county, tract))
                 os.unlink(path)
-
-def init():
-    raise RuntimeError("Don't run init anymore")
-    db = dbrecon.DB()
-    db.create_schema(open(SCHEMA_FILENAME).read())
-    for state_abbr in dbrecon.all_state_abbrs():
-        for county in dbrecon.counties_for_state(state_abbr=state_abbr):
-            for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
-                init_sct(c,state_abbr,county,tract)
-        db.commit()
 
                       
 class SCT:
@@ -246,9 +230,18 @@ def run():
             else:
                 print(f"UNKNOWN COMMAND: '{command}'.  TRY HALT, STOP, PS, LIST, UPTIME, NOISY, QUIET")
 
+        # Clean database if necessary
+        dbrecon.db_clean()
+
         # Report system usage if necessary
         dbrecon.config_reload()
         free_mem = report_load_memory()
+
+        # Are we done yet?
+        remain = dbrecon.DB.csfr("select count(*) from tracts where sol_end is null",quiet=True)
+        if remain[0][0]==0:
+            print("All done!")
+            break
 
         # See if any of the processes have finished
         for p in copy.copy(running):
@@ -315,11 +308,12 @@ def run():
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
             lp_limit = 1
-            make_lps = DB.csfr("SELECT state,county,count(*) FROM tracts "
-                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) and (error IS NULL) GROUP BY state,county "
+            make_lps = DB.csfr("SELECT stusab,county,count(*) FROM tracts "
+                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) GROUP BY state,county "
                                "order BY RAND() DESC LIMIT %s", (lp_limit,))
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
-                logging.warning(f"needed_lp: {needed_lp} but search produced 0")
+                logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
+                last_lp_launch = time.time()
             for (state,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
@@ -349,8 +343,8 @@ def run():
             limit_sol = max(needed_sol, max_sol_launch)
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 continue
-            solve_lps = DB.csfr("SELECT state,county,tract FROM tracts "
-                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) and (error IS NULL) "
+            solve_lps = DB.csfr("SELECT stusab,county,tract FROM tracts "
+                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) "
                                 "ORDER BY RAND() LIMIT %s",(limit_sol,))
             if (len(solve_lps)==0 and needed_sol>0) or not quiet:
                 print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
@@ -370,12 +364,12 @@ def run():
 def none_running(hostname=None):
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
     print("LP in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL " + hostlock):
+    for (state,county,tract) in  DB.csfr("SELECT stusab,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL " + hostlock):
         print(state,county,tract)
     DB.csfr("UPDATE tracts set lp_start=NULL WHERE lp_start IS NOT NULL and lp_end is NULL " + hostlock)
         
     print("SOL in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT state,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
+    for (state,county,tract) in  DB.csfr("SELECT stusab,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
         print(state,county,tract)
     DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL " + hostlock)
     print("Resume...")
@@ -416,7 +410,6 @@ if __name__=="__main__":
                              description="Maintains a database of reconstruction and schedule "
                              "next work if the CPU load and memory use is not too high." ) 
     dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--init",    help="Clear database and learn the current configuration", action='store_true')
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
     parser.add_argument("--rescan", help="scan all of the files and update the database if we find any missing LP or Solution files",
                         action='store_true')
@@ -432,7 +425,7 @@ if __name__=="__main__":
     parser.add_argument("--county", help="county for rescanning")
     
     args   = parser.parse_args()
-    config = dbrecon.setup_logging_and_get_config(args,prefix='sch_')
+    config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
     DB.quiet = True
 
     if args.testdb:
@@ -440,8 +433,6 @@ if __name__=="__main__":
         rows = DB.csfr("show tables")
         for row in rows:
             print(row)
-    elif args.init:
-        init()
     elif args.rescan:
         rescan()
     elif args.clean:

@@ -5,7 +5,7 @@ This is the clean rewrite of the existing database reconstruction code.
 The purpose of this code is to perform a database reconstruction
 attack on the published statistics in the Census SF1. All global
 parameters, including path names, are stored in the file
-(config.ini)[config.ini]. In this document, config variables are
+[config.ini](config.ini). In this document, config variables are
 indicated **in bold**.
 
 This system is semi-automated, but it becomes a bit more automated
@@ -13,11 +13,11 @@ every time it is run!
 
 Note that this system is designed to work equally well using Amazon
 S3's storage system or using local storage.  We handle this with the
-`dopen` function that is defined in (dbrecon.py)[dbrecon.py]. There is
-a better-developed version of `dopen` in the Census `ctools` package,
+`dopen` function that is defined in [dbrecon.py](dbrecon.py). There is
+a better-developed version of `dopen` in the Census [ctools](URL NEEDED) package,
 but we do not include it here for brevity and isolation. 
 
-Before you start, look at (config.ini)[config.ini] and make sure that
+Before you start, look at [config.ini](config.ini) and make sure that
 all of the paths are good for your system! Then follow these steps:
 
 * STEP 0 - Download the files. 
@@ -44,15 +44,15 @@ We've made substantial modification to the normal Python procedure for reading c
 
 1. Each configuration variable can include multiple versions which are used on different hosts. For exmaple, if you have 10 machines in your cluster, with `workera` having 64 cores, `workerb` having 32 cores, and the remaining having 16 cores, you might set up your Gurobi section so that Gurobi can use as many threads as there are cores, which is typically the right thing to do. Most runs of Gurobi will use just 1 or 2 threads, so you would run up to to look like this:
 
-    [run]
-    max_sol = 32
-    max_sol@workera: 64
-    max_sol@workerb: 32                    
+ >   [run]
+ >   max_sol = 32
+ >   max_sol@workera: 64
+ >   max_sol@workerb: 32                    
     
-    [gurobi]
-    threads: 2
-    threads@workera: 8
-    threads@workerb: 8
+ >   [gurobi]
+ >   threads: 2
+ >   threads@workera: 8
+ >   threads@workerb: 8
 
 This will allow some over-provisioning, but should keep loads under control. Of course, you might want to tune these variables for your systems, and you can tune them while `scheduler.py` is running and they will take effect each time a new step 4 solver is launched.
 
@@ -111,8 +111,8 @@ outputs a two-dimensional table for each county.
 
 The original implementation of this used pandas and was quite memory
 heavy, especially for the larger states. (CA takes 100GB). You will
-find this implementation in `s2_pandas_build_state_stats.py` and it
-isn included for historical reference only.
+find this implementation in `[s2_pandas_build_state_stats.py](s2_pandas_build_state_stats.py)` and it
+is included for historical reference only.
 
 The rewrite of this performs a purely semantic merging of the
 files. It's much more efficient in both speed and memory. The program
@@ -131,7 +131,7 @@ geography file, and writes the output to the appropriate county file.
 The file `$ROOT/{state_abbr}/completed_{state_abbr}_02` is created when each
 state is completed. (This would take less memory, and be faster, if a
 single data frame was not created for all of the counties in each
-state.) On our machine the Deleware completed in just 630 seconds (10
+state.) On our machine, processing Delaware completed in just 630 seconds (10
 minutes), but CA took 14844.2 seconds (4.12 hours)
 
     python3 02_build_state_stats.py --all
@@ -142,28 +142,31 @@ The database reconstruct works by creating linear program (LP) files
 that are delivered to the Guorbi optimizer. The structure of these LP
 files makes them quite large---typically between 50MB and
 1GB. However, these files are quite compressible, so we write them as
-compressed files and then (in Step 4) we convince Guorbi to read the
+compressed files and then (in Step 4) we convince Gurobi to read the
 compressed files. 
 
-There is 1 .lp.gz file for every census tract. The model to create the
+There is one .lp.gz file for every census tract. The model to create the
 tract-level files are created by reading the summary files created in
 step #2. So we can parallelize at the (state,county) level, and we can
 then parallelize within each (state,county) tuple at the tract
-level. The first set of parallelization do not share memory, but the
-second step do. To handle this, we use the 03_synth_lp_files.py
+level. The first set of parallelizations do not share memory, but the
+second step does. To handle this, we use the 03_synth_lp_files.py
 program. It has two parallelization parameters: --j1, which specifies
 how many (state,county) pairs to run at once, and --j2, which says how
 many tracts to run at once for each (state,county) pair. The default
 for each of these is 8.
 
-To give you an idea of how long this takes, know that synthsizing AK 110 (Juno), population 31,275, with 6 census tracts, requires 1183 seconds of CPU and 43GB of RAM with --j2==1.  With --j2=8 it requires 284 seconds of CPU and the same amount of RAM (because the RAM is shared).
+To give you an idea of how long this takes, know that synthesizing (AK,110) (Juno), population 31,275, with 6 census tracts, required 1183 seconds of CPU and 43GB of RAM with --j2==1.  With --j2=8 it requires 284 seconds of CPU and the same amount of RAM (because the RAM is shared).
 
     python3 03_synth_lp_files.py all all 
 
 4. Run the Gurobi on the LP files.
 
+    (Needs instructions)
+
 5. Generate the final report
 
+    (Needs instructions)
 
 # Design
 Requirements:
@@ -173,7 +176,7 @@ Requirements:
 * A way to distribute the load among many processes. 
   
 Goals: 
-1. consistent maming scheme for data files
+1. consistent naming scheme for data files
 2. Make as few changes to the structure of original code as possible
 3. All programs are testable and generate provenance for output
 
@@ -184,24 +187,27 @@ Changes:
 
 ## File Layout
 
-Source Code Hiearchy:
+Source Code Hierarchy:
+```
     $SRC/config.ini             - Master configuration file for database reconstruction
     $SRC/layouts/               - Data files used in the processing.
     $SRC/layouts/geo_layout.txt - geography layout file. This was made by hand, apprently.
     $SRC/layouts/layouts.json   - A JSON file created from the access database on the website
-
+```
 Where:
-   $SRC   = Root of Python source tree  (dopen expands this automatically)
+```
+   $SRC   = Root of Python source tree  (`dopen` expands this automatically)
+```
 
-
-Data Hiearchy:
-    ROOT         - Root of reconstructed and re-identified files files
-S3://BUCKET/ROOT - Root of files on file server
-
+Data Hierarchy:
+ ```
+     ROOT         - Root of reconstructed and re-identified files files
+ S3://BUCKET/ROOT - Root of files on file server
+```
 ROOT could be on S3...
 
 Original layout:
-
+```
 $ROOT/ST/sf1/                         - directory for unpacking SF1
 $ROOT/ST/sf1/STnnnnnnnnn.sf1          - SF1 table files
 $ROOT/ST/sf1/ST2010.sf1.prd.packinglist.txt - SF1 packing list
@@ -218,14 +224,15 @@ $ROOT/ST/SNCOUNT/sf1_tract_COUNTY.csv  - tract level data from SF1
 $ROOT/ST/SNCOUNT/lp/                   - directory for LP files
 $ROOT/ST/SNCOUNT/lp/model/model_params_GEOID.lp - the LP files
 $ROOT/ST/SNCOUNT/lp/sol/model_STATE*TRACT.sol - the LP solution files
-
+```
 Where:
+ ```
   $ROOT   = Root of reconstructed data on local file systme.
   ST      = 2 character state abbreviation  (04 is Arizona)
   SNCOUNT = 2 digit state ANSI code + 3 digita county abbreviation (04001 is Apache County, AZ)
   GEOID  = GeoID code = STATE*TRACT  (e.g. 02013000100 = State 02 (AK), County 013, Tract 0001.00)
   *TRACT = 6 digit character tract
-
+```
 
 # Operation
 ## New program:
@@ -233,11 +240,12 @@ Where:
 `driver.py` is main driver for the reconstruction program. 
 
 Options:
+```
   --download - Download all the data
   --
-
+```
 ## Changes:
-read_geo_file.py - rewritten to read and write a line at a time. Slowed it down, but took dramatically less memory
+`read_geo_file.py` - rewritten to read and write a line at a time. Slowed it down, but took dramatically less memory
 
 ## Old code sequence
 

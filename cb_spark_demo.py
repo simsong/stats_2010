@@ -94,28 +94,29 @@ def smallCellStructure_PersonsSF2000():
         print(current_table_var_string)
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
-        # for current_var in current_table_var_names:
-        print(f'Current Table: {table}. Current Variable: {current_table_var_string}')
-        result = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, {current_table_var_string} FROM GEO_2000 "
-                    f"INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
-                    f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.LOGRECNO='0000001' ORDER BY GEO_2000.STUSAB")
-        print_table(result)
-        work_with_df(result.toPandas(), table, current_table_var_names)
+        for current_var in current_table_var_names:
+            print(f'Current Table: {table}. Current Variable: {current_var}')
+            result = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, {current_var} FROM GEO_2000 "
+                        f"INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
+                        f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.LOGRECNO='0000001' AND {current_var}=0  ORDER BY GEO_2000.STUSAB")
+            print_table(result)
+            sf1_2000.print_legend(result)
 
-#Just a small test function with pandas to make sure I am looking at the right data
-def work_with_df(df, current_table, current_table_var_names):
-    # for current_var in current_table_var_names:
-    if current_table == "P3":
-        cols = df.columns
-        bt = df.apply(lambda x: x == 0)
-        bt.apply(lambda x: list(cols[x.values]), axis=1)
-        print(bt)
+# #Just a small test function with pandas to make sure I am looking at the right data
+# def work_with_df(df, current_table, current_table_var_names):
+#     # for current_var in current_table_var_names:
+#     if current_table == "P3":
+#         cols = df.columns
+#         bt = df.apply(lambda x: x == 0)
+#         bt.apply(lambda x: list(cols[x.values]), axis=1)
+#         print(bt)
         
 
 def print_table(result):
     tt = tydoc.tytable()
     tt.add_head( result.columns )
     for row in result.collect():
+        print(row['LOGRECNO'])
         tt.add_data(row)
     tt.render(sys.stdout, format='md')
     sf1_2000.print_legend(result)

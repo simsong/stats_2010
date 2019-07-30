@@ -78,61 +78,63 @@ def smallCellStructure_PersonsSF2000():
     print("Geolevels by state and summary level:")
     sf1_2000.get_df(tableName = GEO_TABLE, sqlName='GEO_2000')
     
-    #Loop the tables
+    #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
+    #the output with the tytable which has problems if you have alot of variables.
     for table in tables:
         #Just wanted to break after first loop to stop for testing.
-        if table != "P3":
+        if table == "P4":
             break
         print(f'Current Table: {table}')
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         regex = re.compile(r'^[P]')
         current_table_var_names = list( filter(regex.search, list(sf1_2000.get_table(table).varnames())) )
+        current_table_var_names = list(filter(filterIds, current_table_var_names))
         current_table_var_string = ",".join(current_table_var_names)
         print(current_table_var_names)
         print(current_table_var_string)
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
-        for table in tables:
-            #Just wanted to break after first loop to stop for testing.
-            if table != "P3":
-                break
-            print(f'Current Table: {table}')
-            sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
-            regex = re.compile(r'^[P]')
-            current_table_var_names = list( filter(regex.search, list(sf1_2000.get_table(table).varnames())) )
-            current_table_var_string = ",".join(current_table_var_names)
-            print(current_table_var_names)
-            print(current_table_var_string)
-            #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
-            #the output with the tytable which has problems if you have alot of variables.
-            #for current_var in current_table_var_names:
-            print(f'Current Table: {table}.')
-            result = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, " + current_table_var_string + " FROM GEO_2000 "
-                        f"INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
-                        f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.LOGRECNO='0000001' ORDER BY GEO_2000.STUSAB")
-            pan = result.toPandas()
-            print(pan)
-            tt = tydoc.tytable()
-            tt.add_head( result.columns )
-            for row in result.collect():
-                tt.add_data(row)
-            tt.render(sys.stdout, format='md')
-            sf1_2000.print_legend(result)
+        # for current_var in current_table_var_names:
+        print(f'Current Table: {table}. Current Variable: {current_table_var_string}')
+        result = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, {current_table_var_string} FROM GEO_2000 "
+                    f"INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
+                    f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.LOGRECNO='0000001' AND ORDER BY GEO_2000.STUSAB")
+        print_table(result)
+        work_with_df(result.toPandas(), table, current_table_var_names)
 
+#Just a small test function with pandas to make sure I am looking at the right data
+def work_with_df(df, current_table, current_table_var_names):
+    # for current_var in current_table_var_names:
+    if current_table == "P3":
+        cols = df.columns
+        bt = df.apply(lambda x: x == 0)
+        bt.apply(lambda x: list(cols[x.values]), axis=1)
+        print(bt)
+        
+    
 
-    """
-    print(f"Table {table} counts by state and county:")
-    res = spark.sql("SELECT GEO_2000.STUSAB,GEO_2000.COUNTY,GEO_2000.NAME,P0020001,P0020002,P0020003,P0020004,P0020005,P0020006 FROM GEO_2000 "
-                    "INNER JOIN {table}_2000 ON GEO_2000.STUSAB={table}_2000.STUSAB and GEO_2000.LOGRECNO={table}_2000.LOGRECNO "
-                    "WHERE GEO_2000.SUMLEV='050' ORDER BY STUSAB,COUNTYCC")
-
+def print_table(result):
     tt = tydoc.tytable()
-    tt.add_head( res.columns )
-    for row in res.collect():
+    tt.add_head( result.columns )
+    for row in result.collect():
         tt.add_data(row)
     tt.render(sys.stdout, format='md')
-    sf1_2000.print_legend(res)
-    """
+    sf1_2000.print_legend(result)
+    
+
+def filterIds(ids):
+    # This includes all of the none leaf ids of the tables proposed by Philip. 
+    # This is currently on P3, P4, and P5.
+    # I wish but could not find a automatic way to tell what where totals and what where leafs.
+    total_table_reference = ["P003001","P003002","P003009","P003010","P003026","P003047",
+                             "P003063","P003070","P004001","P004003","P004004","P004011",
+                             "P004012","P004028","P004049","P004065","P004072","P005001",
+                             "P005002","P005009","P005010","P005026","P005047","P005063",
+                             "P005070"]
+    if(ids in total_table_reference):
+        return False
+    else:
+        return True
 
 def demo():
     # Get a schema object associated with the SF1 for 2010

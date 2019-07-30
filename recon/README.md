@@ -183,7 +183,7 @@ Goals:
 Changes:
 1. All encodings changed to UTF-8 (previously UTF-8859-1 was hard-coded in several places). 
 2. Variables replaced with descriptive names. E.g. "string" becomes "line"
-3. The file sf1_vars_race_binaries.csv specifies the mapping from the published tables to the various tabulations. Previously it used Y to indicate a value was present in a tabulation and a N to indicate it was not, and "missing" to indicate that it was missing. This caused memory issues with pandas. We have changed this according to:  "missing" -> -1, "N" -> 0, "Y" -> 1. This lets the columns be represented as integers rather than objects.
+3. The file `[sf1_vars_race_binaries.csv](sf1_vars_race_binaries.csv)` specifies the mapping from the published tables to the various tabulations. Previously it used Y to indicate a value was present in a tabulation and a N to indicate it was not, and "missing" to indicate that it was missing. This caused memory issues with pandas. We have changed this according to:  "missing" -> -1, "N" -> 0, "Y" -> 1. This lets the columns be represented as integers rather than objects.
 
 ## File Layout
 

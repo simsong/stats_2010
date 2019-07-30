@@ -111,7 +111,6 @@ def work_with_df(df, current_table, current_table_var_names):
         bt.apply(lambda x: list(cols[x.values]), axis=1)
         print(bt)
         
-    
 
 def print_table(result):
     tt = tydoc.tytable()

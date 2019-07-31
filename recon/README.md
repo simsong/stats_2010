@@ -14,20 +14,33 @@ every time it is run!
 Note that this system is designed to work equally well using Amazon
 S3's storage system or using local storage.  We handle this with the
 `dopen` function that is defined in [dbrecon.py](dbrecon.py). There is
-a better-developed version of `dopen` in the Census [ctools](URL NEEDED) package,
-but we do not include it here for brevity and isolation. 
+a better-developed version of `dopen` in the Census `ctools` package,
+but we do not include it here because the `dopen` in
+[dbrecon.py](dbrecon.py) was developed first and is customized for
+this application
+
+The database reconstruction tracts its progress in a MySQL database. Read/write access to such a database server is mandatory. The database server also coordinates the reconstruction efforts, so you can use multiple servers simultaneously. 
 
 Before you start, look at [config.ini](config.ini) and make sure that
-all of the paths are good for your system! Then follow these steps:
+all of the paths are good for your system! Then look over the python files beginning with an **s**. Each file corresponds to a different step of the reconstruction process. All of the scripts support a `--help` argument and provide detailed help. All of them accept  `--j1` and `--j2` option to parallelize. In general, `j1` parallelism does not share memory, while `j2` parallelism does. This is explained below.
 
-* STEP 0 - Download the files. 
-* STEP 1 - Extract the geography information from the SF files and create the state-level CSVs
-* STEP 2 - Combines the segments of the each state's SF1 and outputs a set of CSV files for each county that contain the block-level measurements, the tract level measurements, and the county-level measurements. `s2_pandas_build_state_stats.py` was the original version of this program and it was very slow and very memory intensive. `s2_nbuild_state_stats.py` is the rewrite, which is neither slow nor memory intensive. Instead of using pandas, it uses a hand-tuned join and group by written in pure python. It can do the entire state of califronia in 4 hours in a single Python thread and with less than 2 GiB of RAM. 
-* STEP 3 - Create the `.lp.gz` files associated with each Census tract. This is still very memory intensive. We store the LP files compressed because they are quite large (many more than a gigabyte) and highly compressible (typically 20:1). 
-* STEP 4 - Solve the `.lp.gz` files to produce the `.sol.gz` files. Each LP file typically solves in 1-10 seconds. Gurobi won't write out compressed files, so we write them out as `.sol` files and then compress them, which gives us a good way of knowing that the file is complete.
-* STEP 5 - Produce the population files. This step makes the microdata!
+* STEP 0b - `s0_download_data.py` - Download the SF1 files from the US Census Bureau's website (https://www2.census.gov/)[https://www2.census.gov/]. This script needs to be run manually.
+
+* STEP 1a - `schema.sql` - Load this schema into your MySQL server. Perhaps `s1_make_geo_files.py` should do it, and we should get rid of the CSV files entirely, and just run everything out of the database...
+
+* STEP 1b - `s1_make_geo_files.py` - Extract the geography information from the SF files, creates the three state-level CSV files (the geofile extract and the list of counteis in state), and loads the geography into the MySQL database. The CSV file is legacy from before the MySQL database was integrated into the reconstruction process and may be removed shortly. This script also needs to be run manually.
+
+* STEP 2 - `s2_nbuild_state_stats.py` - Combines the segments of the each state's SF1 and outputs a set of CSV files for each county that contain the block-level measurements, the tract level measurements, and the county-level measurements. `s2_pandas_build_state_stats.py` was the original version of this program and it was very slow and very memory intensive. `s2_nbuild_state_stats.py` is the rewrite, which is neither slow nor memory intensive. Instead of using pandas, it uses a hand-tuned join and group by written in pure python. It can do the entire state of Califronia in 4 hours in a single Python thread and with less than 2 GiB of RAM. This script needs to be run manually
+
+* STEP 3 - `s3_pandas_synth_lp_files.py` - Create the `.lp.gz` files associated with each Census tract. This is still very memory intensive. We store the LP files compressed because they are quite large (many more than a gigabyte) and highly compressible (typically 20:1). Ironically, this is the most CPU and memory intensive part of the reconstruction process! You can run this script manually, but you are better off running it with `scheduler.py`. 
+
+* STEP 4 - `s4_run_gurobi.py` Solve the `.lp.gz` files to produce the `.sol.gz` files. Each LP file typically solves in 1-10 seconds. Gurobi won't normally read compressed files, so this script creates a pipe and then sets up a symlink to the point with the file extension `.lp`. Gurobi won't write out compressed files, so we write them out as `.sol` files and then compress them, which gives us a good way of knowing that the file is complete. (If you see a .sol file, then there was a failure.). You can run this script manually, but you are better off running it with `scheduler.py`. 
+
+* STEP 5 - `s5_make_microdata.py` - This step makes the microdata! A microdata file is made for each county. 
 
 Steps 3 and 4 can be run concurrently using the `scheduler.py` program. If you are not using `scheduler.py`, you are wasting machine resources. That's because the CPU and memory requirements of steps 3 and 4 are unpredictable, so the scheduler just launches jobs until some (but not all) of the CPU cores and RAM are in use. If more RAM is needed, it will kill the most recently launched jobs. It's pretty good at following things, but it crashes every now and then and must be manually restarted.
+
+If you want to run on multiple machines at a time, you can, provided that all of the machines have a shared file system. That file system will typically be an NSF or gluster file system, but you can also use Amazon's S3. Although be aware that S3 hasn't been tested in a while and may not work properly with the compressed .lp.gz and .sol.gz files. So if you must use S3, be prepared for some hacking.
 
 ## Configuration Information
 Configuration information is kept in the file config.ini. The following sections are present:
@@ -36,32 +49,42 @@ Configuration information is kept in the file config.ini. The following sections
 * `[urls]` --- download URLs.
 * `[paths]` --- file paths.
 * `[gurobi]` --- configuration informaton for the Gurobi optimizer
-* `[mysql]` --- configuration information for the database used to track progress of steps 3 (`.lp.gz` file creation) and 4 (`.sol.gz` creation).
+* `[mysql]` --- configuration information for the database used to track progress of steps 3 (`.lp.gz` file creation) and 4 (`.sol.gz` creation). To avoid embedding usernames and passwords in this file, you can just say `$MYSQL_PASSWORD` and then set an environment variable `MYSQL_PASSWORD` to be the password: our special code for reading configuration variables automatically does variable expansion.
 
-The configuration file is used by every python program. The `scheduler.py` program re-reads the config file each time through the main event loop, so you can actually change configuration parameters on the fly, without interrupting and restarting the program.
+The configuration file is used by every python program. The `scheduler.py` program re-reads the config file each time through the main event loop, so you can actually change configuration parameters on the fly, without interrupting and restarting the program. Indeed, you can also type commands at the scheduler while it is running, like `ps` and `uptime`. 
 
-We've made substantial modification to the normal Python procedure for reading configuration files. Specifically:
+As indicated above, we've made substantial modification to the normal Python procedure for reading configuration files. Specifically:
 
 1. Each configuration variable can include multiple versions which are used on different hosts. For exmaple, if you have 10 machines in your cluster, with `workera` having 64 cores, `workerb` having 32 cores, and the remaining having 16 cores, you might set up your Gurobi section so that Gurobi can use as many threads as there are cores, which is typically the right thing to do. Most runs of Gurobi will use just 1 or 2 threads, so you would run up to to look like this:
 ```
-    [run]
-    max_sol = 32
-    max_sol@workera: 64
-    max_sol@workerb: 32                    
-    
-    [gurobi]
-    threads: 2
-    threads@workera: 8
-    threads@workerb: 8
+[run]
+max_sol = 32
+max_sol@workera: 64
+max_sol@workerb: 32                    
+
+[gurobi]
+threads: 2
+threads@workera: 8
+threads@workerb: 8
 ```
 This will allow some over-provisioning, but should keep loads under control. Of course, you might want to tune these variables for your systems, and you can tune them while `scheduler.py` is running and they will take effect each time a new step 4 solver is launched.
 
+2. Environment variables are substituted, so you can do this:
+
+```
+# Just grab the mysql values from the environment variables
+[mysql]
+host: $MYSQL_HOST
+database: $MYSQL_DATABASE
+user: $MYSQL_USER
+password: $MYSQL_PASSWORD
+```
 
 ## Logging
 
-Each run of each program creates two log files, a text-based `.log` file and a `.dfxml` file that captures more detailed information.
+Each run of each program creates two log files, a text-based `.log` file and a `.dfxml` file that captures more detailed information. These files grow without limit. You might find them interesting or useful to analyze. 
 
-Each run of the Gurobi optimizer also creates a Gurobi log file. We will be creating software to analyze these files. 
+Each run of the Gurobi optimizer also creates a Gurobi log file. `s6_maint.py` is the maintenance program. One of the things that it can do is ingest all of the gurobi logs into the SQL database so you can do reporting on Gurobi runs. This should be integrated into `s4_run_gurobi.py`. 
 
 ## Paralleism and scheduling
 
@@ -81,7 +104,6 @@ There are many opportunities for parallelism that are realized in the current co
 * Non-shared memory parallelism. This parallelism refers to building multiple county LP files at once, or simultaneous level invocations of Gurobi. This parallelism is specified by the `--j1` parameter if you are relying on the parallelism coming directly from the Python step 2 or step 3 programs, but it's better handled by the `scheduler.py` program, since `scheduler.py` will automatically launch new jobs as needed and kill jobs if too many are running. 
 
 * Shared-memory parallelism. Building the LP files can be parallelized, because the data is read in county-by-county, but we build an LP file for each tract. Solving the LP files can also be parallelized, because Gurobi supports multiple threads. Shared-memory parallelism is specified by the `--j2` parameter or by the `[run].lp_j2` and `[guroobi].threads` parameters in the config files. 
-
 
 # Making it all run
 
@@ -134,7 +156,7 @@ single data frame was not created for all of the counties in each
 state.) On our machine, processing Delaware completed in just 630 seconds (10
 minutes), but CA took 14844.2 seconds (4.12 hours)
 
-    python3 02_build_state_stats.py --all
+    python3 s2_nbuild_state_stats.py --all
 
 ## Step 3 --- Create the .lp.gz files
 
@@ -158,33 +180,37 @@ for each of these is 8.
 
 To give you an idea of how long this takes, know that synthesizing (AK,110) (Juno), population 31,275, with 6 census tracts, required 1183 seconds of CPU and 43GB of RAM with --j2==1.  With --j2=8 it requires 284 seconds of CPU and the same amount of RAM (because the RAM is shared).
 
-    python3 03_synth_lp_files.py all all 
+    python3 s3_pandas_synth_lp_files.py all all 
 
-4. Run the Gurobi on the LP files.
+You are better off with:
 
-    (Needs instructions)
+    python3 scheduler.py
 
-5. Generate the final report
+4. Run the Gurobi on the compressed LP files.
 
-    (Needs instructions)
+You can run Gurobi on the compressed LP files with:
+
+    python3 s4_run_gurobi.py state county [tracts] 
+
+But honestly, you are better off letting the scheduler do it:
+
+    python3 scheduler.py
+
+5. Generate the microdata:
+
+    python3 s5_make_microdata.py all
+
+6. Status reports.
+
+If you can run a CGI script on a web server that has access to your MySQL server, you can use `report.cgi` to monitor the progress of `scheduler.py`
 
 # Design
 Requirements:
-* A place to store all of the data that's persistent.  Options: 
-  * backed up file systems; 
-  * Amazon S3. 
-* A way to distribute the load among many processes. 
+* A place to store all of the data that's persistent.  Right now we recommend a file system that is shared between all of your compute nodes.
+* A MySQL server
+* Python3
+* Lot of CPU and RAM
   
-Goals: 
-1. consistent naming scheme for data files
-2. Make as few changes to the structure of original code as possible
-3. All programs are testable and generate provenance for output
-
-Changes:
-1. All encodings changed to UTF-8 (previously UTF-8859-1 was hard-coded in several places). 
-2. Variables replaced with descriptive names. E.g. "string" becomes "line"
-3. The file `[sf1_vars_race_binaries.csv](sf1_vars_race_binaries.csv)` specifies the mapping from the published tables to the various tabulations. Previously it used Y to indicate a value was present in a tabulation and a N to indicate it was not, and "missing" to indicate that it was missing. This caused memory issues with pandas. We have changed this according to:  "missing" -> -1, "N" -> 0, "Y" -> 1. This lets the columns be represented as integers rather than objects.
-
 ## File Layout
 
 Source Code Hierarchy:
@@ -234,44 +260,11 @@ Where:
   *TRACT = 6 digit character tract
 ```
 
-# Operation
-## New program:
-
-`driver.py` is main driver for the reconstruction program. 
-
-Options:
-```
-  --download - Download all the data
-  --
-```
-## Changes:
-`read_geo_file.py` - rewritten to read and write a line at a time. Slowed it down, but took dramatically less memory
-
-## Old code sequence
-
-1. `download_data.py` - downloads the SF1 zip files from census.gov and unzips the ZIP files in ROOT/{state_name}
-2. `read_geo_file.py` - uses `geo_layout.txt` and the state geography file in the ZIP to produce a `geofile_xx.csv`. 
-3. `read_files_allstate.py` reads the SF1 tables and unpacks each county into its own directory.
-4. `make_state_list.py` - creates the metadata file `state_county_list_xx.csv`
-5. `synth.py` - for a particular state and county, creates the LP file `model_params_{geo_id}.lp`
-6. `run_gurobi.py` - runs gurobi for a particular state and county. 
-
-
 ## Validation
 
 This information is for those of us at the Census Bureau. It largely
 tracks how we validated that the new code ran as was as the original,
 development code. 
 
-# Cleaning up the bad blocks
-The directory `bad/` contains the blocks that did not properly reconstruct.
-
-The file `bad/stats.py` prints stats about these bad blocks.
-
-The original reconstruction is stored in:
-
-$S3ROOT/title13_reid_cleanup/solution_variability/{state_name}/{state_code}{county_code}/
-
-(Ignore the title13 prefix, as the data are not actually title13)
 
 

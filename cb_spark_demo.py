@@ -105,6 +105,7 @@ def smallCellStructure_PersonsSF2000():
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
         table_info = info.get_correct_builder(table, current_table_var_names)
+        current_table_var_names = ["P003016"]
         for current_var in current_table_var_names:
             result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_var} FROM temp_table "
                     f"WHERE {current_var}=0")

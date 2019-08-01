@@ -55,38 +55,38 @@ class Builder:
 # the 6-D array
 class P3_Builder(Builder):
 
-    def __init__(self, values):
+    def __init__(self, variables):
         default_P3 = [default_HHGQ, default_SEX, default_AGE, default_HISP, -1, default_CITIZEN]
         self.map = {}
-        for index, value in enumerate(values):
+        for index, variable in enumerate(variables):
             copy_default = deepcopy(default_P3)
             copy_default[4] = index
-            self.map[value] = copy_default
+            self.map[variable] = copy_default
     
 class P4_Builder(Builder):
 
-    def __init__(self, values):
+    def __init__(self, variables):
         hispanic_P4 = [default_HHGQ, default_SEX, default_AGE, 1, default_CENRACE, default_CITIZEN]
         non_hispanic_P4 = [default_HHGQ, default_SEX, default_AGE, 0, -1, default_CITIZEN]
 
         try:
-            values.remove("P004002")
+            variables.remove("P004002")
         except ValueError:
-            raise ValueError("Did not find P004002 in the P4 values list this is bad")
+            raise ValueError("Did not find P004002 in the P4 variables list this is bad")
         self.map = {
             "P004002": hispanic_P4
         }
-        for index, value in enumerate(values):
+        for index, variable in enumerate(variables):
             copy_default = deepcopy(non_hispanic_P4)
             copy_default[4] = index
-            self.map[value] = copy_default
+            self.map[variable] = copy_default
 
 class P5_Builder(Builder):
 
-    def __init__(self, values):
+    def __init__(self, variables):
         default_P5 = [default_HHGQ, default_SEX, range(18, 116), default_HISP, -1, default_CITIZEN]
         self.map = {}
-        for index, value in enumerate(values):
+        for index, variable in enumerate(variables):
             copy_default = deepcopy(default_P5)
             copy_default[4] = index
-            self.map[value] = copy_default
+            self.map[variable] = copy_default

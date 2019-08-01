@@ -10,6 +10,17 @@ default_HISP = range(2)
 default_CENRACE = range(63)
 default_CITIZEN = range(2)
 
+# This a dict with the number of proper variables for each Table this is to confirm we are getting the right number
+# I have found that the CSV is not properly formed and is missing variables
+
+table_size {
+    "P3": 70,
+    "P4": 72,
+    "P5": 71,
+    "P6": 72,
+    "P12": 48
+}
+
 
 def get_correct_builder(table_name, values):
     if table_name == "P3":

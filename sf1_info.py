@@ -21,8 +21,7 @@ def get_correct_builder(table_name, values):
 
 class Builder:
     def __init__(self):
-        self.variables = []
-        self.build_variables()
+        pass
     
     def process_results(self, results, current_var):
         print(self.map)
@@ -33,32 +32,18 @@ class Builder:
             to_return.append(current_array)
         return to_return
 
-    def build_variables():
-        pass
-
 
 # I am not sure this is the best way to do this but I could not find anywhere else that mapped the data dict variables to 
 # the 6-D array
 class P3_Builder(Builder):
 
     def __init__(self, values):
-        super.__init__()
         default_P3 = [default_HHGQ, default_SEX, default_AGE, default_HISP, -1, default_CITIZEN]
         self.map = {}
         for index, value in enumerate(values):
             copy_default = deepcopy(default_P3)
             copy_default[4] = index
             self.map[value] = copy_default
-
-    # The sf1 parser is missing some of the variables.
-    # Should possibly fix the parser but just wanted to see if this would work
-    def build_variables(self):
-        variable_format = "P003000"
-        for i in range(1, 72):
-            if len(str(i)) == 1:
-                self.variables.append(variable_format[-1:] + str(i))
-            elif len(str(i)) == 2:
-                self.variables.append(variable_format[-2:] + str(i))
     
 class P4_Builder(Builder):
 

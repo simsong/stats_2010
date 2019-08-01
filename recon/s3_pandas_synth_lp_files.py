@@ -478,7 +478,6 @@ def build_tract_lp_tuple(tracttuple):
     try:
         lptb = LPTractBuilder(state_abbr, county, tract)
         lptb.build_tract_lp(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
-        dbrecon.check_stop()
     except MemoryError as e:
         dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL where stusab=%s and county=%s and tract=%s",
                         (state_abbr, county, tract))

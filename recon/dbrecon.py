@@ -38,7 +38,6 @@ from total_size import total_size
 
 RETRIES = 10
 DEFAULT_QUIET=True
-STOP_FILE='/tmp/stop.txt'
 # For handling the config file
 SRC_DIRECTORY   = os.path.dirname(__file__)
 CONFIG_FILENAME = "config.ini"
@@ -63,6 +62,19 @@ GiB=1024*1024*1024
 LP='lp'
 SOL='sol'
 CSV='csv'
+
+################################################################
+### Summary Levels #############################################
+################################################################
+
+SUMLEVS = {
+    "State": '040',
+    "County": '050',
+    "Census Tract-Block": '101',
+    "Census Tract: '140'"
+}
+
+SUMLEV_STATE = '040'
 
 ################################################################
 ### Utility Functions ##########################################
@@ -302,21 +314,6 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
                     (state,county,tract),quiet=quiet)
 
 ################################################################
-def should_stop():
-    return os.path.exists(STOP_FILE)
-
-def check_stop():
-    if should_stop():
-        logging.warning("Clean exit")
-        os.unlink(STOP_FILE)
-        exit(0)
-
-def request_stop():
-    with open(STOP_FILE,"w") as f:
-        f.write("stop")
-        
-
-################################################################
 ### functions that return directories. dpath_expand is not called on these.
 
 def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
@@ -513,16 +510,9 @@ def parse_state_abbrs(statelist):
     return [state_rec(key)['state_abbr'].lower() for key in statelist.split(",")]
     
 def counties_for_state(state_abbr):
-    assert isinstance(state_abbr,str)
-    fips = state_fips(state_abbr)
-    counties = []
-    with dopen(STATE_COUNTY_LIST(state_abbr=state_abbr,fips=fips)) as f:
-        for line in f:
-            (st1,county,st2) = line.strip().split(",")
-            assert st1==fips
-            assert st2==state_abbr
-            counties.append(county)
-    return counties
+    """Return a list of the the county codes (as strings) for the counties in state_abbr"""
+    rows = DB.csfr("SELECT county FROM geo WHERE stusab=%s and sumlev='050'",(state_abbr,))
+    return [row[0] for row in rows]
 
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""

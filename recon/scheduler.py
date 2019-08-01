@@ -50,13 +50,6 @@ LP_J1    = 1                    # let this program schedule
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
-@dbrecon.Memoize
-def county_csv_exists(state_abbr,county):
-    return dbrecon.COUNTY_CSV_FILENAME(state_abbr=state_abbr, county=county)
-
-@dbrecon.Memoize
-def tracts_with_files(s, c, w):
-    return dbrecon.tracts_with_files(s, c, w)
 
 def rescan():
     states = [args.state] if args.state else dbrecon.all_state_abbrs()

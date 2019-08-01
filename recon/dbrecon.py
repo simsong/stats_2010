@@ -265,7 +265,7 @@ def db_clean():
             db_unlock(stusab,county,tract)
 
 def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
-    raise RuntimeError("don't do at the moment")
+    raise RuntimeError("don't do at the moment. The database is more accurate than the file system.")
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
@@ -277,7 +277,8 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
     
     (lp_start,lp_end,sol_start,sol_end,final_pop_db) = rows[0]
-    logging.info(f"lp_start={lp_start} lp_end={lp_end} sol_start={sol_start} sol_end={sol_end} final_pop_db={final_pop_db}")
+    logging.info(f"lp_start={lp_start} lp_end={lp_end} sol_start={sol_start} "
+                 f"sol_end={sol_end} final_pop_db={final_pop_db}")
     if dpath_exists(lpfilenamegz):
         if not quiet:
             print(f"{lpfilenamegz} exists")
@@ -310,11 +311,13 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
     else:
         if sol_end is not None:
             logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
-            DB.csfr("UPDATE tracts set sol_start=NULL,sol_end=NULL,final_pop=NULL where stusab=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts SET sol_start=NULL,sol_end=NULL,final_pop=NULL "
+                    "WHERE stusab=%s AND county=%s AND tract=%s",
                     (state,county,tract),quiet=quiet)
 
 ################################################################
-### functions that return directories. dpath_expand is not called on these.
+### functions that return directory and file locations  ########
+################################################################
 
 def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
     fips = state_fips(state_abbr)
@@ -333,14 +336,8 @@ def SOLDIR(*,state_abbr,county):
     fips = state_fips(state_abbr)
     return f'$ROOT/{state_abbr}/{fips}{county}/sol'
 
-################################################################
-
-
 def SF1_ZIP_FILE(*,state_abbr):
     return dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr))
-
-def STEP02_DONE_FILE(*,state_abbr):
-    return dpath_expand(f'$ROOT/{state_abbr}/completed_{state_abbr}_02')
 
 def SF1_BLOCK_DATA_FILE(*,state_abbr,county):
     state_code = state_fips(state_abbr)
@@ -351,9 +348,6 @@ def SF1_TRACT_DATA_FILE(*,state_abbr,county):
     state_code = state_fips(state_abbr)
     sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
     return dpath_expand(f'{sf1_dir}/sf1_tract_{state_code}{county}.csv')
-
-def STATE_COUNTY_LIST(*,root='$ROOT',state_abbr,fips):
-    return dpath_expand(f"{root}/{state_abbr}/state_county_list_{fips}.csv")
 
 def LPFILENAMEGZ(*,state_abbr,county,tract):
     geo_id = state_fips(state_abbr)+county+tract
@@ -372,7 +366,6 @@ def SOLFILENAME(*,state_abbr,county,tract):
     
 def SOLFILENAMEGZ(*,state_abbr,county,tract):
     return SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)+".gz"
-
     
 def COUNTY_CSV_FILENAME(*,state_abbr,county):
     csvdir = STATE_COUNTY_DIR(root='$ROOT',state_abbr=state_abbr,county=county)
@@ -393,7 +386,6 @@ SECTION_PATHS='paths'
 SECTION_RUN='run'
 OPTION_NAME='NAME'
 OPTION_SRC='SRC'                # the $SRC is added to the [paths] section of the config file
-
 
 STATE_DATA=[
     "Alabama,AL,01",
@@ -523,10 +515,9 @@ def tracts_for_state_county(*,state_abbr,county):
 ### LPFile Manipulation
 ################################################################
 
-MIN_LP_SIZE = 100        # smaller than this, the file must be invalid
+MIN_LP_SIZE  =  100      # smaller than this, the file must be invalid
 MIN_SOL_SIZE = 1000      # smaller than this, the file is invalid
 def lpfile_properly_terminated(fname):
-    #
     # Small files are not valid LP files
     if dgetsize(fname) < MIN_LP_SIZE:
         return False
@@ -548,29 +539,6 @@ def lpfile_properly_terminated(fname):
 ################################################################
 ### Output Products
 ################################################################
-def tracts_with_files(state_abbr,county, filetype=LP):
-    assert isinstance(state_abbr, str)
-    assert isinstance(county, str)
-    assert isinstance(filetype, str)
-    
-    ret = []
-    state_code = state_fips(state_abbr)
-    if filetype==LP or filetype=='lp.gz':
-        dirfunc = LPDIR
-    elif filetype==SOL or filetype=='sol.gz':
-        dirfunc = SOLDIR
-    else:
-        raise RuntimeError("only filetype lp and sol supported at the moment")
-    for s in dlistdir(dirfunc(state_abbr=state_abbr, county=county)):
-        if s.endswith(filetype):
-            geo_id = state_code + county
-            tract = os.path.basename(s).replace(f"model_{geo_id}","")
-            dpos = tract.find('.')
-            if dpos>0:
-                tract = tract[0:dpos]
-            ret.append(tract)
-    return ret
-
 def valid_state_code(code):
     assert isinstance(code,str)
     return len(state)==2 and all(ch.isdigit() for ch in code)
@@ -618,7 +586,8 @@ def argparse_add_logging(parser):
                         "Write output to temp file and compare with correct file.")
 
 
-def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None,error_alert=True):
+def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
+                  stdout=None,args=None,error_alert=True):
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
 
@@ -680,7 +649,8 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)", (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
+    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
+            (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
     print("LOG ERROR:",error,file=sys.stderr)
 
 def logging_exit():
@@ -692,8 +662,10 @@ def logging_exit():
 
 var_re = re.compile(r"(\$[A-Z_][A-Z_0-9]*)")
 def dpath_expand(path):
-    """dpath_expand is the main path expansion function. It substitutes $VAR for variables in the [path] section of the config
-    file. It handles VAR@HOST and expands host automatically. It is called by dopen() to do the expansion.
+    """dpath_expand is the main path expansion function. It substitutes
+    $VAR for variables in the [path] section of the config file. It
+    handles VAR@HOST and expands host automatically. It is called by
+    dopen() to do the expansion.
     """
 
     # Find and replace all of the dollar variables with those in the config file
@@ -726,13 +698,11 @@ def dpath_exists(path):
     logging.info(f"dpath_exists({path})={ret}")
     return ret
 
-
 def dpath_unlink(path):
     path = dpath_expand(path)
     if path[0:5]=='s3://':
         raise RuntimeError("dpath_unlink doesn't work with s3 paths yet")
     return os.unlink(path)
-
 
 def dlistdir(path):
     path = dpath_expand(path)
@@ -811,7 +781,6 @@ def dmakedirs(dpath):
     logging.info("mkdirs({})".format(path))
     os.makedirs(path,exist_ok=True)
 
-
 def dgetsize(dpath):
     path = dpath_expand(dpath)
     assert path.startswith("s3://")==False
@@ -868,6 +837,11 @@ def mem_info(what,df,dump=True):
 
 
 if __name__=="__main__":
-    final_pop = get_final_pop_for_gzfile(sys.argv[1])
-    print(sys.argv[1],':',final_pop)
+    from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
+    parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
+                             description="Get the count for SOL.GZ files" )
+    parser.add_argument("gzfile",nargs="*")
+    args     = parser.parse_args()
+    for fname in sys.gzfile:
+        print(fname,':',get_final_pop_for_gzfile(fname))
 

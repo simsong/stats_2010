@@ -2,6 +2,8 @@ This is the clean rewrite of the existing database reconstruction code.
 
 **Please read this file through to the end before starting.**
 
+# Census 2010 Database Reconstruction
+
 The purpose of this code is to perform a database reconstruction
 attack on the published statistics in the Census SF1. All global
 parameters, including path names, are stored in the file
@@ -20,6 +22,14 @@ but we do not include it here because the `dopen` in
 this application
 
 The database reconstruction tracts its progress in a MySQL database. Read/write access to such a database server is mandatory. The database server also coordinates the reconstruction efforts, so you can use multiple servers simultaneously. 
+
+## Requirements:
+* A place to store all of the data that's persistent.  Right now we recommend a file system that is shared between all of your compute nodes.
+* A MySQL server
+* Python3
+* Lot of CPU and RAM
+
+## Procedural Overview
 
 Before you start, look at [config.ini](config.ini) and make sure that
 all of the paths are good for your system! Then look over the python files beginning with an **s**. Each file corresponds to a different step of the reconstruction process. All of the scripts support a `--help` argument and provide detailed help. All of them accept  `--j1` and `--j2` option to parallelize. In general, `j1` parallelism does not share memory, while `j2` parallelism does. This is explained below.
@@ -105,6 +115,54 @@ There are many opportunities for parallelism that are realized in the current co
 
 * Shared-memory parallelism. Building the LP files can be parallelized, because the data is read in county-by-county, but we build an LP file for each tract. Solving the LP files can also be parallelized, because Gurobi supports multiple threads. Shared-memory parallelism is specified by the `--j2` parameter or by the `[run].lp_j2` and `[guroobi].threads` parameters in the config files. 
 
+## File Layout
+
+Source Code Hierarchy:
+```
+$SRC/config.ini             - Master configuration file for database reconstruction
+$SRC/layouts/               - Data files used in the processing.
+$SRC/layouts/geo_layout.txt - geography layout file. This was made by hand, apprently.
+$SRC/layouts/layouts.json   - A JSON file created from the access database on the website
+```
+Where:
+```
+$SRC   = Root of Python source tree  (`dopen` expands this automatically)
+```
+
+Data Hierarchy:
+```
+ROOT         - Root of reconstructed and re-identified files files
+S3://BUCKET/ROOT - Root of files on file server
+```
+ROOT could be on S3...
+
+File layout:
+```
+$ROOT/dist                     - distribution SF1 ZIP files (do not decompress)
+$ROOT/dist/ST2010.sf1.zip      - distribution 2010 SF1 ZIP files for state ST
+$ROOT/ST                       - reconstructed data for state ST
+$ROOT/ST/SSCCC/                - reconstructed data for state SS county CCC
+$ROOT/ST/SSCCC/lp              - Directory for compressed LP files
+$ROOT/ST/SSCCC/sol             - Directory for compressed SOL files
+$ROOT/ST/SSCCC/geofile_ST.csv  - SF1 geography file recoded as CSV for SUMLEV 40, 50 and 101
+$ROOT/ST/SSCCC/sf1_block_SSCCC.csv - SF1 block level data for SSCCC
+$ROOT/ST/SSCCC/sf1_county_SSCCC.csv - SF1 county level data for SSCCC
+$ROOT/ST/SSCCC/sf1_tract_SSCCC.csv - SF1 tract level data for SSCCC
+$ROOT/ST/SSCCC/lp/model_SSCCCTTTTTT.lp.gz - LP file for state SS, County CCC, tract TTTTTT
+$ROOT/ST/SSCCC/sol/model_SSCCCTTTTTT.sol.gz - Solution for state SS, County CCC, tract TTTTTT
+$ROOT/ST/SSCCC/synth_out_SSCCC.csv - Synthetic microdata for SSCCC
+
+
+```
+Where:
+```
+$ROOT = Root of reconstruction data; defined in config.ini
+ST = STUSAB (2-character US Postal code for state)
+SS = 2-digit ANSI code for the state
+CCC = 3-digit ANSI code for the county
+TTTTTT = 6-digit Census tract (might appear TTTT.TT in some Census publications)
+```
+
 # Making it all run
 
 ## Step 0 - Download the files
@@ -133,8 +191,9 @@ outputs a two-dimensional table for each county.
 
 The original implementation of this used pandas and was quite memory
 heavy, especially for the larger states. (CA takes 100GB). You will
-find this implementation in `[s2_pandas_build_state_stats.py](s2_pandas_build_state_stats.py)` and it
-is included for historical reference only.
+find this implementation in
+`[s2_pandas_build_state_stats.py](s2_pandas_build_state_stats.py)` 
+and it is included for historical reference only.
 
 The rewrite of this performs a purely semantic merging of the
 files. It's much more efficient in both speed and memory. The program
@@ -158,7 +217,7 @@ minutes), but CA took 14844.2 seconds (4.12 hours)
 
     python3 s2_nbuild_state_stats.py --all
 
-## Step 3 --- Create the .lp.gz files
+## Step 3 --- Create and Solve the .lp.gz files
 
 The database reconstruct works by creating linear program (LP) files
 that are delivered to the Guorbi optimizer. The structure of these LP
@@ -178,89 +237,30 @@ how many (state,county) pairs to run at once, and --j2, which says how
 many tracts to run at once for each (state,county) pair. The default
 for each of these is 8.
 
-To give you an idea of how long this takes, know that synthesizing (AK,110) (Juno), population 31,275, with 6 census tracts, required 1183 seconds of CPU and 43GB of RAM with --j2==1.  With --j2=8 it requires 284 seconds of CPU and the same amount of RAM (because the RAM is shared).
+To give you an idea of how long this takes, know that synthesizing (AK,110) (Juno), 
+population 31,275, with 6 census tracts, required 1183 seconds of CPU and 43GB of RAM 
+with `--j2==1`.  
+With `--j2=8` it requires 284 seconds of CPU and the same amount of RAM (because the RAM is shared).
 
-    python3 s3_pandas_synth_lp_files.py all all 
+    python3 s3_pandas_synth_lp_files.py state county
+    python3 s4_run_gurobi.py state county
 
 You are better off with:
 
     python3 scheduler.py
 
-4. Run the Gurobi on the compressed LP files.
 
-You can run Gurobi on the compressed LP files with:
-
-    python3 s4_run_gurobi.py state county [tracts] 
-
-But honestly, you are better off letting the scheduler do it:
-
-    python3 scheduler.py
-
-5. Generate the microdata:
+## Step 4: Generate the microdata:
 
     python3 s5_make_microdata.py all
 
-6. Status reports.
+## Status 
 
 If you can run a CGI script on a web server that has access to your MySQL server, you can use `report.cgi` to monitor the progress of `scheduler.py`
 
-# Design
-Requirements:
-* A place to store all of the data that's persistent.  Right now we recommend a file system that is shared between all of your compute nodes.
-* A MySQL server
-* Python3
-* Lot of CPU and RAM
-  
-## File Layout
-
-Source Code Hierarchy:
-```
-    $SRC/config.ini             - Master configuration file for database reconstruction
-    $SRC/layouts/               - Data files used in the processing.
-    $SRC/layouts/geo_layout.txt - geography layout file. This was made by hand, apprently.
-    $SRC/layouts/layouts.json   - A JSON file created from the access database on the website
-```
-Where:
-```
-   $SRC   = Root of Python source tree  (`dopen` expands this automatically)
-```
-
-Data Hierarchy:
- ```
-     ROOT         - Root of reconstructed and re-identified files files
- S3://BUCKET/ROOT - Root of files on file server
-```
-ROOT could be on S3...
-
-Original layout:
-```
-$ROOT/ST/sf1/                         - directory for unpacking SF1
-$ROOT/ST/sf1/STnnnnnnnnn.sf1          - SF1 table files
-$ROOT/ST/sf1/ST2010.sf1.prd.packinglist.txt - SF1 packing list
-$ROOT/ST/sf1/ST2010.sf1.zip           - SF1 ZIP file
-$ROOT/ST/sf1/STgeo.sf1.zip            - SF1 geo ZIP file
-$ROOT/ST/sf1/state_county_list_SN.csv - state and county info
-$ROOT/ST/ST_geofile.csv               - unzipped SF1 geo file
 
 
-$ROOT/ST/SNCOUNT/
-$ROOT/ST/SNCOUNT/sf1_block_COUNTY.csv  - county-level data from SF1
-$ROOT/ST/SNCOUNT/sf1_county_COUNTY.csv - county-level data from SF1
-$ROOT/ST/SNCOUNT/sf1_tract_COUNTY.csv  - tract level data from SF1
-$ROOT/ST/SNCOUNT/lp/                   - directory for LP files
-$ROOT/ST/SNCOUNT/lp/model/model_params_GEOID.lp - the LP files
-$ROOT/ST/SNCOUNT/lp/sol/model_STATE*TRACT.sol - the LP solution files
-```
-Where:
- ```
-  $ROOT   = Root of reconstructed data on local file systme.
-  ST      = 2 character state abbreviation  (04 is Arizona)
-  SNCOUNT = 2 digit state ANSI code + 3 digita county abbreviation (04001 is Apache County, AZ)
-  GEOID  = GeoID code = STATE*TRACT  (e.g. 02013000100 = State 02 (AK), County 013, Tract 0001.00)
-  *TRACT = 6 digit character tract
-```
-
-## Validation
+# Validation
 
 This information is for those of us at the Census Bureau. It largely
 tracks how we validated that the new code ran as was as the original,

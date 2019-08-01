@@ -87,13 +87,12 @@ def smallCellStructure_PersonsSF2000():
         print(f'Loading Table: {table}')
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         regex = re.compile(r'^[P]')
-        table_info = info.get_correct_builder(table, current_table_var_names)
-        # all_var_names = sf1_2000.get_table(table).varnames()
-        all_var_names = table_info.variables
+        all_var_names = sf1_2000.get_table(table).varnames()
         print(all_var_names)
+        print(f"Lenght of all vars {len(all_var_names)}")
         current_table_var_names = list(filter(regex.search, list(all_var_names)))
-        print(current_table_var_names)
         current_table_var_names = list(filter(filterIds, current_table_var_names))
+        print(f"Lenght of filtered vars {len(current_table_var_names)}")
         current_table_var_string = ",".join(current_table_var_names)
         current_info = {}
         # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe as a temp table.
@@ -106,8 +105,7 @@ def smallCellStructure_PersonsSF2000():
 
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
-        # table_info = info.get_correct_builder(table, current_table_var_names)
-        current_table_var_names = ["P003016"]
+        table_info = info.get_correct_builder(table, current_table_var_names)
         for current_var in current_table_var_names:
             result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_var} FROM temp_table "
                     f"WHERE {current_var}=0")

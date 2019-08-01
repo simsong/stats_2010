@@ -20,6 +20,8 @@ import ctools.cspark as cspark
 import ctools.s3     as s3
 import ctools.tydoc  as tydoc
 import sf1_info as info
+from itertools import product
+import time
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -82,8 +84,8 @@ def smallCellStructure_PersonsSF2000():
     multi_index_list = []
     for table in tables:
         #Just wanted to break after first loop to stop for testing.
-        # if table == "P4":
-        #     break
+        if table == "P12":
+            break
         print(f'Loading Table: {table}')
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         regex = re.compile(r'^[P]')
@@ -109,14 +111,17 @@ def smallCellStructure_PersonsSF2000():
         table_info = info.get_correct_builder(table, current_table_var_names)
         result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_table_var_string} FROM temp_table")
         multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, table))
-        #             f"WHERE {current_var}=0")
-        # for current_var in current_table_var_names:
-        #     result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_var} FROM temp_table "
-        #             f"WHERE {current_var}=0")
-        #     multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, current_var))
-        #     print_table(result)
-        #     sf1_2000.print_legend(result)
-        print(multi_index_list)
+    print(f"Pre-Expanded Length {len(multi_index_list)}")
+
+    start_time = time.time()
+    final_expanded_index_set = set()
+    for element_to_expand in multi_index_list:
+        expanded_list = product(*element_to_expand)
+        for tuple_to_add in expanded_list:
+            final_expanded_index_set.add(tuple_to_add)
+    end_time = time.time()
+    print(f"Expanded Length {len(final_expanded_index_set)}")
+    print(f"Time to expand {end_time - start_time}")
 
 
         
@@ -137,7 +142,8 @@ def filterIds(ids):
                              "P003063","P003070","P004001","P004003","P004004","P004011",
                              "P004012","P004028","P004049","P004065","P004072","P005001",
                              "P005002","P005009","P005010","P005026","P005047","P005063",
-                             "P005070"]
+                             "P005070","P006001","P006003","P006004","P006011","P006012",
+                             "P006028","P006049","P006065","P006072"]
     if(ids in total_table_reference):
         return False
     else:

@@ -23,6 +23,8 @@ table_size = {
 }
 
 
+
+
 def get_correct_builder(table_name, values):
     if table_name == "P3":
         return P3_Builder(values)
@@ -30,6 +32,8 @@ def get_correct_builder(table_name, values):
         return P4_Builder(values)
     elif table_name == "P5":
         return P5_Builder(values)
+    elif table_name == "P6":
+        return P6_Builder(values)
     raise ValueError(f"No Builder found for table {table_name}")
 
 class Builder:
@@ -37,7 +41,7 @@ class Builder:
         pass
     
     def process_results(self, results, table_name):
-        print(self.map)
+        # print(self.map)
         # go through all the rows and see if any values are zero if they are
         # add a entry into the multi_index array
         to_return = []
@@ -60,7 +64,7 @@ class P3_Builder(Builder):
         self.map = {}
         for index, variable in enumerate(variables):
             copy_default = deepcopy(default_P3)
-            copy_default[4] = index
+            copy_default[4] = [index]
             self.map[variable] = copy_default
     
 class P4_Builder(Builder):
@@ -78,7 +82,7 @@ class P4_Builder(Builder):
         }
         for index, variable in enumerate(variables):
             copy_default = deepcopy(non_hispanic_P4)
-            copy_default[4] = index
+            copy_default[4] = [index]
             self.map[variable] = copy_default
 
 class P5_Builder(Builder):
@@ -88,5 +92,23 @@ class P5_Builder(Builder):
         self.map = {}
         for index, variable in enumerate(variables):
             copy_default = deepcopy(default_P5)
-            copy_default[4] = index
+            copy_default[4] = [index]
+            self.map[variable] = copy_default
+
+class P6_Builder(Builder):
+
+    def __init__(self, variables):
+        hispanic_P6 = [default_HHGQ, default_SEX, range(18, 116), 1, default_CENRACE, default_CITIZEN]
+        non_hispanic_P6 = [default_HHGQ, default_SEX, range(18, 116), 0, -1, default_CITIZEN]
+
+        try:
+            variables.remove("P006002")
+        except ValueError:
+            raise ValueError("Did not find P006002 in the P4 variables list this is bad")
+        self.map = {
+            "P006002": hispanic_P6
+        }
+        for index, variable in enumerate(variables):
+            copy_default = deepcopy(non_hispanic_P4)
+            copy_default[4] = [index]
             self.map[variable] = copy_default

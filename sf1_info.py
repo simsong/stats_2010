@@ -33,12 +33,16 @@ class Builder:
             to_return.append(current_array)
         return to_return
 
+    def build_variables():
+        pass
+
 
 # I am not sure this is the best way to do this but I could not find anywhere else that mapped the data dict variables to 
 # the 6-D array
 class P3_Builder(Builder):
 
     def __init__(self, values):
+        super.__init__()
         default_P3 = [default_HHGQ, default_SEX, default_AGE, default_HISP, -1, default_CITIZEN]
         self.map = {}
         for index, value in enumerate(values):

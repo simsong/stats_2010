@@ -87,7 +87,9 @@ def smallCellStructure_PersonsSF2000():
         print(f'Loading Table: {table}')
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         regex = re.compile(r'^[P]')
-        all_var_names = sf1_2000.get_table(table).varnames()
+        table_info = info.get_correct_builder(table, current_table_var_names)
+        # all_var_names = sf1_2000.get_table(table).varnames()
+        all_var_names = table_info.variables
         print(all_var_names)
         current_table_var_names = list(filter(regex.search, list(all_var_names)))
         print(current_table_var_names)
@@ -104,7 +106,7 @@ def smallCellStructure_PersonsSF2000():
 
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
-        table_info = info.get_correct_builder(table, current_table_var_names)
+        # table_info = info.get_correct_builder(table, current_table_var_names)
         current_table_var_names = ["P003016"]
         for current_var in current_table_var_names:
             result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_var} FROM temp_table "

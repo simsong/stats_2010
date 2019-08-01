@@ -30,6 +30,7 @@ def get_correct_builder(table_name, values):
         return P4_Builder(values)
     elif table_name == "P5":
         return P5_Builder(values)
+    raise ValueError(f"No Builder found for table {table_name}")
 
 class Builder:
     def __init__(self):
@@ -71,8 +72,7 @@ class P4_Builder(Builder):
         try:
             values.remove("P004002")
         except ValueError:
-            print("Did not find P004002 in the P4 values list this is bad")
-            raise ValueError
+            raise ValueError("Did not find P004002 in the P4 values list this is bad")
         self.map = {
             "P004002": hispanic_P4
         }

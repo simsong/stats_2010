@@ -82,8 +82,8 @@ def smallCellStructure_PersonsSF2000():
     multi_index_list = []
     for table in tables:
         #Just wanted to break after first loop to stop for testing.
-        if table == "P4":
-            break
+        # if table == "P4":
+        #     break
         print(f'Loading Table: {table}')
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         regex = re.compile(r'^[P]')

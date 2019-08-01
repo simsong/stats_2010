@@ -19,6 +19,7 @@ import cb_spec_decoder
 import ctools.cspark as cspark
 import ctools.s3     as s3
 import ctools.tydoc  as tydoc
+import sf1_info as info
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -30,6 +31,7 @@ def smallCellStructure_PersonsSF2000():
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
     from string import ascii_uppercase
     import re
+    from copy import deepcopy
     tables =    [  
                     "P3",       # Race                          [[[Block level tables begin]]]
                     "P4",       # HISP x Race
@@ -77,7 +79,7 @@ def smallCellStructure_PersonsSF2000():
 
     print("Geolevels by state and summary level:")
     sf1_2000.get_df(tableName = GEO_TABLE, sqlName='GEO_2000')
-    
+    multi_index_list = []
     for table in tables:
         #Just wanted to break after first loop to stop for testing.
         if table == "P4":
@@ -88,7 +90,6 @@ def smallCellStructure_PersonsSF2000():
         current_table_var_names = list(filter(filterIds, list(filter(regex.search, list(sf1_2000.get_table(table).varnames())))))
         current_table_var_string = ",".join(current_table_var_names)
         current_info = {}
-
         # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe as a temp table.
         # This is so we can use the already joined table to find the zeros. 
         print(f'Building temp table for {table}')
@@ -99,11 +100,14 @@ def smallCellStructure_PersonsSF2000():
 
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
+        table_info = info.get_correct_builder(table, current_table_var_names)
         for current_var in current_table_var_names:
             result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_var} FROM temp_table "
                     f"WHERE {current_var}=0")
+            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, current_var))
             print_table(result)
             sf1_2000.print_legend(result)
+        print(multi_index_list)
 
 
         

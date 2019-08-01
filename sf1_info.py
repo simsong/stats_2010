@@ -109,6 +109,6 @@ class P6_Builder(Builder):
             "P006002": hispanic_P6
         }
         for index, variable in enumerate(variables):
-            copy_default = deepcopy(non_hispanic_P4)
+            copy_default = deepcopy(non_hispanic_P6)
             copy_default[4] = [index]
             self.map[variable] = copy_default

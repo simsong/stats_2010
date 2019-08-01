@@ -88,7 +88,6 @@ def smallCellStructure_PersonsSF2000():
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         regex = re.compile(r'^[P]')
         all_var_names = sf1_2000.get_table(table).varnames()
-        print(all_var_names)
         print(f"Lenght of all vars {len(all_var_names)}")
         current_table_var_names = list(filter(regex.search, list(all_var_names)))
         current_table_var_names = list(filter(filterIds, current_table_var_names))
@@ -102,16 +101,21 @@ def smallCellStructure_PersonsSF2000():
                 f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
                 f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
         result_temp_table.registerTempTable( "temp_table" )
+        print_table(result_temp_table)
+        sf1_2000.print_legend(result_temp_table)
 
         #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
         #the output with the tytable which has problems if you have alot of variables.
         table_info = info.get_correct_builder(table, current_table_var_names)
-        for current_var in current_table_var_names:
-            result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_var} FROM temp_table "
-                    f"WHERE {current_var}=0")
-            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, current_var))
-            print_table(result)
-            sf1_2000.print_legend(result)
+        result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_table_var_string} FROM temp_table")
+        multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, table))
+        #             f"WHERE {current_var}=0")
+        # for current_var in current_table_var_names:
+        #     result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_var} FROM temp_table "
+        #             f"WHERE {current_var}=0")
+        #     multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, current_var))
+        #     print_table(result)
+        #     sf1_2000.print_legend(result)
         print(multi_index_list)
 
 

@@ -12,13 +12,14 @@ default_CITIZEN = range(2)
 
 # This a dict with the number of proper variables for each Table this is to confirm we are getting the right number
 # I have found that the CSV is not properly formed and is missing variables
+geo_table_header_size = 6
 
-table_size {
-    "P3": 70,
-    "P4": 72,
-    "P5": 71,
-    "P6": 72,
-    "P12": 48
+table_size = {
+    "P3": 70 + geo_table_header_size,
+    "P4": 72 + geo_table_header_size,
+    "P5": 71 + geo_table_header_size,
+    "P6": 72 + geo_table_header_size,
+    "P12": 48 + geo_table_header_size
 }
 
 
@@ -34,13 +35,18 @@ class Builder:
     def __init__(self):
         pass
     
-    def process_results(self, results, current_var):
+    def process_results(self, results, table_name):
         print(self.map)
+        # go through all the rows and see if any values are zero if they are
+        # add a entry into the multi_index array
         to_return = []
         for row in results.collect():
-            current_array = deepcopy(self.map[current_var])
-            current_array.insert(0, row['STATE'])
-            to_return.append(current_array)
+            for key, value in self.map.items():
+                if row[key] == 0:
+                    current_array = deepcopy(self.map[key])
+                    current_array.insert(0, row['STATE'])
+                    to_return.append(current_array)
+        print(f"Table Name: {table_name} Length to return: {len(to_return)}")
         return to_return
 
 

@@ -30,6 +30,7 @@ class Builder:
             current_array = deepcopy(self.map[current_var])
             current_array.insert(0, row['STATE'])
             to_return.append(current_array)
+        return to_return
 
 
 # I am not sure this is the best way to do this but I could not find anywhere else that mapped the data dict variables to 

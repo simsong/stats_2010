@@ -87,7 +87,11 @@ def smallCellStructure_PersonsSF2000():
         print(f'Loading Table: {table}')
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
         regex = re.compile(r'^[P]')
-        current_table_var_names = list(filter(filterIds, list(filter(regex.search, list(sf1_2000.get_table(table).varnames())))))
+        all_var_names = sf1_2000.get_table(table).varnames()
+        print(all_var_names)
+        current_table_var_names = list(filter(regex.search, list(all_var_names)))
+        print(current_table_var_names)
+        current_table_var_names = list(filter(filterIds, current_table_var_names))
         current_table_var_string = ",".join(current_table_var_names)
         current_info = {}
         # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe as a temp table.

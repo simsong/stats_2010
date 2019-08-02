@@ -111,6 +111,7 @@ def smallCellStructure_PersonsSF2000():
             multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table))
         except ValueError as error:
             print(error)
+            break
     print(f"Pre-Expanded Length {len(multi_index_list)}")
 
     start_time = time.time()

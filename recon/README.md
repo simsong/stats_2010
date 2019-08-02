@@ -137,6 +137,7 @@ S3://BUCKET/ROOT - Root of files on file server
 ROOT could be on S3...
 
 File layout:
+
 ```
 $ROOT/dist                     - distribution SF1 ZIP files (do not decompress)
 $ROOT/dist/ST2010.sf1.zip      - distribution 2010 SF1 ZIP files for state ST
@@ -154,7 +155,9 @@ $ROOT/ST/SSCCC/synth_out_SSCCC.csv - Synthetic microdata for SSCCC
 
 
 ```
+
 Where:
+
 ```
 $ROOT = Root of reconstruction data; defined in config.ini
 ST = STUSAB (2-character US Postal code for state)
@@ -162,6 +165,13 @@ SS = 2-digit ANSI code for the state
 CCC = 3-digit ANSI code for the county
 TTTTTT = 6-digit Census tract (might appear TTTT.TT in some Census publications)
 ```
+
+## Database Layout
+As mentioned above, the reconstruction system uses a MySQL server to track the progress of the reconstruction and to coordinate the reconstruction. 
+
+The database tables used are:
+
+
 
 # Making it all run
 
@@ -217,7 +227,7 @@ minutes), but CA took 14844.2 seconds (4.12 hours)
 
     python3 s2_nbuild_state_stats.py --all
 
-## Step 3 --- Create and Solve the .lp.gz files
+## Steps 3 and 4 --- Create and Solve the .lp.gz files
 
 The database reconstruct works by creating linear program (LP) files
 that are delivered to the Guorbi optimizer. The structure of these LP
@@ -250,7 +260,7 @@ You are better off with:
     python3 scheduler.py
 
 
-## Step 4: Generate the microdata:
+## Step 5: Generate the microdata:
 
     python3 s5_make_microdata.py all
 

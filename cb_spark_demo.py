@@ -84,7 +84,7 @@ def smallCellStructure_PersonsSF2000():
     multi_index_list = []
     for table in tables:
         #Just wanted to break after first loop to stop for testing.
-        if table == "P12":
+        if table == "P4":
             break
         print(f'Loading Table: {table}')
         sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
@@ -116,14 +116,17 @@ def smallCellStructure_PersonsSF2000():
     start_time = time.time()
     final_expanded_index_set = set()
     for element_to_expand in multi_index_list:
-        expanded_list = product(*element_to_expand)
+        expanded_list = cartesian_iterative(element_to_expand)
         for tuple_to_add in expanded_list:
             final_expanded_index_set.add(tuple_to_add)
-    end_time = time.time()
     print(f"Expanded Length {len(final_expanded_index_set)}")
-    print(f"Time to expand {end_time - start_time}")
+    print(final_expanded_index_set)
 
-
+def cartesian_iterative(pools):
+  result = [()]
+  for pool in pools:
+    result = [x+(y,) for x in result for y in pool]
+  return result
         
 
 def print_table(result):

@@ -49,7 +49,7 @@ class Builder:
             for key, value in self.map.items():
                 if row[key] == 0:
                     current_array = deepcopy(self.map[key])
-                    current_array.insert(0, row['STATE'])
+                    current_array.insert(0, [ row['STATE'] ])
                     to_return.append(current_array)
         print(f"Table Name: {table_name} Length to return: {len(to_return)}")
         return to_return
@@ -70,8 +70,8 @@ class P3_Builder(Builder):
 class P4_Builder(Builder):
 
     def __init__(self, variables):
-        hispanic_P4 = [default_HHGQ, default_SEX, default_AGE, 1, default_CENRACE, default_CITIZEN]
-        non_hispanic_P4 = [default_HHGQ, default_SEX, default_AGE, 0, -1, default_CITIZEN]
+        hispanic_P4 = [default_HHGQ, default_SEX, default_AGE, [1], default_CENRACE, default_CITIZEN]
+        non_hispanic_P4 = [default_HHGQ, default_SEX, default_AGE, [0], -1, default_CITIZEN]
 
         try:
             variables.remove("P004002")
@@ -98,8 +98,8 @@ class P5_Builder(Builder):
 class P6_Builder(Builder):
 
     def __init__(self, variables):
-        hispanic_P6 = [default_HHGQ, default_SEX, range(18, 116), 1, default_CENRACE, default_CITIZEN]
-        non_hispanic_P6 = [default_HHGQ, default_SEX, range(18, 116), 0, -1, default_CITIZEN]
+        hispanic_P6 = [default_HHGQ, default_SEX, range(18, 116), [1], default_CENRACE, default_CITIZEN]
+        non_hispanic_P6 = [default_HHGQ, default_SEX, range(18, 116), [0], -1, default_CITIZEN]
 
         try:
             variables.remove("P006002")

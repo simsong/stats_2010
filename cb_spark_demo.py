@@ -108,8 +108,7 @@ def smallCellStructure_PersonsSF2000():
             #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
             #the output with the tytable which has problems if you have alot of variables.
             table_info = info.get_correct_builder(table, current_table_var_names)
-            result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_table_var_string} FROM temp_table")
-            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, table))
+            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table))
         except ValueError as error:
             print(error)
     print(f"Pre-Expanded Length {len(multi_index_list)}")

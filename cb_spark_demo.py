@@ -113,15 +113,17 @@ def smallCellStructure_PersonsSF2000():
             print(error)
             break
     print(f"Pre-Expanded Length {len(multi_index_list)}")
+    exapanded_multi_index_list = expand_multi_index_list(multi_index_list)
+    print(f"Expanded Length {len(exapanded_multi_index_list)}")
+    # print(final_expanded_index_set)
 
-    start_time = time.time()
+def expand_multi_index_list(multi_index_list):
     final_expanded_index_set = set()
     for element_to_expand in multi_index_list:
         expanded_list = cartesian_iterative(element_to_expand)
         for tuple_to_add in expanded_list:
             final_expanded_index_set.add(tuple_to_add)
-    print(f"Expanded Length {len(final_expanded_index_set)}")
-    # print(final_expanded_index_set)
+    return final_expanded_index_set
 
 def cartesian_iterative(pools):
   result = [()]

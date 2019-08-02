@@ -83,34 +83,35 @@ def smallCellStructure_PersonsSF2000():
     sf1_2000.get_df(tableName = GEO_TABLE, sqlName='GEO_2000')
     multi_index_list = []
     for table in tables:
-        #Just wanted to break after first loop to stop for testing.
-        if table == "P4":
-            break
-        print(f'Loading Table: {table}')
-        sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
-        regex = re.compile(r'^[P]')
-        all_var_names = sf1_2000.get_table(table).varnames()
-        print(f"Lenght of all vars {len(all_var_names)}")
-        current_table_var_names = list(filter(regex.search, list(all_var_names)))
-        current_table_var_names = list(filter(filterIds, current_table_var_names))
-        print(f"Lenght of filtered vars {len(current_table_var_names)}")
-        current_table_var_string = ",".join(current_table_var_names)
-        current_info = {}
-        # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe as a temp table.
-        # This is so we can use the already joined table to find the zeros. 
-        print(f'Building temp table for {table}')
-        result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
-                f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
-                f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
-        result_temp_table.registerTempTable( "temp_table" )
-        print_table(result_temp_table)
-        sf1_2000.print_legend(result_temp_table)
+        try:
+            #Just wanted to break after first loop to stop for testing.
+            print(f'Loading Table: {table}')
+            sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+            regex = re.compile(r'^[P]')
+            all_var_names = sf1_2000.get_table(table).varnames()
+            print(f"Lenght of all vars {len(all_var_names)}")
+            current_table_var_names = list(filter(regex.search, list(all_var_names)))
+            current_table_var_names = list(filter(filterIds, current_table_var_names))
+            print(f"Lenght of filtered vars {len(current_table_var_names)}")
+            current_table_var_string = ",".join(current_table_var_names)
+            current_info = {}
+            # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe as a temp table.
+            # This is so we can use the already joined table to find the zeros. 
+            print(f'Building temp table for {table}')
+            result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
+                    f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
+                    f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
+            result_temp_table.registerTempTable( "temp_table" )
+            print_table(result_temp_table)
+            sf1_2000.print_legend(result_temp_table)
 
-        #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
-        #the output with the tytable which has problems if you have alot of variables.
-        table_info = info.get_correct_builder(table, current_table_var_names)
-        result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_table_var_string} FROM temp_table")
-        multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, table))
+            #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
+            #the output with the tytable which has problems if you have alot of variables.
+            table_info = info.get_correct_builder(table, current_table_var_names)
+            result = spark.sql(f"SELECT LOGRECNO, STUSAB, STATE, SUMLEV, GEOCOMP, NAME, {current_table_var_string} FROM temp_table")
+            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result, table))
+        except ValueError as error:
+            print(error)
     print(f"Pre-Expanded Length {len(multi_index_list)}")
 
     start_time = time.time()
@@ -120,7 +121,7 @@ def smallCellStructure_PersonsSF2000():
         for tuple_to_add in expanded_list:
             final_expanded_index_set.add(tuple_to_add)
     print(f"Expanded Length {len(final_expanded_index_set)}")
-    print(final_expanded_index_set)
+    # print(final_expanded_index_set)
 
 def cartesian_iterative(pools):
   result = [()]

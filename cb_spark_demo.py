@@ -94,7 +94,7 @@ def smallCellStructure_PersonsSF2000():
             current_table_var_names = list(filter(filterIds, current_table_var_names))
             print(f"Lenght of filtered vars {len(current_table_var_names)}")
             current_table_var_string = ",".join(current_table_var_names)
-            current_info = {}
+            table_info = info.get_correct_builder(table, current_table_var_names)
             # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe as a temp table.
             # This is so we can use the already joined table to find the zeros. 
             print(f'Building temp table for {table}')
@@ -107,7 +107,6 @@ def smallCellStructure_PersonsSF2000():
 
             #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
             #the output with the tytable which has problems if you have alot of variables.
-            table_info = info.get_correct_builder(table, current_table_var_names)
             multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table))
         except ValueError as error:
             print(error)

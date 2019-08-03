@@ -171,19 +171,22 @@ As mentioned above, the reconstruction system uses a MySQL server to track the p
 
 The database tables used are:
 
-* TABLE errors --- tracks some errors that programs in this suite encounter.  This was useful during development, but for normal use this table should be empty.
-* TABLE geo --- an extract of the SF1 geography segments. Note that the geo segments join one-to-one with the numbered segments for each state's SF1, and that there is population data in the geo segment (specificaly, POP100 counts the number of people in the geographical unit). This table is super-useful for two reasons. First, it has a NAME column which gives you a human-readable name of every geounit. Second, it has POP100, which lets you quickly tabulate the population of any geounit or collection of geounits. Want to know the 2010 population of the United States? Just type `SELECT sum(POP100) from geo where SUMLEV='040';`
-* TABLE tracts --- tracks the progress of creating and solving the LP files, which are built county-by-county and solved track-by-track. The if `lp_end IS NOT NULL`, then the LP file has been created. If `sol_end IS NOT NULL` then the solution has been found.
-
-* TALBLE glog --- If you are into Gurobi performance, you can parse the Gurobi logfiles and store the results in this table. Note that some Guorbi states are stored in tracts, and this table could be removed and put into tracts, but then tracts would be much wider and even more annoying to use. Still, proper database maintenance says that this should be done, and that the Gurobi logfile should be automatically parsed when it is created, rather than being done in a post-processing fashion. Perhaps this will be done by the time you read this, and this table will be removed, and you won't be reading this paragraph afterall...
-
-* TABLE sysload --- This table tracks the system load of every node. This table is updated by the `scheduler.py` program, which is running on every node. The `report.cgi` reads this. It's mostly useful when you are trying to coordinate a solution using multiple nodes and you are trying to figure out why the code has crashed. You know it's crashed because the system load has dropped from a reasonable 32 (on a 32-core system) to 0.05. 
+|Table Name|Meaning|
+|----------|-------|
+|TABLE errors|tracks some errors that programs in this suite encounter.  This was useful during development, but for normal use this table should be empty|
+|TABLE geo|an extract of the SF1 geography segments. Note that the geo segments join one-to-one with the numbered segments for each state's SF1, and that there is population data in the geo segment (specificaly, POP100 counts the number of people in the geographical unit). This table is super-useful for two reasons. First, it has a NAME column which gives you a human-readable name of every geounit. Second, it has POP100, which lets you quickly tabulate the population of any geounit or collection of geounits. Want to know the 2010 population of the United States? Just type `SELECT sum(POP100) from geo where SUMLEV='040';`|
+|TABLE tracts|tracks the progress of creating and solving the LP files, which are built county-by-county and solved track-by-track. The if `lp_end IS NOT NULL`, then the LP file has been created. If `sol_end IS NOT NULL` then the solution has been found.|
+|TALBLE glog|If you are into Gurobi performance, you can parse the Gurobi logfiles and store the results in this table. Note that some Guorbi states are stored in tracts, and this table could be removed and put into tracts, but then tracts would be much wider and even more annoying to use. Still, proper database maintenance says that this should be done, and that the Gurobi logfile should be automatically parsed when it is created, rather than being done in a post-processing fashion. Perhaps this will be done by the time you read this, and this table will be removed, and you won't be reading this paragraph afterall...|
+|TABLE sysload|This table tracks the system load of every node. This table is updated by the `scheduler.py` program, which is running on every node. The `report.cgi` reads this. It's mostly useful when you are trying to coordinate a solution using multiple nodes and you are trying to figure out why the code has crashed. You know it's crashed because the system load has dropped from a reasonable 32 (on a 32-core system) to 0.05.|
 
 There are also some database views. They are under-utlized, but they are basically free, and you might find them useful:
 
-* VIEW geo_counties--- A view that provides the geocode, state, county, name, and pop100 for every county. Useful if you just care about geocodes and county populations.
-* VIEW geo_tracts --- A view that provides the geocode, state, county, tract, name, and pop100 for every tract. Useful if you just care about geocodes and tract populations.
-* VIEW geo_blocks --- A view that provides the geocode, state, county, tract, block, name, and pop100 for every block. Useful if you just care about geocodes and block populations.
+|View Name|Meaning|
+|---------|-------|
+|VIEW geo_counties |A view that provides the geocode, state, county, name, and pop100 for every county. Useful if you just care about geocodes and county populations.|
+|VIEW geo_tracts| A view that provides the geocode, state, county, tract, name, and pop100 for every tract. Useful if you just care about geocodes and tract populations|
+|VIEW geo_blocks|A view that provides the geocode, state, county, tract, block, name, and pop100 for every block. Useful if you just care about geocodes and block populations|
+|VIEW tracts_geostatus|For every tract, provides its geocode and whether a LP file and SOL file have been created.|
 
 # Making it all run
 

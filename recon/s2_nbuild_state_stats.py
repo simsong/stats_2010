@@ -266,8 +266,6 @@ def process_state(state_abbr):
                 output_files[county][sumlev].write(outline)
 
 
-
-
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,

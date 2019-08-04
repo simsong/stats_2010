@@ -71,7 +71,7 @@ SUMLEVS = {
     "State": '040',
     "County": '050',
     "Census Tract-Block": '101',
-    "Census Tract: '140'"
+    "Census Tract": '140'
 }
 
 SUMLEV_STATE = '040'

@@ -70,8 +70,6 @@ class SLGSQL:
         c.execute(sql, vals)
         return c.fetchone()
 
-
-
 def make_database(conn):
     conn.row_factory = sqlite3.Row
     conn.cursor().execute(SQL_SET_CACHE)

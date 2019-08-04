@@ -101,6 +101,10 @@ class GurobiLogfileParser:
         return self.find(r"Explored.* in (\d+[.]\d+) seconds")
     
     @property
+    def nodes(self):
+        return self.find(r"Explored (\d+) node")
+
+    @property
     def dict(self):
         ret = {field:getattr(self,field) for field in 
                ['gurobi_version','rows','columns','nonzeros','presolve_rows','presolve_NZ',

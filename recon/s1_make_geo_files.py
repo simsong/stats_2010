@@ -116,7 +116,7 @@ def make_county_list(state_abbr:str):
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
-                             description="Read SF1 geography files and creates the counties geography file. "
+                             description="Read SF1 geography files, creates the counties geography files, and loads the MySQL database."
                              "This is pretty fast and DB heavy, so it is not parallelized" )
     parser.add_argument("--showcounties", 
                         help="Display all counties for state from files that were created", action='store_true')

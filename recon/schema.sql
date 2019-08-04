@@ -19,17 +19,6 @@
 -- Table structure for table `addme`
 --
 
-DROP TABLE IF EXISTS `addme`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `addme` (
-  `stusab` varchar(2) DEFAULT NULL,
-  `state` varchar(2) DEFAULT NULL,
-  `county` varchar(3) DEFAULT NULL,
-  `tract` varchar(6) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
 --
 -- Table structure for table `errors`
 --

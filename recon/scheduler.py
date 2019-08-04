@@ -50,13 +50,6 @@ LP_J1    = 1                    # let this program schedule
 
 ################################################################
 ## These are Memoized because they are only used for init() and rescan()
-@dbrecon.Memoize
-def county_csv_exists(state_abbr,county):
-    return dbrecon.COUNTY_CSV_FILENAME(state_abbr=state_abbr, county=county)
-
-@dbrecon.Memoize
-def tracts_with_files(s, c, w):
-    return dbrecon.tracts_with_files(s, c, w)
 
 def rescan():
     states = [args.state] if args.state else dbrecon.all_state_abbrs()
@@ -193,7 +186,6 @@ class PSTree():
 def run():
     os.set_blocking(sys.stdin.fileno(), False)
     running     = set()
-    stopping    = False
     last_ps_list     = 0
     quiet       = True
     last_lp_launch = 0
@@ -203,6 +195,7 @@ def run():
         """Return a list of the runn LP makers"""
         return [p for p in running if p.args[1]==S3_SYNTH]
 
+    stop_requested = False
     while True:
         command = sys.stdin.read(256).strip().lower()
         if command!='':
@@ -210,11 +203,9 @@ def run():
             if command=="halt":
                 # Halt is like stop, except we kill the jobs first
                 [kill_tree(p) for p in running]
-                dbrecon.request_stop()
-                stopping = True
+                stop_requested = True
             elif command=='stop':
-                dbrecon.request_stop()
-                stopping = True
+                stop_requested = True
             elif command.startswith('ps'):
                 subprocess.call("ps ww -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu".split())
             elif command=='list':
@@ -283,11 +274,10 @@ def run():
                 running.remove(p)
                 continue
             
-        if dbrecon.should_stop():
+        if stop_requested:
             print("STOP REQUESTED")
             if len(running)==0:
                 print("NONE LEFT. STOPPING.")
-                dbrecon.check_stop()
                 break;
             else:
                 print("Waiting for stop...")

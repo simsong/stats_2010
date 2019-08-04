@@ -1,0 +1,4 @@
+ '040':"State ",
+ '050':"County ",
+ '101':"Census Tract-Block",
+ '140':"Census Tract",

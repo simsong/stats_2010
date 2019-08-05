@@ -30,13 +30,24 @@ from configparser import ConfigParser
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
-import ctools.s3 as s3
-import ctools.clogging as clogging
-import ctools.dbfile as dbfile
+try:
+    import ctools.s3 as s3
+    import ctools.clogging as clogging
+    import ctools.dbfile as dbfile
+except ImportError as e:
+    raise RuntimeError("ctools submodule has not been loaded.")
+
+try:
+    from dfxml.python.dfxml.writer import DFXMLWriter
+except ImportError as e:
+    raise RuntimeError("dfxml submodule has not been loaded.")
+
+
 from ctools.gzfile import GZFile
 from total_size import total_size
 
 RETRIES = 10
+RETRY_DELAY_TIME = 10
 DEFAULT_QUIET=True
 # For handling the config file
 SRC_DIRECTORY   = os.path.dirname(__file__)
@@ -123,7 +134,11 @@ class DB:
     @staticmethod
     def csfr(cmd,vals=None,quiet=False,rowcount=None):
         """Connect, select, fetchall, and retry as necessary"""
-        import mysql.connector.errors
+        try:
+            from mysql.connector.errors import ProgrammingError,InterfaceError,OperationalError
+        except ImportError as e:
+            from pymysql.err import ProgrammingError,InterfaceError,OperationalError
+
         for i in range(1,RETRIES):
             try:
                 db = DB()
@@ -140,7 +155,7 @@ class DB:
                     c.execute(cmd,vals)
                     if (rowcount is not None) and ( c.rowcount!=rowcount):
                         logging.error(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
-                except mysql.connector.errors.ProgrammingError as e:
+                except ProgrammingError as e:
                     logging.error("cmd: "+str(cmd))
                     logging.error("vals: "+str(vals))
                     logging.error(str(e))
@@ -150,15 +165,15 @@ class DB:
                 c.close()       # close the cursor
                 db.close() # close the connection
                 return result
-            except mysql.connector.errors.InterfaceError as e:
+            except InterfaceError as e:
                 logging.error(e)
                 logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
                 pass
-            except mysql.connector.errors.OperationalError as e:
+            except OperationalError as e:
                 logging.error(e)
                 logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
                 pass
-            time.sleep(RETRY_DELAY_TIME)
+            ftime.sleep(RETRY_DELAY_TIME)
         raise e
 
     def cursor(self):
@@ -588,6 +603,7 @@ def argparse_add_logging(parser):
 
 def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
                   stdout=None,args=None,error_alert=True):
+    global dfxml_writer
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
 
@@ -626,7 +642,6 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     logger.addHandler(error_handler)
 
     # Log to DFXML
-    from dfxml.python.dfxml.writer import DFXMLWriter
     dfxml_writer    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
     dfxml_handler   = dfxml_writer.logHandler()
     logger.addHandler(dfxml_handler)

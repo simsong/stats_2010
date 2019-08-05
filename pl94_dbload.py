@@ -22,8 +22,6 @@ import time
 import zipfile
 import io
 
-from sql import SLGSQL
-
 DBFILE="pl94.sqlite3"
 
 CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.

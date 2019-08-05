@@ -1,7 +1,6 @@
 
 Gurobi 8.1.1 (linux64, Python) logging started Fri Jun 21 10:04:21 2019
 
-Academic license - for non-commercial use only
 Changed value of parameter LogToConsole to 0
    Prev: 1  Min: 0  Max: 1  Default: 1
 Read LP format model from file /tmp/stdin-24592-_home_ecco_lv39_projects_2010_recon_az_04001_lp_model_04001944300.lp.gz.lp

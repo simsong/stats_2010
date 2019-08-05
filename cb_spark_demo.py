@@ -140,15 +140,16 @@ def print_table(result):
     
 
 def filterIds(ids):
-    # This includes all of the none leaf ids of the tables proposed by Philip. 
-    # This is currently on P3, P4, and P5.
-    # I wish but could not find a automatic way to tell what where totals and what where leafs.
+    # This will include all of the none leaf ids of the tables proposed by Philip.
+    # I wish I could not find a automatic way to tell what where totals and what where leafs.
     total_table_reference = ["P003001","P003002","P003009","P003010","P003026","P003047",
                              "P003063","P003070","P004001","P004003","P004004","P004011",
                              "P004012","P004028","P004049","P004065","P004072","P005001",
                              "P005002","P005009","P005010","P005026","P005047","P005063",
                              "P005070","P006001","P006003","P006004","P006011","P006012",
-                             "P006028","P006049","P006065","P006072"]
+                             "P006028","P006049","P006065","P006072","P012001","P012002",
+                             "P012026","P014001","P014002","P014023","P037001","P037002",
+                             "P037006"]
     if(ids in total_table_reference):
         return False
     else:

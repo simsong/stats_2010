@@ -236,19 +236,3 @@ class P37_Builder(Builder):
 
 #         default_P38_correctional = [[1], default_SEX, -1, default_HISP, default_CENRACE, default_CITIZEN]
 #         default_P38_correctional =
-
-
-
-# 1,3,4
-# 5,6,7
-
-default_HHGQ = range(8)
-default_SEX = range(2)
-default_AGE = range(116)
-default_HISP = range(2)
-default_CENRACE = range(63)
-default_CITIZEN = range(2)
-
-
-
-

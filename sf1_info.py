@@ -12,7 +12,7 @@ default_CENRACE = range(63)
 default_CITIZEN = range(2)
 
 # This a dict with the number of proper variables for each Table this is to confirm we are getting the right number
-# I have found that the CSV is not properly formed and is missing variables
+# this is just to have a extra level of protection to make sure that we get all of the variabes.
 geo_table_header_size = 6
 
 table_size = {

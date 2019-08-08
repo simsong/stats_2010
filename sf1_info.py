@@ -197,9 +197,9 @@ class P14_Builder(Builder):
             if variable >= value[0] and variable <= value[1]:
                 copy_default[1] = key
                 if key == 0:
-                    copy_default[2] = self.buckets[index]
+                    copy_default[2] = index
                 else:
-                    copy_default[2] = self.buckets[index - 19]
+                    copy_default[2] = index - 19
         self.map[variable] = copy_default
 
 class P16_Builder(Builder):

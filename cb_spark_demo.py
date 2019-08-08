@@ -28,9 +28,63 @@ if 'DAS_S3ROOT' in os.environ:
 else:
     DATAROOT = os.path.join( os.path.dirname(__file__), 'data')
 
-def smallCellStructure_PersonsSF2000():
-    # From a list of tables with integer counts, find those with small counts in 2000 SF1
+def smallCellStructure_HouseholdsSF2000():
+    # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Households
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
+    # Tables chosen from that document to get small-cell counts corresponding to histogram at:
+    #   https://github.ti.census.gov/CB-DAS/das_decennial/blob/master/programs/schema/schemas/Schema_Household2010.py
+    from string import ascii_uppercase
+    import re
+    from copy import deepcopy
+    tables =    [  
+                    "P15",      # Total Households              [[[Block level tables begin]]]
+                    "P18",      # HHSIZE x HHTYPE x PRES_OWN_CHILD
+                    "P19",      # PRES_UNDER_18 x HHTYPE
+                    "P20",      # HHAGE x HHTYPE x PRES_OWN_CHILD
+                    "P21",      # HHTYPE x HHAGE
+                    "P22",      # PRES_>60 x HHSIZE x HHTYPE
+                    "P23",      # PRES_>65 x HHSIZE x HHTYPE
+                    "P24",      # PRES_>75 x HHSIZE x HHTYPE
+                    "P25",      # PRES_NONRELATIVES
+                    "P26",      # HHSIZE
+                    "P31",      # FAMILIES
+                    "P34",      # FAM_TYPE x PRES_OWN_CHILD x AGE_OWN_CHILD
+                    "P35"       # FAM_TYPE x PRES_RELATED_CHLD x AGE_RELATED_CHILD #### May be irrelevant to histogram?
+                ]
+    # HHs by Major Race Alone / HISP of Householder
+    tables +=   [f"P15{letter}" for letter in ascii_uppercase[:9]] # A-I
+    # HHs by HHSIZE by Major Race Alone / HISP of Householder
+    tables +=   [f"P26{letter}" for letter in ascii_uppercase[:9]] # A-I
+    # Families by HHSIZE by Major Race Alone / HISP of Householder
+    tables +=   [f"P31{letter}" for letter in ascii_uppercase[:9]] # A-I
+    # Family Type x PRES_OWN_CHILD x AGE_OWN_CHILD by Major Race Alone / HISP of Householder
+    tables +=   [f"P34{letter}" for letter in ascii_uppercase[:9]] # A-I
+    # Family Type x PRES_REL_CHILD x AGE_REL_CHILD by Major Race Alone / HISP of Householder #### Irrelevant to histogram?
+    tables +=   [f"P35{letter}" for letter in ascii_uppercase[:9]] # A-I
+    tables +=   [
+                    "PCT14"    # Unmarried-Partner HHs by Sex of Partners #### Can determine from HHTYPE+HHSEX in our histogram
+                ]
+    # Skipping some tables we eventually want but which current histogram doesn't support: H3, H4, H5
+    tables +=   [
+                    "H6",   # HHRACE
+                    "H7",   # HHRACE x HHHISP
+                    "H8",   # HHRACEs Tallied (this one is a bit weird but I think works with current histogram)
+                    "H9",   # HHRACEs Tallied x HHHISP
+                    "H13"   # HHSIZE
+                    # H14   # TENURE x HHRACE (do want eventually but not in scope of current histogram)
+                    # H15   # TENURE x HHSIZE (do want eventually but not in scope of current histogram)
+                    # H16   # TENURE x HHAGE (do want eventually but not in scope of current histogram)
+                    # H17   # TENURE x HHTYPE x HHAGE (do want eventually but not in scope of current histogram)
+                ]
+    # TENURE x HHSIZE x Major Race Alone / HISP of Householder
+    #tables +=   [f"H15{letter}" for letter in ascii_uppercase[:9]] # A-I # Not yet in scope of histogram
+    # H16A-I # Not yet in scope
+
+def smallCellStructure_PersonsSF2000():
+    # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Persons
+    # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
+    # Tables chosen from that document to get small-cell counts corresponding to histogram at:
+    #   https://github.ti.census.gov/CB-DAS/das_decennial/blob/master/programs/schema/schemas/Schema_DHCP_HHGQ.py 
     from string import ascii_uppercase
     import re
     from copy import deepcopy

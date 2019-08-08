@@ -1,5 +1,6 @@
 from copy import deepcopy
 import math
+from string import ascii_uppercase
 
 # dimnames=[HHGQ, SEX, AGE, HISP, CENRACE, CITIZEN], 
 # shape=(8, 2, 116, 2, 63, 2), 
@@ -27,6 +28,7 @@ table_size = {
 
 
 def get_correct_builder(table_name, values):
+    P12_letter_tables = [f"P12{letter}" for letter in ascii_uppercase[:9]]
     if table_name == "P3":
         return P3_Builder(values)
     elif table_name == "P4":
@@ -43,6 +45,8 @@ def get_correct_builder(table_name, values):
         return P16_Builder(values)
     elif table_name == "P37":
         return P37_Builder(values)
+    elif table_name in P12_letter_tables:
+        return P12_Letter_Builder(values, table_name)
     raise ValueError(f"No Builder found for table {table_name}")
 
 class Builder:
@@ -227,12 +231,79 @@ class P37_Builder(Builder):
         }
         self.create_map(variables)
 
-# class P38_Builder(Builder):
+class P12_Letter_Builder(Builder):
 
-#     def __init__(self, variables):
-#         variable_map = {
-#             "Male_Under_18" : [""]
-#         }
+    def __init__(self, variables, table_name):
+        super().__init__()
+        self.default_P12 = [default_HHGQ, -1, -1, default_HISP, default_CENRACE, default_CITIZEN]
+        self.map = {}
+        # The next two variables are filled in using the function specific_P12_table.
+        self.default_CENRACE_for_table = None
+        self.is_hispanic = None
 
-#         default_P38_correctional = [[1], default_SEX, -1, default_HISP, default_CENRACE, default_CITIZEN]
-#         default_P38_correctional =
+        # A tables in this group has the same age buckets.
+        self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 116]
+        self.buckets = []
+
+        for i in range(len(self.bucket_ends)):
+            if i == 0:
+                self.buckets.append(range(self.bucket_ends[i] + 1))
+            else:
+                self.buckets.append(range(self.bucket_ends[i - 1] + 1, self.bucket_ends[i] + 1))
+        # There should be double the buckets this is because there is males and females.
+        self.buckets = self.buckets + self.buckets
+        self.specific_P12_table(table_name)
+        self.create_map(variables)
+
+    # All of this group of tables follows the same pattern for naming there variable names.
+    def build_range_map(self, table_letter):
+        self.range_map = {
+            0: [f'P012{table_letter}003', f'P012{table_letter}025'],
+            1: [f'P112{table_letter}027', f'P012{table_letter}049']
+        }
+
+    # This class is going to handle all of the P12Letter Tables.
+    # So this function is just to put any specific needed logic.
+    def specific_P12_table(self, table_name):
+        if table_name == "P12A":
+            self.build_range_map('A')
+            self.default_CENRACE_for_table = [0]
+        elif table_name = "P12B":
+            self.build_range_map('B')
+            self.default_CENRACE_for_table = [1]
+        elif table_name = "P12C":
+            self.build_range_map('C')
+            self.default_CENRACE_for_table = [2]
+        elif table_name = "P12D":
+            self.build_range_map('D')
+            self.default_CENRACE_for_table = [3]
+        elif table_name = "P12E":
+            self.build_range_map('E')
+            self.default_CENRACE_for_table = [4]
+        elif table_name = "P12F":
+            self.build_range_map('F')
+            self.default_CENRACE_for_table = [5]
+        elif table_name = "P12G":
+            self.build_range_map('G')
+            self.default_CENRACE_for_table = list(range(6, 21))
+        elif table_name = "P12H":
+            self.build_range_map('H')
+            self.is_hispanic = [1]
+        elif table_name = "P12I":
+            self.build_range_map('I')
+            self.is_hispanic = [0]
+            self.default_CENRACE_for_table = [0]
+
+
+    def build_map(self, index, variable):
+        copy_default = deepcopy(self.default_P12)
+        for key, value in self.range_map.items():
+            if variable >= value[0] and variable <= value[1]:
+                copy_default[1] = key
+                copy_default[2] = self.buckets[index]
+                if self.default_CENRACE_for_table is not None:
+                    copy_default[4] = self.default_CENRACE_for_table
+                if self.is_hispanic is not None:
+                    copy_default[0] = self.is_hispanic
+        self.map[variable] = copy_default
+        

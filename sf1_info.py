@@ -268,28 +268,28 @@ class P12_Letter_Builder(Builder):
         if table_name == "P12A":
             self.build_range_map('A')
             self.default_CENRACE_for_table = [0]
-        elif table_name = "P12B":
+        elif table_name == "P12B":
             self.build_range_map('B')
             self.default_CENRACE_for_table = [1]
-        elif table_name = "P12C":
+        elif table_name == "P12C":
             self.build_range_map('C')
             self.default_CENRACE_for_table = [2]
-        elif table_name = "P12D":
+        elif table_name == "P12D":
             self.build_range_map('D')
             self.default_CENRACE_for_table = [3]
-        elif table_name = "P12E":
+        elif table_name == "P12E":
             self.build_range_map('E')
             self.default_CENRACE_for_table = [4]
-        elif table_name = "P12F":
+        elif table_name == "P12F":
             self.build_range_map('F')
             self.default_CENRACE_for_table = [5]
-        elif table_name = "P12G":
+        elif table_name == "P12G":
             self.build_range_map('G')
             self.default_CENRACE_for_table = list(range(6, 21))
-        elif table_name = "P12H":
+        elif table_name == "P12H":
             self.build_range_map('H')
             self.is_hispanic = [1]
-        elif table_name = "P12I":
+        elif table_name == "P12I":
             self.build_range_map('I')
             self.is_hispanic = [0]
             self.default_CENRACE_for_table = [0]

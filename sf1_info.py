@@ -192,7 +192,7 @@ class P14_Builder(Builder):
         self.create_map(variables)
 
     def build_map(self, index, variable):
-        copy_default = deepcopy(self.default_P12)
+        copy_default = deepcopy(self.default_P14)
         for key, value in self.range_map.items():
             if variable >= value[0] and variable <= value[1]:
                 copy_default[1] = key

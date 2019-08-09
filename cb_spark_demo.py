@@ -9,19 +9,15 @@ SF1_ROOT = location of SF1.
 
 """
 
-import os
 import sys
+from string import ascii_uppercase
 
-from constants import *
-#from decennial_df import DecennialDF,files,register_files,unique_selector
+import ctools.cspark as cspark
+import ctools.tydoc  as tydoc
 
 import cb_spec_decoder
-import ctools.cspark as cspark
-import ctools.s3     as s3
-import ctools.tydoc  as tydoc
 import sf1_info as info
-from itertools import product
-import time
+from constants import *
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -34,9 +30,7 @@ def smallCellStructure_HouseholdsSF2000():
     # Tables chosen from that document to get small-cell counts corresponding to histogram at:
     #   https://github.ti.census.gov/CB-DAS/das_decennial/blob/master/programs/schema/schemas/Schema_Household2010.py
     from string import ascii_uppercase
-    import re
-    from copy import deepcopy
-    tables =    [  
+    tables =    [
                     "P15",      # Total Households              [[[Block level tables begin]]]
                     "P18",      # HHSIZE x HHTYPE x PRES_OWN_CHILD
                     "P19",      # PRES_UNDER_18 x HHTYPE
@@ -203,11 +197,10 @@ def filterIds(ids):
                              "P005070","P006001","P006003","P006004","P006011","P006012",
                              "P006028","P006049","P006065","P006072","P012001","P012002",
                              "P012026","P014001","P014002","P014023","P037001","P037002",
-                             "P037006","P012A001","P012A002","P012A026","P012B001","P012B002","P012B026",
-                             "P012C001","P012C002","P012C026","P012D001","P012D002","P012D026",
-                             "P012E001","P012E002","P012E026","P012F001","P012F002","P012F026",
-                             "P012G001","P012G002","P012G026","P012H001","P012H002","P012H026",
-                             "P012I001","P012I002","P012I026"]
+                             "P037006"]
+    [total_table_reference.extend([f"P012{letter}001", f"P012{letter}002", f"P012{letter}026"]) for letter in ascii_uppercase[:9]]
+    [total_table_reference.extend([f"PCT012{letter}001", f"PCT012{letter}002", f"PCT012{letter}106"]) for letter in ascii_uppercase[:15]]
+    total_table_reference += ["PCT012001", "PCT012002", "PCT012106"]
     if(ids in total_table_reference):
         return False
     else:

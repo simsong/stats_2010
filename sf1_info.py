@@ -25,10 +25,10 @@ table_size = {
 }
 
 
-
-
 def get_correct_builder(table_name, values):
-    P12_letter_tables = [f"P12{letter}" for letter in ascii_uppercase[:9]]
+    p12_letter_tables = [f"P12{letter}" for letter in ascii_uppercase[:9]]
+    pct12_letter_tables = ['PCT12']
+    pct12_letter_tables += [f"PCT12{letter}" for letter in ascii_uppercase[:15]]
     if table_name == "P3":
         return P3_Builder(values)
     elif table_name == "P4":
@@ -45,8 +45,10 @@ def get_correct_builder(table_name, values):
         return P16_Builder(values)
     elif table_name == "P37":
         return P37_Builder(values)
-    elif table_name in P12_letter_tables:
+    elif table_name in p12_letter_tables:
         return P12_Letter_Builder(values, table_name)
+    elif table_name in pct12_letter_tables:
+        return PCT12_Builder(values, table_name)
     raise ValueError(f"No Builder found for table {table_name}")
 
 class Builder:
@@ -294,7 +296,6 @@ class P12_Letter_Builder(Builder):
             self.is_hispanic = [0]
             self.default_CENRACE_for_table = [0]
 
-
     def build_map(self, index, variable):
         copy_default = deepcopy(self.default_P12)
         for key, value in self.range_map.items():
@@ -306,4 +307,92 @@ class P12_Letter_Builder(Builder):
                 if self.is_hispanic is not None:
                     copy_default[0] = self.is_hispanic
         self.map[variable] = copy_default
-        
+
+
+class PCT12_Builder(Builder):
+
+    def __init__(self, variables, table_name):
+        super().__init__()
+        self.default_PCT12 = [default_HHGQ, -1, -1, -1, -1, default_CITIZEN]
+        self.range_map = {}
+        self.default_CENRACE_for_table = default_CENRACE
+        self.default_HISP_for_table = default_HISP
+
+        self.buckets = list(range(100)) + [[100, 104], [105, 109], [110, 116]]
+        # This is because we have buckets for male and female.
+        self.buckets += self.buckets
+        self.specific_PCT12_table(table_name)
+        self.create_map(variables)
+
+    def build_range_map(self, table_letter):
+        self.range_map = {
+            0: [f'PCT012{table_letter}003', f'PCT012{table_letter}105'],
+            1: [f'PCT012{table_letter}107', f'PCT012{table_letter}209']
+        }
+
+    def specific_PCT12_table(self, table_name):
+        if table_name == "PCT12":
+            self.build_range_map('')
+        elif table_name == "PCT12A":
+            self.build_range_map('A')
+            self.default_CENRACE_for_table = [0]
+        elif table_name == "PCT12B":
+            self.build_range_map('B')
+            self.default_CENRACE_for_table = [1]
+        elif table_name == "PCT12C":
+            self.build_range_map('C')
+            self.default_CENRACE_for_table = [2]
+        elif table_name == "PCT12D":
+            self.build_range_map('D')
+            self.default_CENRACE_for_table = [3]
+        elif table_name == "PCT12E":
+            self.build_range_map('E')
+            self.default_CENRACE_for_table = [4]
+        elif table_name == "PCT12F":
+            self.build_range_map('F')
+            self.default_CENRACE_for_table = [5]
+        elif table_name == "PCT12G":
+            self.build_range_map('G')
+            self.default_CENRACE_for_table = list(range(6, 21))
+        elif table_name == "PCT12H":
+            self.build_range_map('H')
+            self.default_HISP_for_table = [1]
+        elif table_name == "PCT12I":
+            self.build_range_map('I')
+            self.default_CENRACE_for_table = [0]
+            self.default_HISP_for_table = [0]
+        elif table_name == "PCT12J":
+            self.build_range_map('J')
+            self.default_CENRACE_for_table = [1]
+            self.default_HISP_for_table = [0]
+        elif table_name == "PCT12K":
+            self.build_range_map('K')
+            self.default_CENRACE_for_table = [2]
+            self.default_HISP_for_table = [0]
+        elif table_name == "PCT12L":
+            self.build_range_map('L')
+            self.default_CENRACE_for_table = [3]
+            self.default_HISP_for_table = [0]
+        elif table_name == "PCT12M":
+            self.build_range_map('M')
+            self.default_CENRACE_for_table = [4]
+            self.default_HISP_for_table = [0]
+        elif table_name == "PCT12N":
+            self.build_range_map('N')
+            self.default_CENRACE_for_table = [5]
+            self.default_HISP_for_table = [0]
+        elif table_name == "PCT12O":
+            self.build_range_map('O')
+            self.default_CENRACE_for_table = list(range(6, 21))
+            self.default_HISP_for_table = [0]
+
+    def build_map(self, index, variable):
+        copy_default = deepcopy(self.default_PCT12)
+        for key, value in self.range_map.items():
+            if value[0] <= variable <= value[1]:
+                copy_default[1] = key
+                copy_default[2] = self.buckets[index]
+                if self.default_HISP_for_table:
+                    copy_default[3] = self.default_HISP_for_table
+                if self.default_CENRACE_for_table:
+                    copy_default[4] = self.default_CENRACE_for_table

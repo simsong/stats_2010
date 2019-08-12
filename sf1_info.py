@@ -14,14 +14,13 @@ default_CITIZEN = range(2)
 
 # This a dict with the number of proper variables for each Table this is to confirm we are getting the right number
 # this is just to have a extra level of protection to make sure that we get all of the variabes.
-geo_table_header_size = 6
 
 table_size = {
-    "P3": 70 + geo_table_header_size,
-    "P4": 72 + geo_table_header_size,
-    "P5": 71 + geo_table_header_size,
-    "P6": 72 + geo_table_header_size,
-    "P12": 48 + geo_table_header_size
+    "P3": 70,
+    "P4": 72,
+    "P5": 71,
+    "P6": 72,
+    "P12": 48
 }
 
 
@@ -29,6 +28,8 @@ def get_correct_builder(table_name, values):
     p12_letter_tables = [f"P12{letter}" for letter in ascii_uppercase[:9]]
     pct12_letter_tables = ['PCT12']
     pct12_letter_tables += [f"PCT12{letter}" for letter in ascii_uppercase[:15]]
+    pct13_letter_tables = ['PCT13']
+    pct13_letter_tables += [f"PCT13{letter}" for letter in ascii_uppercase[:12]]
     if table_name == "P3":
         return P3_Builder(values)
     elif table_name == "P4":
@@ -49,7 +50,10 @@ def get_correct_builder(table_name, values):
         return P12_Letter_Builder(values, table_name)
     elif table_name in pct12_letter_tables:
         return PCT12_Builder(values, table_name)
+    elif table_name in pct13_letter_tables:
+        return PCT13_Builder(values, table_name)
     raise ValueError(f"No Builder found for table {table_name}")
+
 
 class Builder:
     def __init__(self):
@@ -315,6 +319,7 @@ class PCT12_Builder(Builder):
         super().__init__()
         self.default_PCT12 = [default_HHGQ, -1, -1, -1, -1, default_CITIZEN]
         self.range_map = {}
+        self.map = {}
         self.default_CENRACE_for_table = default_CENRACE
         self.default_HISP_for_table = default_HISP
 
@@ -385,6 +390,8 @@ class PCT12_Builder(Builder):
             self.build_range_map('O')
             self.default_CENRACE_for_table = list(range(6, 21))
             self.default_HISP_for_table = [0]
+        else:
+            raise ValueError(f'Failed to find {table_name} in PCT12_Builder.')
 
     def build_map(self, index, variable):
         copy_default = deepcopy(self.default_PCT12)
@@ -396,3 +403,80 @@ class PCT12_Builder(Builder):
                     copy_default[3] = self.default_HISP_for_table
                 if self.default_CENRACE_for_table:
                     copy_default[4] = self.default_CENRACE_for_table
+        self.map[variable] = copy_default
+
+
+class PCT13_Builder(Builder):
+
+        def __init__(self, variables, table_name):
+            super().__init__()
+            self.default_PCT13 = [default_HHGQ, -1, -1, -1, -1, default_CITIZEN]
+            self.map = {}
+            self.range_map = {}
+
+            self.default_CENRACE_for_table = default_CENRACE
+            self.default_HISP_for_table = default_HISP
+
+            self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 116]
+            self.buckets = []
+
+            for i in range(len(self.bucket_ends)):
+                if i == 0:
+                    self.buckets.append(range(self.bucket_ends[i] + 1))
+                else:
+                    self.buckets.append(range(self.bucket_ends[i - 1] + 1, self.bucket_ends[i] + 1))
+            self.buckets += self.buckets
+            self.specific_PCT13_table(table_name)
+            self.create_map(variables)
+
+        def build_range_map(self, table_letter):
+            self.range_map = {
+                0: [f'PCT013{table_letter}003', f'PCT013{table_letter}025'],
+                1: [f'PCT013{table_letter}027', f'PCT013{table_letter}049']
+            }
+
+        def specific_PCT13_table(self, table_name):
+            if table_name == "PCT13":
+                self.build_range_map('')
+            elif table_name == "PCT13A":
+                self.build_range_map('A')
+                self.default_CENRACE_for_table = [0]
+            elif table_name == "PCT13B":
+                self.build_range_map('B')
+                self.default_CENRACE_for_table = [1]
+            elif table_name == "PCT13C":
+                self.build_range_map('C')
+                self.default_CENRACE_for_table = [2]
+            elif table_name == "PCT13D":
+                self.build_range_map('D')
+                self.default_CENRACE_for_table = [3]
+            elif table_name == "PCT13E":
+                self.build_range_map('E')
+                self.default_CENRACE_for_table = [4]
+            elif table_name == "PCT13F":
+                self.build_range_map('F')
+                self.default_CENRACE_for_table = [5]
+            elif table_name == "PCT13G":
+                self.build_range_map('G')
+                self.default_CENRACE_for_table = list(range(6, 21))
+            elif table_name == "PCT13H":
+                self.build_range_map('H')
+                self.default_HISP_for_table = [1]
+            elif table_name == "PCT13I":
+                self.build_range_map('I')
+                self.default_CENRACE_for_table = [0]
+                self.default_HISP_for_table = [0]
+            else:
+                raise ValueError(f'Failed to find {table_name} in PCT13_Builder.')
+
+        def build_map(self, index, variable):
+            copy_default = deepcopy(self.default_PCT13)
+            for key, value in self.range_map.items():
+                if value[0] <= variable <= value[1]:
+                    copy_default[1] = key
+                    copy_default[2] = self.buckets[index]
+                    if self.default_HISP_for_table:
+                        copy_default[3] = self.default_HISP_for_table
+                    if self.default_CENRACE_for_table:
+                        copy_default[4] = self.default_CENRACE_for_table
+            self.map[variable] = copy_default

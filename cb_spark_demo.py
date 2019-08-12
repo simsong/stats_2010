@@ -201,6 +201,9 @@ def filterIds(ids):
     [total_table_reference.extend([f"P012{letter}001", f"P012{letter}002", f"P012{letter}026"]) for letter in ascii_uppercase[:9]]
     [total_table_reference.extend([f"PCT012{letter}001", f"PCT012{letter}002", f"PCT012{letter}106"]) for letter in ascii_uppercase[:15]]
     total_table_reference += ["PCT012001", "PCT012002", "PCT012106"]
+    [total_table_reference.extend([f"PCT013{letter}001", f"PCT013{letter}002", f"PCT013{letter}026"]) for letter in ascii_uppercase[:12]]
+    total_table_reference += ["PCT013001", "PCT013002", "PCT013026"]
+    # tables += [f"PCT13{letter}" for letter in ascii_uppercase[:9]]
     if(ids in total_table_reference):
         return False
     else:

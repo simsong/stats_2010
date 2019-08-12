@@ -91,8 +91,8 @@ def smallCellStructure_PersonsSF2000():
                     "P14",      # Sex by Age for Pop <20
                     "P16",      # Pop in HHs
                     # P27-P30, P32, P36; REL not yet in schema
-                    "P37",      # Pop in GQs
-                    "P38"       # Pop in GQs by Sex by Age                
+                    "P37"      # Pop in GQs
+                    # "P38"       # Pop in GQs by Sex by Age                
                 ]
     # Sex by Age (Major Race Alone)
     tables +=   [f"P12{letter}" for letter in ascii_uppercase[:6]] # A-F

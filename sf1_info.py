@@ -178,7 +178,7 @@ class P12_Builder(Builder):
         copy_default = deepcopy(self.default_P12)
         for key, value in self.range_map.items():
             if variable >= value[0] and variable <= value[1]:
-                copy_default[1] = key
+                copy_default[1] = [key]
                 if key == 0:
                     copy_default[2] = self.buckets[index]
                 else:
@@ -201,11 +201,11 @@ class P14_Builder(Builder):
         copy_default = deepcopy(self.default_P14)
         for key, value in self.range_map.items():
             if variable >= value[0] and variable <= value[1]:
-                copy_default[1] = key
+                copy_default[1] = [key]
                 if key == 0:
-                    copy_default[2] = index
+                    copy_default[2] = [index]
                 else:
-                    copy_default[2] = index - 19
+                    copy_default[2] = [index - 19]
         self.map[variable] = copy_default
 
 class P16_Builder(Builder):
@@ -304,7 +304,7 @@ class P12_Letter_Builder(Builder):
         copy_default = deepcopy(self.default_P12)
         for key, value in self.range_map.items():
             if variable >= value[0] and variable <= value[1]:
-                copy_default[1] = key
+                copy_default[1] = [key]
                 copy_default[2] = self.buckets[index]
                 if self.default_CENRACE_for_table is not None:
                     copy_default[4] = self.default_CENRACE_for_table
@@ -397,7 +397,7 @@ class PCT12_Builder(Builder):
         copy_default = deepcopy(self.default_PCT12)
         for key, value in self.range_map.items():
             if value[0] <= variable <= value[1]:
-                copy_default[1] = key
+                copy_default[1] = [key]
                 copy_default[2] = self.buckets[index]
                 if self.default_HISP_for_table:
                     copy_default[3] = self.default_HISP_for_table
@@ -473,7 +473,7 @@ class PCT13_Builder(Builder):
             copy_default = deepcopy(self.default_PCT13)
             for key, value in self.range_map.items():
                 if value[0] <= variable <= value[1]:
-                    copy_default[1] = key
+                    copy_default[1] = [key]
                     copy_default[2] = self.buckets[index]
                     if self.default_HISP_for_table:
                         copy_default[3] = self.default_HISP_for_table

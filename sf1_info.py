@@ -262,7 +262,7 @@ class P12_Letter_Builder(Builder):
     def build_range_map(self, table_letter):
         self.range_map = {
             0: [f'P012{table_letter}003', f'P012{table_letter}025'],
-            1: [f'P112{table_letter}027', f'P012{table_letter}049']
+            1: [f'P012{table_letter}027', f'P012{table_letter}049']
         }
 
     # This class is going to handle all of the P12Letter Tables.

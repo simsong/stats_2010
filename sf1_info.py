@@ -2,9 +2,6 @@ from copy import deepcopy
 import math
 from string import ascii_uppercase
 
-# dimnames=[HHGQ, SEX, AGE, HISP, CENRACE, CITIZEN], 
-# shape=(8, 2, 116, 2, 63, 2), 
-
 default_HHGQ = range(8)
 default_SEX = range(2)
 default_AGE = range(116)
@@ -309,7 +306,7 @@ class P12_Letter_Builder(Builder):
                 if self.default_CENRACE_for_table is not None:
                     copy_default[4] = self.default_CENRACE_for_table
                 if self.is_hispanic is not None:
-                    copy_default[0] = self.is_hispanic
+                    copy_default[3] = self.is_hispanic
         self.map[variable] = copy_default
 
 

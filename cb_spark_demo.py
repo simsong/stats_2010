@@ -74,6 +74,19 @@ def smallCellStructure_HouseholdsSF2000():
     #tables +=   [f"H15{letter}" for letter in ascii_uppercase[:9]] # A-I # Not yet in scope of histogram
     # H16A-I # Not yet in scope
 
+    print('smallCellStructure_HouseholdsSF2000')
+    sf1_year = 2000
+    current_product = SF1
+    sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
+
+    for table in tables:
+        try:
+            print(f'Loading Table: {table}')
+            sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+        except ValueError as error:
+            print(error)
+            break
+
 def smallCellStructure_PersonsSF2000():
     # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Persons
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
@@ -123,38 +136,36 @@ def smallCellStructure_PersonsSF2000():
                     # PCT17A-I; 3-digit GQs not yet in schema
                 ]
 
-    year = 2000
-    product = SF1
-    sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=year, product=product)
+    sf1_year = 2000
+    current_product = SF1
+    sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
 
     print("Geolevels by state and summary level:")
-    sf1_2000.get_df(tableName = GEO_TABLE, sqlName='GEO_2000')
+    sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
     multi_index_list = []
     for table in tables:
         try:
-            #Just wanted to break after first loop to stop for testing.
+            # Just wanted to break after first loop to stop for testing.
             print(f'Loading Table: {table}')
             sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
             regex = re.compile(r'^[P]')
             all_var_names = sf1_2000.get_table(table).varnames()
             print(f"Lenght of all vars {len(all_var_names)}")
             current_table_var_names = list(filter(regex.search, list(all_var_names)))
-            current_table_var_names = list(filter(filterIds, current_table_var_names))
+            current_table_var_names = list(filter(filter_ids_persons, current_table_var_names))
             print(f"Lenght of filtered vars {len(current_table_var_names)}")
             current_table_var_string = ",".join(current_table_var_names)
             table_info = info.get_correct_builder(table, current_table_var_names)
-            # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe as a temp table.
+            # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe
+            # as a temp table.
             # This is so we can use the already joined table to find the zeros. 
             print(f'Building temp table for {table}')
             result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
                     f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
                     f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
-            result_temp_table.registerTempTable( "temp_table" )
+            result_temp_table.registerTempTable("temp_table")
             print_table(result_temp_table)
             sf1_2000.print_legend(result_temp_table)
-
-            #Loop the variables in the tables. This is slower then doing a single query with all the variables but I want to be able to view
-            #the output with the tytable which has problems if you have alot of variables.
             multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table))
         except ValueError as error:
             print(error)
@@ -162,7 +173,7 @@ def smallCellStructure_PersonsSF2000():
     print(f"Pre-Expanded Length {len(multi_index_list)}")
     exapanded_multi_index_list = expand_multi_index_list(multi_index_list)
     print(f"Expanded Length {len(exapanded_multi_index_list)}")
-    # print(final_expanded_index_set)
+
 
 def expand_multi_index_list(multi_index_list):
     final_expanded_index_set = set()
@@ -172,11 +183,12 @@ def expand_multi_index_list(multi_index_list):
             final_expanded_index_set.add(tuple_to_add)
     return final_expanded_index_set
 
+
 def cartesian_iterative(pools):
-  result = [()]
-  for pool in pools:
-    result = [x+(y,) for x in result for y in pool]
-  return result
+    result = [()]
+    for pool in pools:
+        result = [x+(y,) for x in result for y in pool]
+    return result
         
 
 def print_table(result):
@@ -187,7 +199,7 @@ def print_table(result):
     tt.render(sys.stdout, format='md')
     
 
-def filterIds(ids):
+def filter_ids_persons(ids):
     # This will include all of the none leaf ids of the tables proposed by Philip.
     # I wish I could not find a automatic way to tell what where totals and what where leafs.
     total_table_reference = ["P003001","P003002","P003009","P003010","P003026","P003047",
@@ -203,11 +215,16 @@ def filterIds(ids):
     total_table_reference += ["PCT012001", "PCT012002", "PCT012106"]
     [total_table_reference.extend([f"PCT013{letter}001", f"PCT013{letter}002", f"PCT013{letter}026"]) for letter in ascii_uppercase[:12]]
     total_table_reference += ["PCT013001", "PCT013002", "PCT013026"]
+    return filter_based_on_list(ids=ids, total_table_reference=total_table_reference)
+
     # tables += [f"PCT13{letter}" for letter in ascii_uppercase[:9]]
+
+def filter_based_on_list(ids, total_table_reference):
     if(ids in total_table_reference):
         return False
     else:
         return True
+
 
 def demo():
     # Get a schema object associated with the SF1 for 2010

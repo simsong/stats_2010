@@ -61,3 +61,32 @@ class P18_Builder(Builder_HouseHold):
                         default_ELDERLY, [0]],
         }
         super().__init__()
+
+
+class P19_Builder(Builder_HouseHold):
+
+    def __init__(self, variables):
+        self.map = {
+            "P019004": [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(3, 8), [0, 1, 2],
+                        default_ELDERLY, default_MULTI],
+            "P019006": [[0], default_HHAGE, default_HISP, default_RACE, range(2, 8), [19, 20, 21],
+                        default_ELDERLY, default_MULTI],
+            "P019007": [[1], default_HHAGE, default_HISP, default_RACE, range(2, 8), [19, 20, 21],
+                        default_ELDERLY, default_MULTI],
+            "P019009": [[0], default_HHAGE, default_HISP, default_RACE, range(2, 8), [12, 17, 23],
+                        default_ELDERLY, [0]],
+            "P019010": [[1], default_HHAGE, default_HISP, default_RACE, range(2, 8), [12, 17, 23],
+                        default_ELDERLY, [0]],
+
+            "P019013": [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(2, 8), [3, 7],
+                        default_ELDERLY, default_MULTI],
+            "P019015": [[0], default_HHAGE, default_HISP, default_RACE, range(1, 8), [18, 22, 23],
+                        default_ELDERLY, default_MULTI],
+            "P019016": [[1], default_HHAGE, default_HISP, default_RACE, range(1, 8), [18, 22, 23],
+                        default_ELDERLY, default_MULTI],
+            "P019018": [[0], default_HHAGE, default_HISP, default_RACE, range(1, 8), [12, 17, 23],
+                        default_ELDERLY, [0]],
+            "P019019": [[1], default_HHAGE, default_HISP, default_RACE, range(1, 8), [12, 17, 23],
+                        default_ELDERLY, [0]],
+        }
+        super().__init__()

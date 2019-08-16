@@ -13,8 +13,6 @@ default_MULTI = range(2)
 # dimnames=[HHSEX, HHAGE, HISP, RACE, SIZE, HHTYPE, ELDERLY, MULTI],
 # shape=(2, 9, 2, 7, 8, 24, 4, 2), path=path).getSchema()
 
-# P015001
-
 
 def get_correct_house_builder(table_name, values):
     pass

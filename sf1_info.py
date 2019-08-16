@@ -161,7 +161,7 @@ class P12_Builder(Builder):
             1: ['P012027', 'P012049']
         }
 
-        self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 116]
+        self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 115]
         self.buckets = []
 
         for i in range(len(self.bucket_ends)):
@@ -245,7 +245,7 @@ class P12_Letter_Builder(Builder):
         self.is_hispanic = None
 
         # A tables in this group has the same age buckets.
-        self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 116]
+        self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 115]
         self.buckets = []
 
         for i in range(len(self.bucket_ends)):
@@ -320,7 +320,7 @@ class PCT12_Builder(Builder):
         self.default_CENRACE_for_table = default_CENRACE
         self.default_HISP_for_table = default_HISP
 
-        self.buckets = list(range(100)) + [[100, 104], [105, 109], [110, 116]]
+        self.buckets = list(range(100)) + [list(range(100, 105)), list(range(105, 110)), list(range(110, 116))]
         # This is because we have buckets for male and female.
         self.buckets += self.buckets
         self.specific_PCT12_table(table_name)
@@ -414,7 +414,7 @@ class PCT13_Builder(Builder):
             self.default_CENRACE_for_table = default_CENRACE
             self.default_HISP_for_table = default_HISP
 
-            self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 116]
+            self.bucket_ends = [4, 9, 14, 17, 19, 20, 21, 24, 29, 34, 39, 44, 49, 54, 59, 61, 64, 66, 69, 74, 79, 84, 115]
             self.buckets = []
 
             for i in range(len(self.bucket_ends)):

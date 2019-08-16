@@ -162,3 +162,77 @@ class P21_Builder(Builder_HouseHold):
             temp_map[repeat_variables[index]] = current_value
         self.map.update(temp_map)
         super().__init__()
+
+class P22_Builder(Builder_HouseHold):
+
+    def __init__(self, variables):
+        self.map = OrderedDict(
+            [
+                ("P022003", [default_HHSEX, [5, 6, 7, 8], default_HISP, default_RACE, [1], [18],
+                             [1, 2, 3], [0]]),
+                ("P022005", [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(2,8), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 19, 20, 21, 22],
+                             [1, 2, 3], default_MULTI]),
+                ("P022006", [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(2,8), [12, 17, 23],
+                             [1, 2, 3], [0]])
+            ]
+        )
+        temp_map = {}
+        repeat_variables = ["P022008", "P022010", "P022011"]
+        for index, (key, value) in enumerate(self.map.items()):
+            current_value = deepcopy(value)
+            current_value[1] = [0, 1, 2, 3, 4]
+            current_value[6] = [0]
+            temp_map[repeat_variables[index]] = current_value
+        self.map.update(temp_map)
+        super().__init__()
+
+class P23_Builder(Builder_HouseHold):
+
+    def __init__(self, variables):
+        self.map = OrderedDict(
+            [
+                ("P023003", [default_HHSEX, [6, 7, 8], default_HISP, default_RACE, [1], [18],
+                             [2, 3], [0]]),
+                ("P023005", [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(2,8), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 19, 20, 21, 22],
+                             [2, 3], default_MULTI]),
+                ("P023006", [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(2,8), [12, 17, 23],
+                             [2, 3], [0]])
+            ]
+        )
+        temp_map = {}
+        repeat_variables = ["P023008", "P023010", "P023011"]
+        for index, (key, value) in enumerate(self.map.items()):
+            current_value = deepcopy(value)
+            current_value[1] = [0, 1, 2, 3, 4, 5]
+            current_value[6] = [0, 1]
+            temp_map[repeat_variables[index]] = current_value
+        self.map.update(temp_map)
+        super().__init__()
+
+class P24_Builder(Builder_HouseHold):
+
+    def __init__(self, variables):
+        self.map = OrderedDict(
+            [
+                ("P024003", [default_HHSEX, [7, 8], default_HISP, default_RACE, [1], [18],
+                             [2, 3], [0]]),
+                ("P024005", [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(2,8), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 19, 20, 21, 22],
+                             [2, 3], default_MULTI]),
+                ("P024006", [default_HHSEX, default_HHAGE, default_HISP, default_RACE, range(2,8), [12, 17, 23],
+                             [2, 3], [0]])
+            ]
+        )
+        temp_map = {}
+        repeat_variables = ["P024008", "P024010", "P024011"]
+        for index, (key, value) in enumerate(self.map.items()):
+            current_value = deepcopy(value)
+            current_value[1] = [0, 1, 2, 3, 4, 5, 6]
+            current_value[6] = [0, 1, 2]
+            temp_map[repeat_variables[index]] = current_value
+        self.map.update(temp_map)
+        super().__init__()
+
+class P25_Builder(Builder_HouseHold):
+
+    def __init__(self, variables):
+        pass

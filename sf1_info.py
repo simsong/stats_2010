@@ -79,9 +79,13 @@ class Builder:
         return to_return
 
     def compute_average_contained_cell_size(self, count, cell_array):
-        cell_array_lengths = [len(current) for current in cell_array]
-        result = reduce((lambda x, y: x * y), cell_array_lengths)
-        return count / result
+        try:
+            cell_array_lengths = [len(current) for current in cell_array]
+            result = reduce((lambda x, y: x * y), cell_array_lengths)
+            return count / result
+        except Exception:
+            print(cell_array)
+            raise ValueError('Could not convert this array.')
 
     def build_map(self, index, variable):
         pass
@@ -330,7 +334,8 @@ class PCT12_Builder(Builder):
         self.default_CENRACE_for_table = default_CENRACE
         self.default_HISP_for_table = default_HISP
 
-        self.buckets = list(range(100)) + [list(range(100, 105)), list(range(105, 110)), list(range(110, 116))]
+        self.non_processed_buckets = list(range(100)) + [list(range(100, 105)), list(range(105, 110)), list(range(110, 116))]
+        self.buckets = [[loop] if isinstance(loop, int) else loop for loop in self.non_processed_buckets]
         # This is because we have buckets for male and female.
         self.buckets += self.buckets
         self.specific_PCT12_table(table_name)

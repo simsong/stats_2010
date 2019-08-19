@@ -40,10 +40,10 @@ def smallCellStructure_HouseholdsSF2000():
                     "P23",      # PRES_>65 x HHSIZE x HHTYPE
                     "P24",      # PRES_>75 x HHSIZE x HHTYPE
                     "P25",      # PRES_NONRELATIVES
-                    "P26"      # HHSIZE
-                    # "P31",      # FAMILIES
-                    # "P34",      # FAM_TYPE x PRES_OWN_CHILD x AGE_OWN_CHILD
-                    # "P35"       # FAM_TYPE x PRES_RELATED_CHLD x AGE_RELATED_CHILD #### May be irrelevant to histogram?
+                    "P26",       # HHSIZE
+                    "P31",      # FAMILIES
+                    "P34",      # FAM_TYPE x PRES_OWN_CHILD x AGE_OWN_CHILD
+                    "P35"       # FAM_TYPE x PRES_RELATED_CHLD x AGE_RELATED_CHILD #### May be irrelevant to histogram?
                 ]
     # HHs by Major Race Alone / HISP of Householder
     tables +=   [f"P15{letter}" for letter in ascii_uppercase[:9]] # A-I
@@ -136,6 +136,7 @@ def smallCellStructure_PersonsSF2000():
                     # PCT17A-I; 3-digit GQs not yet in schema
                 ]
     print(tables)
+    threshold = 1
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
@@ -166,13 +167,18 @@ def smallCellStructure_PersonsSF2000():
             result_temp_table.registerTempTable("temp_table")
             print_table(result_temp_table)
             sf1_2000.print_legend(result_temp_table)
-            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table))
+            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table, threshold))
         except ValueError as error:
             print(error)
             break
     print(f"Pre-Expanded Length {len(multi_index_list)}")
     exapanded_multi_index_list = expand_multi_index_list(multi_index_list)
     print(f"Expanded Length {len(exapanded_multi_index_list)}")
+    with open(f'output_threshold_{threshold}.txt', 'w') as filehandle:
+        filehandle.writelines("%s\n" % line for line in exapanded_multi_index_list)
+
+    # with open('listfile.txt', 'r') as filehandle:
+    #     places = [line.rstrip() for line in filehandle.readlines()]
 
 
 def expand_multi_index_list(multi_index_list):

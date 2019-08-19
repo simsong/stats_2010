@@ -63,7 +63,7 @@ class Builder:
         for index, variable in enumerate(variables):
             self.build_map(index, variable)
     
-    def process_results(self, results, table_name):
+    def process_results(self, results, table_name, cell_size_num):
         # print(self.map)
         # go through all the rows and see if any values are zero if they are
         # add a entry into the multi_index array
@@ -71,7 +71,7 @@ class Builder:
         for row in results.collect():
             for key, value in self.map.items():
                 average_contained_cell_size = self.compute_average_contained_cell_size(row[key], self.map[key])
-                if average_contained_cell_size < 1:
+                if average_contained_cell_size <= cell_size_num:
                     current_array = deepcopy(self.map[key])
                     current_array.insert(0, [ row['STATE'] ])
                     to_return.append(current_array)

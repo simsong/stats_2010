@@ -174,7 +174,7 @@ def smallCellStructure_PersonsSF2000():
     print(f"Pre-Expanded Length {len(multi_index_list)}")
     exapanded_multi_index_list = expand_multi_index_list(multi_index_list)
     print(f"Expanded Length {len(exapanded_multi_index_list)}")
-    with open(f'output_threshold_{threshold}.txt', 'w') as filehandle:
+    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}.txt', 'w') as filehandle:
         filehandle.writelines("%s\n" % line for line in exapanded_multi_index_list)
 
     # with open('listfile.txt', 'r') as filehandle:

@@ -1,5 +1,6 @@
 from copy import deepcopy
 import math
+from functools import reduce
 from string import ascii_uppercase
 
 default_HHGQ = range(8)
@@ -8,6 +9,8 @@ default_AGE = range(116)
 default_HISP = range(2)
 default_CENRACE = range(63)
 default_CITIZEN = range(2)
+
+default_hist = [default_HHGQ, default_SEX, default_AGE, default_HISP, default_CENRACE, default_CITIZEN]
 
 # This a dict with the number of proper variables for each Table this is to confirm we are getting the right number
 # this is just to have a extra level of protection to make sure that we get all of the variabes.
@@ -67,12 +70,18 @@ class Builder:
         to_return = []
         for row in results.collect():
             for key, value in self.map.items():
-                if row[key] == 0:
+                average_contained_cell_size = self.compute_average_contained_cell_size(row[key], self.map[key])
+                if average_contained_cell_size < 1:
                     current_array = deepcopy(self.map[key])
                     current_array.insert(0, [ row['STATE'] ])
                     to_return.append(current_array)
         print(f"Table Name: {table_name} Length to return: {len(to_return)}")
         return to_return
+
+    def compute_average_contained_cell_size(self, count, cell_array):
+        cell_array_lengths = [len(current) for current in cell_array]
+        result = reduce((lambda x, y: x * y), cell_array_lengths)
+        return count / result
 
     def build_map(self, index, variable):
         pass
@@ -83,6 +92,7 @@ class Builder:
 class P3_Builder(Builder):
 
     def __init__(self, variables):
+        self.insert_locations = [4]
         self.default_P3 = [default_HHGQ, default_SEX, default_AGE, default_HISP, -1, default_CITIZEN]
         self.map = {}
         super().__init__()

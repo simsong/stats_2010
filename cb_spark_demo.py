@@ -40,10 +40,10 @@ def smallCellStructure_HouseholdsSF2000():
                     "P23",      # PRES_>65 x HHSIZE x HHTYPE
                     "P24",      # PRES_>75 x HHSIZE x HHTYPE
                     "P25",      # PRES_NONRELATIVES
-                    "P26",      # HHSIZE
-                    "P31",      # FAMILIES
-                    "P34",      # FAM_TYPE x PRES_OWN_CHILD x AGE_OWN_CHILD
-                    "P35"       # FAM_TYPE x PRES_RELATED_CHLD x AGE_RELATED_CHILD #### May be irrelevant to histogram?
+                    "P26"      # HHSIZE
+                    # "P31",      # FAMILIES
+                    # "P34",      # FAM_TYPE x PRES_OWN_CHILD x AGE_OWN_CHILD
+                    # "P35"       # FAM_TYPE x PRES_RELATED_CHLD x AGE_RELATED_CHILD #### May be irrelevant to histogram?
                 ]
     # HHs by Major Race Alone / HISP of Householder
     tables +=   [f"P15{letter}" for letter in ascii_uppercase[:9]] # A-I
@@ -125,7 +125,7 @@ def smallCellStructure_PersonsSF2000():
                     "PCT12H",   # Sex by Age (HISP)
                 ]
     # Sex by Age (Major Race Alone, Not HISP)
-    tables +=   [f"PCT12" for letter in ascii_uppercase[8:8+6]] # I-N 
+    tables +=   [f"PCT12{letter}" for letter in ascii_uppercase[8:8+6]] # I-N
     tables +=   ["PCT12O"]      # Sex by Age (2+ races, Not HISP)
     # Sex by Age (Major Race Alone), Pop in HHs
     tables +=   [f"PCT13{letter}" for letter in ascii_uppercase[:9]] # A-I
@@ -135,7 +135,7 @@ def smallCellStructure_PersonsSF2000():
                     "PCT13I"    # Sex by Age (White Alone, Not HISP), Pop in HHs
                     # PCT17A-I; 3-digit GQs not yet in schema
                 ]
-
+    print(tables)
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)

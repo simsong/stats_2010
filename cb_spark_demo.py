@@ -18,6 +18,7 @@ import ctools.tydoc  as tydoc
 import cb_spec_decoder
 import sf1_info as info
 from constants import *
+import json
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -174,11 +175,8 @@ def smallCellStructure_PersonsSF2000():
     print(f"Pre-Expanded Length {len(multi_index_list)}")
     exapanded_multi_index_list = expand_multi_index_list(multi_index_list)
     print(f"Expanded Length {len(exapanded_multi_index_list)}")
-    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}.txt', 'w') as filehandle:
-        filehandle.writelines("%s\n" % line for line in exapanded_multi_index_list)
-
-    # with open('listfile.txt', 'r') as filehandle:
-    #     places = [line.rstrip() for line in filehandle.readlines()]
+    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}.json', 'w') as filehandle:
+        json.dump(exapanded_multi_index_list, filehandle)
 
 
 def expand_multi_index_list(multi_index_list):

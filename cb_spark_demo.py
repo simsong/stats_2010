@@ -173,7 +173,7 @@ def smallCellStructure_PersonsSF2000():
             print(error)
             break
     print(f"Pre-Expanded Length {len(multi_index_list)}")
-    exapanded_multi_index_list = expand_multi_index_list(multi_index_list)
+    exapanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
     print(f"Expanded Length {len(exapanded_multi_index_list)}")
     with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}.json', 'w') as filehandle:
         json.dump(exapanded_multi_index_list, filehandle)

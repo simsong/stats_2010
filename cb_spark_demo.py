@@ -338,5 +338,6 @@ if __name__=="__main__":
     # Normally that's not a problem
     spark  = cspark.spark_session(logLevel='ERROR', pydirs=['.','ctools','ctools/schema'])
     #demo()
-    smallCellStructure_PersonsSF2000()
+    #smallCellStructure_PersonsSF2000()
+    smallCellStructure_HouseholdsSF2000()
 

@@ -324,7 +324,7 @@ class P31_Letter_Builder(Builder_HouseHold):
             self.table_variable = self.build_table_variable_name('I')
 
     def build_map(self):
-        current_default = deepcopy(self.P15_Default)
+        current_default = deepcopy(self.P31_Default)
         current_default[2] = self.hisp_for_table
         current_default[3] = self.race_for_table
         self.map[self.table_variable] = current_default

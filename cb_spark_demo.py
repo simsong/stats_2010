@@ -17,8 +17,12 @@ import ctools.tydoc  as tydoc
 
 import cb_spec_decoder
 import sf1_info as info
+import sf1_info_house as info_house
 from constants import *
 import json
+import re
+from string import ascii_uppercase
+from copy import deepcopy
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -30,7 +34,6 @@ def smallCellStructure_HouseholdsSF2000():
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
     # Tables chosen from that document to get small-cell counts corresponding to histogram at:
     #   https://github.ti.census.gov/CB-DAS/das_decennial/blob/master/programs/schema/schemas/Schema_Household2010.py
-    from string import ascii_uppercase
     tables =    [
                     "P15",      # Total Households              [[[Block level tables begin]]]
                     "P18",      # HHSIZE x HHTYPE x PRES_OWN_CHILD
@@ -40,11 +43,9 @@ def smallCellStructure_HouseholdsSF2000():
                     "P22",      # PRES_>60 x HHSIZE x HHTYPE
                     "P23",      # PRES_>65 x HHSIZE x HHTYPE
                     "P24",      # PRES_>75 x HHSIZE x HHTYPE
-                    "P25",      # PRES_NONRELATIVES
                     "P26",       # HHSIZE
                     "P31",      # FAMILIES
                     "P34",      # FAM_TYPE x PRES_OWN_CHILD x AGE_OWN_CHILD
-                    "P35"       # FAM_TYPE x PRES_RELATED_CHLD x AGE_RELATED_CHILD #### May be irrelevant to histogram?
                 ]
     # HHs by Major Race Alone / HISP of Householder
     tables +=   [f"P15{letter}" for letter in ascii_uppercase[:9]] # A-I
@@ -55,7 +56,6 @@ def smallCellStructure_HouseholdsSF2000():
     # Family Type x PRES_OWN_CHILD x AGE_OWN_CHILD by Major Race Alone / HISP of Householder
     tables +=   [f"P34{letter}" for letter in ascii_uppercase[:9]] # A-I
     # Family Type x PRES_REL_CHILD x AGE_REL_CHILD by Major Race Alone / HISP of Householder #### Irrelevant to histogram?
-    tables +=   [f"P35{letter}" for letter in ascii_uppercase[:9]] # A-I
     tables +=   [
                     "PCT14"    # Unmarried-Partner HHs by Sex of Partners #### Can determine from HHTYPE+HHSEX in our histogram
                 ]
@@ -63,8 +63,8 @@ def smallCellStructure_HouseholdsSF2000():
     tables +=   [
                     "H6",   # HHRACE
                     "H7",   # HHRACE x HHHISP
-                    "H8",   # HHRACEs Tallied (this one is a bit weird but I think works with current histogram)
-                    "H9",   # HHRACEs Tallied x HHHISP
+                    # "H8", Not sure how to do Tallied   # HHRACEs Tallied (this one is a bit weird but I think works with current histogram)
+                    # "H9", Not sure how to do Tallied  # HHRACEs Tallied x HHHISP
                     "H13"   # HHSIZE
                     # H14   # TENURE x HHRACE (do want eventually but not in scope of current histogram)
                     # H15   # TENURE x HHSIZE (do want eventually but not in scope of current histogram)
@@ -76,26 +76,41 @@ def smallCellStructure_HouseholdsSF2000():
     # H16A-I # Not yet in scope
 
     print('smallCellStructure_HouseholdsSF2000')
+    threshold = 1
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
-
+    print("Geolevels by state and summary level:")
+    sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
+    multi_index_list = []
     for table in tables:
         try:
             print(f'Loading Table: {table}')
             sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+            result_temp_table = spark.sql(f"SELECT * FROM GEO_2000 "
+                f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND "
+                f"GEO_2000.STUSAB={table}_2000.STUSAB "
+                f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
+            table_info = info_house.get_correct_house_builder(table)
+            result_temp_table.registerTempTable("temp_table")
+            print_table(result_temp_table)
+            sf1_2000.print_legend(result_temp_table)
+            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table, threshold))
         except ValueError as error:
             print(error)
             break
+
+    print(f"Pre-Expanded Length {len(multi_index_list)}")
+    exapanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
+    print(f"Expanded Length {len(exapanded_multi_index_list)}")
+    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}_housing.json', 'w') as filehandle:
+        json.dump(exapanded_multi_index_list, filehandle)
 
 def smallCellStructure_PersonsSF2000():
     # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Persons
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
     # Tables chosen from that document to get small-cell counts corresponding to histogram at:
-    #   https://github.ti.census.gov/CB-DAS/das_decennial/blob/master/programs/schema/schemas/Schema_DHCP_HHGQ.py 
-    from string import ascii_uppercase
-    import re
-    from copy import deepcopy
+    #   https://github.ti.census.gov/CB-DAS/das_decennial/blob/master/programs/schema/schemas/Schema_DHCP_HHGQ.py
     tables =    [  
                     "P3",       # Race                          [[[Block level tables begin]]]
                     "P4",       # HISP x Race
@@ -175,7 +190,7 @@ def smallCellStructure_PersonsSF2000():
     print(f"Pre-Expanded Length {len(multi_index_list)}")
     exapanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
     print(f"Expanded Length {len(exapanded_multi_index_list)}")
-    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}.json', 'w') as filehandle:
+    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}_person.json', 'w') as filehandle:
         json.dump(exapanded_multi_index_list, filehandle)
 
 

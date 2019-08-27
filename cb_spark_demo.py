@@ -152,7 +152,7 @@ def smallCellStructure_PersonsSF2000():
                     # PCT17A-I; 3-digit GQs not yet in schema
                 ]
     print(tables)
-    threshold = 1
+    threshold = 0.1
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
@@ -167,10 +167,10 @@ def smallCellStructure_PersonsSF2000():
             sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
             regex = re.compile(r'^[P]')
             all_var_names = sf1_2000.get_table(table).varnames()
-            print(f"Lenght of all vars {len(all_var_names)}")
+            print(f"Length of all vars {len(all_var_names)}")
             current_table_var_names = list(filter(regex.search, list(all_var_names)))
             current_table_var_names = list(filter(filter_ids_persons, current_table_var_names))
-            print(f"Lenght of filtered vars {len(current_table_var_names)}")
+            print(f"Length of filtered vars {len(current_table_var_names)}")
             current_table_var_string = ",".join(current_table_var_names)
             table_info = info.get_correct_builder(table, current_table_var_names)
             # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe
@@ -188,10 +188,10 @@ def smallCellStructure_PersonsSF2000():
             print(error)
             break
     print(f"Pre-Expanded Length {len(multi_index_list)}")
-    exapanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
-    print(f"Expanded Length {len(exapanded_multi_index_list)}")
-    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}_person.json', 'w') as filehandle:
-        json.dump(exapanded_multi_index_list, filehandle)
+    expanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
+    print(f"Expanded Length {len(expanded_multi_index_list)}")
+    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(expanded_multi_index_list)}_person.json', 'w') as filehandle:
+        json.dump(expanded_multi_index_list, filehandle)
 
 
 def expand_multi_index_list(multi_index_list):

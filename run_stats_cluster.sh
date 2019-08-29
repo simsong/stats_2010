@@ -27,7 +27,6 @@ export PATH=$PATH:$PWD
 
 echo PID $$ starting at `date`
 
-param_to_add = ""
 if [ x$type = x ]; then
   type="housing"
 fi

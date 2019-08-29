@@ -62,7 +62,7 @@ def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
     # Families by HHSIZE by Major Race Alone / HISP of Householder
     tables +=   [f"P31{letter}" for letter in ascii_uppercase[:9]] # A-I
     # Family Type x PRES_OWN_CHILD x AGE_OWN_CHILD by Major Race Alone / HISP of Householder
-    tables +=   [f"P34{letter}" for letter in ascii_uppercase[:9]] # A-I
+    # Very weird error on this table tables +=   [f"P34{letter}" for letter in ascii_uppercase[:9]] # A-I
     # Family Type x PRES_REL_CHILD x AGE_REL_CHILD by Major Race Alone / HISP of Householder #### Irrelevant to histogram?
     tables +=   [
                     "PCT14"    # Unmarried-Partner HHs by Sex of Partners #### Can determine from HHTYPE+HHSEX in our histogram

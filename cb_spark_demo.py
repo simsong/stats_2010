@@ -174,9 +174,9 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
             sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
             regex = re.compile(r'^[P]')
             all_var_names = sf1_2000.get_table(table).varnames()
-            print(f"Lenght of all vars {len(all_var_names)}")
+            print(f"Length of all vars {len(all_var_names)}")
             current_table_var_names = list(filter(filter_ids_persons, list(filter(regex.search, list(all_var_names)))))
-            print(f"Lenght of filtered vars {len(current_table_var_names)}")
+            print(f"Length of filtered vars {len(current_table_var_names)}")
             current_table_var_string = ",".join(current_table_var_names)
             table_info = info.get_correct_builder(table, current_table_var_names)
             # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe

@@ -97,7 +97,7 @@ def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
             result_temp_table = spark.sql(f"SELECT * FROM GEO_2000 "
                 f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND "
                 f"GEO_2000.STUSAB={table}_2000.STUSAB "
-                f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
+                f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}'{filter_state_query}AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
             table_info = info_house.get_correct_house_builder(table)
             result_temp_table.registerTempTable("temp_table")
             print_table(result_temp_table)
@@ -185,7 +185,7 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
             print(f'Building temp table for {table}')
             result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.COUNTY GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
                     f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
-                    f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
+                    f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}'{filter_state_query}AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
             result_temp_table.registerTempTable("temp_table")
             print_table(result_temp_table)
             sf1_2000.print_legend(result_temp_table)
@@ -211,8 +211,9 @@ def split_multi_index_to_dict(exapanded_multi_index_list):
 
 
 def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
+    sub_folder_name = args.filterstate if args.filterstate else "Nation"
     location = os.path.join(os.getenv("DAS_S3ROOT", default="test"), os.getenv("JBID", default=""), 
-                            "smallcell", summary_level, args.statename, f'{geo_id}_threshold_{threshold}.json')
+                            "smallcell", summary_level, sub_folder_name , f'{geo_id}_threshold_{threshold}.json')
     print(f"Saving file to {location}")
     with open(location) as filehandle:
         json.dump(multi_index_list, filehandle)
@@ -334,7 +335,7 @@ if __name__=="__main__":
     parser.add_argument("--type", help="housing or person")
     parser.add_argument("--sumlevel", help="Valid summary levels include STATE, COUNTY", required=True, choices=['STATE', 'COUNTY'])
     parser.add_argument("--threshold", help="Threshold to be include in multi list", required=True, type=float)
-    parser.add_argument("--statename", help="Name of the state your are running this is to create a folder in s3", required=True)
+    parser.add_argument("--filterstate", help="The fips state code", type=int)
     args = parser.parse_args()
 
     if args.validate:
@@ -364,8 +365,12 @@ if __name__=="__main__":
     # Note that getting spark here causes the arguments to be reparsed under spark-submit
     # Normally that's not a problem
     spark  = cspark.spark_session(logLevel='ERROR', pydirs=['.','ctools','ctools/schema'])
+    if args.filterstate:
+        filter_state_query = f" AND GEO_2000.STATE='{args.filterstate}' "
+    else:
+        filter_state_query = ''
     if args.type:
-        print(f'Threshold = {float(args.threshold)})
+        print(f'Threshold = {float(args.threshold)}')
         if args.type == 'housing':
             smallCellStructure_HouseholdsSF2000(args.sumlevel, args.threshold)
         elif args.type == 'person':

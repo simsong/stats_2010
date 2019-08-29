@@ -205,7 +205,7 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
 def split_multi_index_to_dict(exapanded_multi_index_list):
     result = defaultdict(list)
     for item in exapanded_multi_index_list:
-        result[item[0]].append(item[1:])
+        result[item[0]].append(item)
     del exapanded_multi_index_list
     return result
 

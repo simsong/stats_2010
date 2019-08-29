@@ -211,12 +211,15 @@ def split_multi_index_to_dict(exapanded_multi_index_list):
 
 
 def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
+    s3 = boto3.resource('s3')
     sub_folder_name = args.filterstate if args.filterstate else "Nation"
-    location = os.path.join(os.getenv("DAS_S3ROOT", default="test"), os.getenv("JBID", default=""), 
+    location = os.path.join(os.getenv("JBID", default=""), 
                             "smallcell", summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
-    print(f"Saving file to {location}")
-    with open(location) as filehandle:
-        json.dump(multi_index_list, filehandle)
+    s3object = s3.Object(os.getenv("DAS_S3ROOT"), location)
+    print(f"Saving file to {os.getenv("DAS_S3ROOT")}/{location}")
+    s3object.put(
+        Body=(bytes(json.dumps(multi_index_list).encode('UTF-8')))
+    )
 
 
 def expand_multi_index_list(multi_index_list):

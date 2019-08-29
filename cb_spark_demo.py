@@ -9,27 +9,35 @@ SF1_ROOT = location of SF1.
 
 """
 
-import sys
-from string import ascii_uppercase
 
+
+from constants import *
+from copy import deepcopy
+from string import ascii_uppercase
+from string import ascii_uppercase
+import cb_spec_decoder
 import ctools.cspark as cspark
 import ctools.tydoc  as tydoc
-
-import cb_spec_decoder
+import json
+import logging
+import os
+import re
 import sf1_info as info
 import sf1_info_house as info_house
-from constants import *
-import json
-import re
-from string import ascii_uppercase
-from copy import deepcopy
+import sys
+from collections import defaultdict
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
 else:
     DATAROOT = os.path.join( os.path.dirname(__file__), 'data')
 
-def smallCellStructure_HouseholdsSF2000():
+SUMMARY_LEVEL_MAP = {
+    'STATE' : '040',
+    'COUNTY' : '050'
+}
+
+def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
     # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Households
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
     # Tables chosen from that document to get small-cell counts corresponding to histogram at:
@@ -76,7 +84,6 @@ def smallCellStructure_HouseholdsSF2000():
     # H16A-I # Not yet in scope
 
     print('smallCellStructure_HouseholdsSF2000')
-    threshold = 1
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
@@ -90,23 +97,25 @@ def smallCellStructure_HouseholdsSF2000():
             result_temp_table = spark.sql(f"SELECT * FROM GEO_2000 "
                 f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND "
                 f"GEO_2000.STUSAB={table}_2000.STUSAB "
-                f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
+                f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
             table_info = info_house.get_correct_house_builder(table)
             result_temp_table.registerTempTable("temp_table")
             print_table(result_temp_table)
             sf1_2000.print_legend(result_temp_table)
-            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table, threshold))
+            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(summary_level, result_temp_table, table, threshold))
         except ValueError as error:
             print(error)
             break
 
     print(f"Pre-Expanded Length {len(multi_index_list)}")
-    exapanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
-    print(f"Expanded Length {len(exapanded_multi_index_list)}")
-    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}_housing.json', 'w') as filehandle:
-        json.dump(exapanded_multi_index_list, filehandle)
+    expanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
+    print(f"Expanded Length {len(expanded_multi_index_list)}")
 
-def smallCellStructure_PersonsSF2000():
+    expanded_multi_index_dict = split_multi_index_to_dict(expanded_multi_index_list)
+    for key, value in expanded_multi_index_dict.items():
+        save_multi_index(summary_level, key, value, threshold)
+
+def smallCellStructure_PersonsSF2000(summary_level, threshold):
     # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Persons
     # See Ch. 6 of https://www.census.gov/prod/cen2000/doc/sf1.pdf
     # Tables chosen from that document to get small-cell counts corresponding to histogram at:
@@ -151,8 +160,6 @@ def smallCellStructure_PersonsSF2000():
                     "PCT13I"    # Sex by Age (White Alone, Not HISP), Pop in HHs
                     # PCT17A-I; 3-digit GQs not yet in schema
                 ]
-    print(tables)
-    threshold = 1
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
@@ -168,8 +175,7 @@ def smallCellStructure_PersonsSF2000():
             regex = re.compile(r'^[P]')
             all_var_names = sf1_2000.get_table(table).varnames()
             print(f"Lenght of all vars {len(all_var_names)}")
-            current_table_var_names = list(filter(regex.search, list(all_var_names)))
-            current_table_var_names = list(filter(filter_ids_persons, current_table_var_names))
+            current_table_var_names = list(filter(filter_ids_persons, list(filter(regex.search, list(all_var_names)))))
             print(f"Lenght of filtered vars {len(current_table_var_names)}")
             current_table_var_string = ",".join(current_table_var_names)
             table_info = info.get_correct_builder(table, current_table_var_names)
@@ -177,21 +183,39 @@ def smallCellStructure_PersonsSF2000():
             # as a temp table.
             # This is so we can use the already joined table to find the zeros. 
             print(f'Building temp table for {table}')
-            result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
+            result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.COUNTY GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
                     f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
-                    f"WHERE GEO_2000.SUMLEV='040' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
+                    f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}' AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
             result_temp_table.registerTempTable("temp_table")
             print_table(result_temp_table)
             sf1_2000.print_legend(result_temp_table)
-            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(result_temp_table, table, threshold))
+            multi_index_list = deepcopy(multi_index_list) + deepcopy(table_info.process_results(summary_level, result_temp_table, table, threshold))
         except ValueError as error:
             print(error)
             break
     print(f"Pre-Expanded Length {len(multi_index_list)}")
-    exapanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
-    print(f"Expanded Length {len(exapanded_multi_index_list)}")
-    with open(f'output_threshold_{threshold}_preExpan_{len(multi_index_list)}_expand_{len(exapanded_multi_index_list)}_person.json', 'w') as filehandle:
-        json.dump(exapanded_multi_index_list, filehandle)
+    expanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
+    print(f"Expanded Length {len(expanded_multi_index_list)}")
+
+    expanded_multi_index_dict = split_multi_index_to_dict(expanded_multi_index_list)
+    for key, value in expanded_multi_index_dict.items():
+        save_multi_index(summary_level, key, value, threshold)
+
+
+def split_multi_index_to_dict(exapanded_multi_index_list):
+    result = defaultdict(list)
+    for item in exapanded_multi_index_list:
+        result[item[0]].append(item[1:])
+    del exapanded_multi_index_list
+    return result
+
+
+def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
+    location = os.path.join(os.getenv("DAS_S3ROOT", default="test"), os.getenv("JBID", default=""), 
+                            "smallcell", summary_level, args.statename, f'{geo_id}_threshold_{threshold}.json')
+    print(f"Saving file to {location}")
+    with open(location) as filehandle:
+        json.dump(multi_index_list, filehandle)
 
 
 def expand_multi_index_list(multi_index_list):
@@ -307,6 +331,10 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Tool for using SF1 with Spark',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--validate", help="Validate all data files", action='store_true')
+    parser.add_argument("--type", help="housing or person")
+    parser.add_argument("--sumlevel", help="Valid summary levels include STATE, COUNTY", required=True, choices=['STATE', 'COUNTY'])
+    parser.add_argument("--threshold", help="Threshold to be include in multi list", required=True, type=float)
+    parser.add_argument("--statename", help="Name of the state your are running this is to create a folder in s3", required=True)
     args = parser.parse_args()
 
     if args.validate:
@@ -333,11 +361,13 @@ if __name__=="__main__":
                             
         print("Validation done")
         exit(0)
-
     # Note that getting spark here causes the arguments to be reparsed under spark-submit
     # Normally that's not a problem
     spark  = cspark.spark_session(logLevel='ERROR', pydirs=['.','ctools','ctools/schema'])
-    #demo()
-    #smallCellStructure_PersonsSF2000()
-    smallCellStructure_HouseholdsSF2000()
+    if args.type:
+        print(f'Threshold = {float(args.threshold)})
+        if args.type == 'housing':
+            smallCellStructure_HouseholdsSF2000(args.sumlevel, args.threshold)
+        elif args.type == 'person':
+            smallCellStructure_PersonsSF2000(args.sumlevel, args.threshold)
 

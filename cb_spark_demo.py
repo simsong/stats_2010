@@ -216,7 +216,7 @@ def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
     location = os.path.join(os.getenv("JBID", default=""), 
                             "smallcell", summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
     s3object = s3.Object(os.getenv("DAS_S3ROOT"), location)
-    print(f"Saving file to {os.getenv("DAS_S3ROOT")}/{location}")
+    print(f"Saving file to {os.getenv('DAS_S3ROOT')}/{location}")
     s3object.put(
         Body=(bytes(json.dumps(multi_index_list).encode('UTF-8')))
     )

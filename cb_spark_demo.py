@@ -213,7 +213,7 @@ def split_multi_index_to_dict(exapanded_multi_index_list):
 def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
     sub_folder_name = args.filterstate if args.filterstate else "Nation"
     location = os.path.join(os.getenv("DAS_S3ROOT", default="test"), os.getenv("JBID", default=""), 
-                            "smallcell", summary_level, sub_folder_name , f'{geo_id}_threshold_{threshold}.json')
+                            "smallcell", summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
     print(f"Saving file to {location}")
     with open(location) as filehandle:
         json.dump(multi_index_list, filehandle)

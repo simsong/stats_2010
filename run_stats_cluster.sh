@@ -31,7 +31,7 @@ if [ x$type = x ]; then
   type="housing"
 fi
 if [ x$sumlevel = x ]; then
-  sumlevel="040"
+  sumlevel="STATE"
 fi
 if [ x$threshold = x ]; then
   threshold=.01

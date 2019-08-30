@@ -222,9 +222,9 @@ def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(local_temp_store, 'r') as filehandler:
         json.dump(multi_index_list)
-    (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), local_temp_store))
-    put_object(bucket, key, location)
-    print(f"Upload: {location} s3://{bucket}/{key}")
+    (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), location))
+    put_object(bucket, key, local_temp_store)
+    print(f"Upload: {local_temp_store} s3://{bucket}/{key}")
 
 
 def expand_multi_index_list(multi_index_list):

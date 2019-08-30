@@ -28,6 +28,7 @@ import sys
 from collections import defaultdict
 from ctools.s3 import put_object, get_bucket_key
 import shutil
+import pathlib
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -217,10 +218,11 @@ def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
     location = os.path.join(os.getenv("JBID", default=""), 
                             "smallcell", summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
     local_temp_store = os.path.join("temp", location)
-    os.makedirs(local_temp_store, exist_ok=True)
-    with open(location, 'r') as filehandler:
-        json.dump(local_temp_store)
-    (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), location))
+    path = pathlib.Path(local_temp_store)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(local_temp_store, 'r') as filehandler:
+        json.dump(multi_index_list)
+    (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), local_temp_store))
     put_object(bucket, key, location)
     print(f"Upload: {location} s3://{bucket}/{key}")
 

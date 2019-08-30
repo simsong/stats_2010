@@ -219,7 +219,7 @@ def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
     local_temp_store = os.path.join("temp", location)
     path = pathlib.Path(local_temp_store)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(local_temp_store, 'r') as filehandler:
+    with open(local_temp_store, 'w+') as filehandler:
         json.dump(multi_index_list, filehandler)
     (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), location))
     put_object(bucket, key, local_temp_store)

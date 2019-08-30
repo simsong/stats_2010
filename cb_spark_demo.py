@@ -212,7 +212,6 @@ def split_multi_index_to_dict(exapanded_multi_index_list):
 
 
 def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
-    s3 = boto3.resource('s3')
     sub_folder_name = args.filterstate if args.filterstate else "Nation"
     location = os.path.join(os.getenv("JBID", default=""), 
                             "smallcell", summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')

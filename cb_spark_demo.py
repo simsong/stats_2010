@@ -27,6 +27,7 @@ import sf1_info_house as info_house
 import sys
 from collections import defaultdict
 from ctools.s3 import put_object, get_bucket_key
+import shutil
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -215,7 +216,7 @@ def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
     sub_folder_name = args.filterstate if args.filterstate else "Nation"
     location = os.path.join(os.getenv("JBID", default=""), 
                             "smallcell", summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
-    local_temp_store = os.path.join("temp". location)
+    local_temp_store = os.path.join("temp", location)
     os.makedirs(local_temp_store, exist_ok=True)
     with open(location, 'r') as filehandler:
         json.dump(local_temp_store)
@@ -380,4 +381,5 @@ if __name__=="__main__":
             smallCellStructure_HouseholdsSF2000(args.sumlevel, args.threshold)
         elif args.type == 'person':
             smallCellStructure_PersonsSF2000(args.sumlevel, args.threshold)
+        shutil.rmtree("temp", ignore_errors=True)
 

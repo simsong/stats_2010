@@ -26,6 +26,7 @@ import sf1_info as info
 import sf1_info_house as info_house
 import sys
 from collections import defaultdict
+import boto3
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"

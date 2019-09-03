@@ -215,7 +215,7 @@ def split_multi_index_to_dict(exapanded_multi_index_list):
 def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
     sub_folder_name = args.filterstate if args.filterstate else "Nation"
     location = os.path.join(os.getenv("JBID", default=""), 
-                            "smallcell", summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
+                            "smallcell", args.type, summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
     local_temp_store = os.path.join("temp", location)
     path = pathlib.Path(local_temp_store)
     path.parent.mkdir(parents=True, exist_ok=True)

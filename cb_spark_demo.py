@@ -185,7 +185,7 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
             # as a temp table.
             # This is so we can use the already joined table to find the zeros. 
             print(f'Building temp table for {table}')
-            result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.COUNTY GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
+            result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.COUNTY, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
                     f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
                     f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}'{filter_state_query}AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
             result_temp_table.registerTempTable("temp_table")

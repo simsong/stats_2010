@@ -74,7 +74,8 @@ class Builder:
                 if average_contained_cell_size <= cell_size_num:
                     current_array = deepcopy(self.map[key])
                     current_array.insert(0, [ row[summary_level] ])
-                    to_return.append(current_array)
+                    # State is included in the append because fips are not unique at anything lower the the state level
+                    to_return.append((row['STATE'], current_array))
         print(f"Table Name: {table_name} Length to return: {len(to_return)}")
         return to_return
 

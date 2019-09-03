@@ -29,6 +29,7 @@ from collections import defaultdict
 from ctools.s3 import put_object, get_bucket_key
 import shutil
 import pathlib
+import time
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -109,13 +110,12 @@ def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
             print(error)
             break
 
-    print(f"Pre-Expanded Length {len(multi_index_list)}")
-    expanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
-    print(f"Expanded Length {len(expanded_multi_index_list)}")
+    group_by_state_dict = group_by_state(multi_index_list=multi_index_list)
+    expanded_group_by_state_dict = expand_state_dict(group_by_state_dict)
 
-    expanded_multi_index_dict = split_multi_index_to_dict(expanded_multi_index_list)
-    for key, value in expanded_multi_index_dict.items():
-        save_multi_index(summary_level, key, value, threshold)
+    expanded_multi_index_dict = split_multi_index_to_dict(expanded_group_by_state_dict)
+    for state_name, multi_index_dict in expanded_multi_index_dict.items():
+        save_multi_index(summary_level, state_name, multi_index_dict, threshold)
 
 def smallCellStructure_PersonsSF2000(summary_level, threshold):
     # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Persons
@@ -162,6 +162,7 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
                     "PCT13I"    # Sex by Age (White Alone, Not HISP), Pop in HHs
                     # PCT17A-I; 3-digit GQs not yet in schema
                 ]
+    start_time = time.time()
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
@@ -195,44 +196,56 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
         except ValueError as error:
             print(error)
             break
-    print(f"Pre-Expanded Length {len(multi_index_list)}")
-    expanded_multi_index_list = list(expand_multi_index_list(multi_index_list))
-    print(f"Expanded Length {len(expanded_multi_index_list)}")
+    end_time = time.time()
+    print(f'Got data in {end_time - start_time}')
+    start_time = time.time()
+    group_by_state_dict = group_by_state(multi_index_list=multi_index_list)
+    expanded_group_by_state_dict = expand_state_dict(group_by_state_dict)
 
-    expanded_multi_index_dict = split_multi_index_to_dict(expanded_multi_index_list)
-    for key, value in expanded_multi_index_dict.items():
-        save_multi_index(summary_level, key, value, threshold)
+    expanded_multi_index_dict = split_multi_index_to_dict(expanded_group_by_state_dict)
+    for state_name, multi_index_dict in expanded_multi_index_dict.items():
+        save_multi_index(summary_level, state_name, multi_index_dict, threshold)
+    end_time = time.time()
+    print(f'Converted and saved data {end_time - start_time}')
 
+def group_by_state(multi_index_list):
+    result = defaultdict(list)
+    for item in multi_index_list:
+        result[item[0]].append(item[1])
+    return result
 
 def split_multi_index_to_dict(exapanded_multi_index_list):
-    result = defaultdict(list)
-    for item in exapanded_multi_index_list:
-        result[item[0]].append(item)
+    result = defaultdict(lambda: defaultdict(list))
+    for key, value in exapanded_multi_index_list.items():
+        for v in value:
+            result[key][v[0]].append(v)
     del exapanded_multi_index_list
     return result
 
 
-def save_multi_index(summary_level, geo_id, multi_index_list, threshold):
-    sub_folder_name = args.filterstate if args.filterstate else "Nation"
-    location = os.path.join(os.getenv("JBID", default=""), 
-                            "smallcell", args.type, summary_level, str(sub_folder_name) , f'{geo_id}_threshold_{threshold}.json')
-    local_temp_store = os.path.join("temp", location)
-    path = pathlib.Path(local_temp_store)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(local_temp_store, 'w+') as filehandler:
-        json.dump(multi_index_list, filehandler)
-    (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), location))
-    put_object(bucket, key, local_temp_store)
-    print(f"Upload: {local_temp_store} s3://{bucket}/{key}")
+def save_multi_index(summary_level, state_name, multi_index_dict, threshold):
+    location = os.path.join(os.getenv("JBID", default=""),
+                                "test", "smallcell", args.type, summary_level, state_name)
+    for geo_id, multi_index_list in multi_index_dict.items():
+        store_location = os.path.join(location, f'{geo_id}_threshold_{threshold}.json')
+        local_temp_store = os.path.join("temp", store_location)
+        path = pathlib.Path(local_temp_store)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(local_temp_store, 'w+') as filehandler:
+            json.dump(multi_index_list, filehandler)
+        (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), store_location))
+        put_object(bucket, key, local_temp_store)
+        print(f"Upload: {local_temp_store} s3://{bucket}/{key}")
 
 
-def expand_multi_index_list(multi_index_list):
-    final_expanded_index_set = set()
-    for element_to_expand in multi_index_list:
-        expanded_list = cartesian_iterative(element_to_expand)
-        for tuple_to_add in expanded_list:
-            final_expanded_index_set.add(tuple_to_add)
-    return final_expanded_index_set
+def expand_state_dict(group_by_state_dict):
+    result = defaultdict(set)
+    for key, value in group_by_state_dict.items():
+        for v in value:
+            expanded_list = cartesian_iterative(v)
+            for tuple_to_add in expanded_list:
+                result[key].add(tuple_to_add)
+    return result
 
 
 def cartesian_iterative(pools):

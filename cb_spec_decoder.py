@@ -77,7 +77,7 @@ TABLE_RE      = re.compile(r"(?P<table>(P|PL|H|PCT|PCO|HCT)\d{1,2}[A-Z]?)[.]\s+(
 VAR_RE        = re.compile(r"^("
                            r"(FILEID)|(STUSAB)|(CHARITER)|(CIFSN)|(LOGRECNO)|"
                            r"([PH]\d{6,8})|"
-                           r"(PCO\d{6})|"
+                           r"(PCO\d{6,7})|"
                            r"(PCT\d{6,8})|"
                            r"(PCT\d{3}[A-Z]\d{3})|"
                            r"(H\d{3}[A-Z]\d{3,4})|"

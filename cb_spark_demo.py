@@ -208,11 +208,43 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
     end_time = time.time()
     print(f'Converted and saved data {end_time - start_time}')
 
+
+def build_tract_compare():
+    sf1_2000_tracts = set()
+    sf1_2010_tracts = set()
+
+    sf1_year_2000 = 2000
+    current_product = SF1
+    sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year_2000, product=current_product)
+
+    sf1_year_2010 = 2010
+    sf1_2010 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year_2010, product=current_product)
+
+    print("Geolevels by state and summary level:")
+    sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
+    sf1_2010.get_df(tableName=GEO_TABLE, sqlName='GEO_2010')
+
+    sf1_2000_results = spark.sql(f"SELECT GEO_2000.STATE, GEO_2000.COUNTY, GEO_2000.TRACT FROM GEO_2000"
+                                 f" WHERE GEO_2000.SUMLEV='140'")
+    sf1_2010_results = spark.sql(f"SELECT GEO_2010.STATE, GEO_2010.COUNTY, GEO_2010.TRACT FROM GEO_2010"
+                                 f" WHERE GEO_2010.SUMLEV='140'")
+
+    for sf1_2000_row in sf1_2000_results.collect():
+        sf1_2000_tracts.add(sf1_2000_row['STATE'] + sf1_2000_row['COUNTY'] + sf1_2000_row['TRACT'])
+    for sf1_2010_row in sf1_2010_results.collect():
+        sf1_2010_tracts.add(sf1_2010_row['STATE'] + sf1_2010_row['COUNTY'] + sf1_2010_row['TRACT'])
+
+    end_result = sf1_2000_tracts.symmetric_difference(sf1_2010_tracts)
+    print(f"There are {len(end_result)} tracts that don't match between 2000 and 2010.")
+    print(end_result)
+
+
 def group_by_state(multi_index_list):
     result = defaultdict(list)
     for item in multi_index_list:
         result[item[0]].append(item[1])
     return result
+
 
 def split_multi_index_to_dict(exapanded_multi_index_list):
     result = defaultdict(lambda: defaultdict(list))
@@ -395,5 +427,7 @@ if __name__=="__main__":
             smallCellStructure_HouseholdsSF2000(args.sumlevel, args.threshold)
         elif args.type == 'person':
             smallCellStructure_PersonsSF2000(args.sumlevel, args.threshold)
+        elif args.type =='test':
+            build_tract_compare()
         shutil.rmtree("temp", ignore_errors=True)
 

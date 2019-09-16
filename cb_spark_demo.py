@@ -30,6 +30,7 @@ from ctools.s3 import put_object, get_bucket_key
 import shutil
 import pathlib
 import time
+import pprint
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -209,7 +210,7 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
     print(f'Converted and saved data {end_time - start_time}')
 
 
-def build_tract_compare():
+def build_tract_compare_sf1():
     sf1_2000_tracts = set()
     sf1_2010_tracts = set()
 
@@ -229,14 +230,32 @@ def build_tract_compare():
     sf1_2010_results = spark.sql(f"SELECT GEO_2010.STATE, GEO_2010.COUNTY, GEO_2010.TRACT FROM GEO_2010"
                                  f" WHERE GEO_2010.SUMLEV='140'")
 
+    print("Before Collect")
     for sf1_2000_row in sf1_2000_results.collect():
-        sf1_2000_tracts.add(sf1_2000_row['STATE'] + sf1_2000_row['COUNTY'] + sf1_2000_row['TRACT'])
+        sf1_2000_tracts.add(sf1_2000_row['STATE'] + sf1_2000_row['COUNTY'] + sf1_2000_row['TRACT'][:-2])
     for sf1_2010_row in sf1_2010_results.collect():
-        sf1_2010_tracts.add(sf1_2010_row['STATE'] + sf1_2010_row['COUNTY'] + sf1_2010_row['TRACT'])
+        sf1_2010_tracts.add(sf1_2010_row['STATE'] + sf1_2010_row['COUNTY'] + sf1_2010_row['TRACT'][:-2])
 
     end_result = sf1_2000_tracts.symmetric_difference(sf1_2010_tracts)
+    print(f"There are {len(sf1_2000_tracts)} tracts in the 2000 sf1 data.")
+    print(f"There are {len(sf1_2010_tracts)} tracts in the 2010 sf1 data.")
     print(f"There are {len(end_result)} tracts that don't match between 2000 and 2010.")
-    print(end_result)
+
+
+def build_tract_compare_relationship_file():
+    tract_map = defaultdict(list)
+    file_location = os.path.join(os.getenv('DAS_S3ROOT'), os.getenv("JBID", default=""), "relationship", "us2010trf_headers.csv")
+    print(f"Loading file at {file_location}")
+    cb_spec_decoder.build_relationship_table(file_location, "relationship")
+
+    relationship_results = spark.sql(f"SELECT GEOID00, GEOID10 FROM relationship")
+
+    for relationship_row in relationship_results.collect():
+        tract_map[relationship_row['GEOID00']].append(relationship_row['GEOID10'])
+
+    printer = pprint.PrettyPrinter(indent=4)
+    printer.pprint(tract_map)
+
 
 
 def group_by_state(multi_index_list):
@@ -427,7 +446,7 @@ if __name__=="__main__":
             smallCellStructure_HouseholdsSF2000(args.sumlevel, args.threshold)
         elif args.type == 'person':
             smallCellStructure_PersonsSF2000(args.sumlevel, args.threshold)
-        elif args.type =='test':
-            build_tract_compare()
+        elif args.type == 'tract_compare':
+            build_tract_compare_relationship_file()
         shutil.rmtree("temp", ignore_errors=True)
 

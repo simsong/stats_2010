@@ -71,26 +71,35 @@ if __name__=="__main__":
     count = 0
     for product in args.products:
         # Loop through all states
-        for statename_abbrev in STATE_DB.split():
-            try:
-                (state_name,state) = statename_abbrev.split("/")
-            except ValueError as e:
-                print("Invalid atabase entry: {}".format(statename_abbrev))
-                raise e
-            print(f"{year} {product} {state}")
-            if args.state and args.state.lower() != state.lower():
-                continue
+        if product.lower() == "sf1" or product.lower() == "sf2" or product.lower() == "pl94"  or product.lower() == "ur1":
+            for statename_abbrev in STATE_DB.split():
+                try:
+                    (state_name,state) = statename_abbrev.split("/")
+                except ValueError as e:
+                    print("Invalid atabase entry: {}".format(statename_abbrev))
+                    raise e
+                print(f"{year} {product} {state}")
+                if args.state and args.state.lower() != state.lower():
+                    continue
 
-            for segment_number in range(0, DOWNLOAD_SEGMENTS_PER_PRODUCT[year][product]):
-                if segment_number==0:
-                    segment = 'geo'
-                else:
-                    segment = '{:05d}'.format(segment_number)
-                url    = DOWNLOAD_URLS[year][product].format(state_name=state_name,state=state,segment=segment)
-                zipdir = DEST_ZIPFILE_DIR[year].format(year=year, product=product, state=state)
-                download(url,zipdir)
-                count += 1
+                for segment_number in range(0, DOWNLOAD_SEGMENTS_PER_PRODUCT[year][product]):
+                    if segment_number==0:
+                        segment = 'geo'
+                    else:
+                        segment = '{:05d}'.format(segment_number)
+                    url = DOWNLOAD_URLS[year][product].format(state_name=state_name,state=state,segment=segment)
+                    zipdir = DEST_ZIPFILE_DIR[year].format(year=year, product=product, state=state)
+                    download(url,zipdir)
+                    count += 1
+        if product.lower() == "relationship":
+            for state_info in STATES_FIPS_DICT:
+                try:
+                    print(f'Downloading {state_info["fips_state"]}')
+                    url = DOWNLOAD_URLS[year][product].format(state_fips=state_info['fips_state'])
+                    download(url, os.path.join(os.path.dirname(__file__), "relationship"))
+                    count += 1
+                except Exception as error:
+                    print(f'Error downloading {state_info["fips_state"]}', error)
     if count==0:
         print("Nothing downloaded")
         parser.print_help()
-                        

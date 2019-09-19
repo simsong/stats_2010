@@ -42,6 +42,7 @@ SF1  = 'sf1'
 SF2  = 'sf2'
 SF3  = 'sf3'
 SF4  = 'sf4'
+RELATIONSHIP = 'relationship'
 AIANSF = 'aiansf'
 UR1  = 'ur1'
 PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
@@ -100,6 +101,18 @@ New_Jersey/nj New_Mexico/nm New_York/ny North_Carolina/nc North_Dakota/nd Ohio/o
 Oregon/or Pennsylvania/pa Rhode_Island/ri South_Carolina/sc South_Dakota/sd Tennessee/tn
 Texas/tx Utah/ut Vermont/vt Virginia/va Washington/wa West_Virginia/wv Wisconsin/wi Wyoming/wy"""
 
+STATE_DATA=[
+    "Alabama,AL,01", "Alaska,AK,02", "Arizona,AZ,04", "Arkansas,AR,05", "California,CA,06", "Colorado,CO,08",
+    "Connecticut,CT,09", "Delaware,DE,10", "District_of_Columbia,DC,11", "Florida,FL,12", "Georgia,GA,13",
+    "Hawaii,HI,15", "Idaho,ID,16","Illinois,IL,17","Indiana,IN,18","Iowa,IA,19","Kansas,KS,20","Kentucky,KY,21","Louisiana,LA,22",
+    "Maine,ME,23","Maryland,MD,24","Massachusetts,MA,25","Michigan,MI,26","Minnesota,MN,27","Mississippi,MS,28",
+    "Missouri,MO,29","Montana,MT,30","Nebraska,NE,31","Nevada,NV,32","New_Hampshire,NH,33","New_Jersey,NJ,34",
+    "New_Mexico,NM,35","New_York,NY,36","North_Carolina,NC,37","North_Dakota,ND,38","Ohio,OH,39","Oklahoma,OK,40","Oregon,OR,41",
+    "Pennsylvania,PA,42","Rhode_Island,RI,44","South_Carolina,SC,45","South_Dakota,SD,46","Tennessee,TN,47","Texas,TX,48",
+    "Utah,UT,49","Vermont,VT,50","Virginia,VA,51", "Washington,WA,53","West_Virginia,WV,54","Wisconsin,WI,55","Wyoming,WY,56" ]
+
+STATES_FIPS_DICT=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
+
 STATES_AND_ABBREVS = STATE_DB.split()
 STATES             = [saa.split("/")[1] for saa in STATES_AND_ABBREVS]
 
@@ -131,6 +144,9 @@ WWW_SERVER_2000 = "https://www2.census.gov/census_2000/datasets/"
 URL_2000_PL94   = WWW_SERVER_2000 + "redistricting_file--pl_94-171/{state_name}/{state}000{segment}.upl.zip"
 URL_2000_SF1    = WWW_SERVER_2000 + "Summary_File_1/{state_name}/{state}{segment}_uf1.zip"
 URL_2000_SF2    = WWW_SERVER_2000 + "Summary_File_2/{state_name}/{state}{segment}_uf2.zip"
+
+WWW_SERVER_2000_RELATIONSHIP = "https://www2.census.gov/geo/docs/maps-data/data/rel/"
+URL_2000_RELATIONSHIP = WWW_SERVER_2000_RELATIONSHIP + "t00t10/TAB2000_TAB2010_ST_{state_fips}_v2.zip"
                       
 WWW_SERVER_2010='https://www2.census.gov/census_2010'
 URL_2010_PL94 = WWW_SERVER_2010+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip'
@@ -150,7 +166,8 @@ DOWNLOAD_SEGMENTS_PER_PRODUCT = {2000: {PL94: 3,
 
 DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
                        SF1  : URL_2000_SF1,
-                       SF2  : URL_2000_SF2},
+                       SF2  : URL_2000_SF2,
+                       RELATIONSHIP: URL_2000_RELATIONSHIP},
                  2010:{PL94 : URL_2010_PL94,
                        SF1  : URL_2010_SF1,
                        UR1  : URL_2010_UR1,

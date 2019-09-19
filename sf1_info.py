@@ -55,6 +55,37 @@ def get_correct_builder(table_name, values):
     raise ValueError(f"No Builder found for table {table_name}")
 
 
+class Histogram:
+    def __init__(self, row, summary_level, histogram):
+        self.geo_code_parts = {}
+        self.full_geo_code = ""
+        self.histogram = histogram
+        self.create_geocode(row, summary_level)
+        self.histogram_expanded = None
+
+        self.histogram.insert(0, [self.full_geo_code])
+
+    def generate_expanded_histogram(self):
+        self.histogram_expanded = Histogram.cartesian_iterative(self.histogram)
+
+    def create_geocode(self, row, summary_level):
+        geo_levels = ['STATE', 'COUNTY', 'TRACT']
+        index = geo_levels.index(summary_level) + 1
+        for element in geo_levels[:index]:
+            self.geo_code_parts[element] = row[element]
+            self.full_geo_code += row[element]
+
+    def __str__(self):
+        return str(self.histogram) if not self.histogram_expanded else str(self.histogram_expanded)
+
+    @staticmethod
+    def cartesian_iterative(pools):
+        result = [()]
+        for pool in pools:
+            result = [x + (y,) for x in result for y in pool]
+        return result
+
+
 class Builder:
     def __init__(self):
         print('Creating Builder')
@@ -62,20 +93,15 @@ class Builder:
     def create_map(self, variables):
         for index, variable in enumerate(variables):
             self.build_map(index, variable)
-    
+
     def process_results(self, summary_level, results, table_name, cell_size_num):
-        # print(self.map)
-        # go through all the rows and see if any values are zero if they are
-        # add a entry into the multi_index array
         to_return = []
         for row in results.collect():
             for key, value in self.map.items():
                 average_contained_cell_size = self.compute_average_contained_cell_size(row[key], self.map[key])
                 if average_contained_cell_size <= cell_size_num:
-                    current_array = deepcopy(self.map[key])
-                    current_array.insert(0, [ row[summary_level] ])
-                    # State is included in the append because fips are not unique at anything lower the the state level
-                    to_return.append((row['STATE'], current_array))
+                    current_histogram = Histogram(row, summary_level, deepcopy(self.map[key]))
+                    to_return.append(current_histogram)
         print(f"Table Name: {table_name} Length to return: {len(to_return)}")
         return to_return
 

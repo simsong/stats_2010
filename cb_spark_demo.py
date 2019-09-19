@@ -31,6 +31,7 @@ import shutil
 import pathlib
 import time
 import pprint
+import glob
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -111,12 +112,13 @@ def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
             print(error)
             break
 
-    group_by_state_dict = group_by_state(multi_index_list=multi_index_list)
-    expanded_group_by_state_dict = expand_state_dict(group_by_state_dict)
+    start_time = time.time()
+    state_dict = build_state_level(multi_index_list=multi_index_list)
+    for v, k in state_dict.items():
+        save_data(summary_level, v, k, threshold)
+    end_time = time.time()
+    print(f'Save data in {end_time - start_time}')
 
-    expanded_multi_index_dict = split_multi_index_to_dict(expanded_group_by_state_dict)
-    for state_name, multi_index_dict in expanded_multi_index_dict.items():
-        save_multi_index(summary_level, state_name, multi_index_dict, threshold)
 
 def smallCellStructure_PersonsSF2000(summary_level, threshold):
     # From a list of tables with integer counts, find those with small counts in 2000 SF1, for Persons
@@ -171,6 +173,7 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
     print("Geolevels by state and summary level:")
     sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
     multi_index_list = []
+    tables = ["P3"]
     for table in tables:
         try:
             # Just wanted to break after first loop to stop for testing.
@@ -199,50 +202,24 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
             break
     end_time = time.time()
     print(f'Got data in {end_time - start_time}')
+
     start_time = time.time()
-    group_by_state_dict = group_by_state(multi_index_list=multi_index_list)
-    expanded_group_by_state_dict = expand_state_dict(group_by_state_dict)
-
-    expanded_multi_index_dict = split_multi_index_to_dict(expanded_group_by_state_dict)
-    for state_name, multi_index_dict in expanded_multi_index_dict.items():
-        save_multi_index(summary_level, state_name, multi_index_dict, threshold)
+    state_dict = build_state_level(multi_index_list=multi_index_list)
+    for v, k in state_dict.items():
+        save_data(summary_level, v, k, threshold)
     end_time = time.time()
-    print(f'Converted and saved data {end_time - start_time}')
+    print(f'Save data in {end_time - start_time}')
 
 
-def build_tract_compare_sf1():
-    sf1_2000_tracts = set()
-    sf1_2010_tracts = set()
-
-    sf1_year_2000 = 2000
-    current_product = SF1
-    sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year_2000, product=current_product)
-
-    sf1_year_2010 = 2010
-    sf1_2010 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year_2010, product=current_product)
-
-    print("Geolevels by state and summary level:")
-    sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
-    sf1_2010.get_df(tableName=GEO_TABLE, sqlName='GEO_2010')
-
-    sf1_2000_results = spark.sql(f"SELECT GEO_2000.STATE, GEO_2000.COUNTY, GEO_2000.TRACT FROM GEO_2000"
-                                 f" WHERE GEO_2000.SUMLEV='140'")
-    sf1_2010_results = spark.sql(f"SELECT GEO_2010.STATE, GEO_2010.COUNTY, GEO_2010.TRACT FROM GEO_2010"
-                                 f" WHERE GEO_2010.SUMLEV='140'")
-
-    print("Before Collect")
-    for sf1_2000_row in sf1_2000_results.collect():
-        sf1_2000_tracts.add(sf1_2000_row['STATE'] + sf1_2000_row['COUNTY'] + sf1_2000_row['TRACT'][:-2])
-    for sf1_2010_row in sf1_2010_results.collect():
-        sf1_2010_tracts.add(sf1_2010_row['STATE'] + sf1_2010_row['COUNTY'] + sf1_2010_row['TRACT'][:-2])
-
-    end_result = sf1_2000_tracts.symmetric_difference(sf1_2010_tracts)
-    print(f"There are {len(sf1_2000_tracts)} tracts in the 2000 sf1 data.")
-    print(f"There are {len(sf1_2010_tracts)} tracts in the 2010 sf1 data.")
-    print(f"There are {len(end_result)} tracts that don't match between 2000 and 2010.")
+def build_state_level(multi_index_list):
+    histogram_state = defaultdict(list)
+    for item in multi_index_list:
+        histogram_state[item.geo_code_parts['STATE']].append(item)
+    return histogram_state
 
 
 def build_tract_compare_relationship_file():
+    check_dupe = []
     tract_map = defaultdict(list)
     file_location = os.path.join(os.getenv('DAS_S3ROOT'), os.getenv("JBID", default=""), "relationship", "us2010trf_headers.csv")
     print(f"Loading file at {file_location}")
@@ -252,58 +229,34 @@ def build_tract_compare_relationship_file():
 
     for relationship_row in relationship_results.collect():
         tract_map[relationship_row['GEOID00']].append(relationship_row['GEOID10'])
+        check_dupe.append(relationship_row['GEOID10'])
+
+    check_set = set(check_dupe)
+    print(f"Length of list {len(check_dupe)}")
+    print(f"Length of set {len(check_set)}")
 
     printer = pprint.PrettyPrinter(indent=4)
     printer.pprint(tract_map)
 
 
-
-def group_by_state(multi_index_list):
-    result = defaultdict(list)
-    for item in multi_index_list:
-        result[item[0]].append(item[1])
-    return result
-
-
-def split_multi_index_to_dict(exapanded_multi_index_list):
-    result = defaultdict(lambda: defaultdict(list))
-    for key, value in exapanded_multi_index_list.items():
-        for v in value:
-            result[key][v[0]].append(v)
-    del exapanded_multi_index_list
-    return result
-
-
-def save_multi_index(summary_level, state_name, multi_index_dict, threshold):
-    location = os.path.join(os.getenv("JBID", default=""),
-                                "test", "smallcell", args.type, summary_level, state_name)
-    for geo_id, multi_index_list in multi_index_dict.items():
-        store_location = os.path.join(location, f'{geo_id}_threshold_{threshold}.json')
+def save_data(summary_level, state_id, index_list, threshold):
+    location = os.path.join(os.getenv("JBID", default=""), "smallcell", "new", args.type,
+                            summary_level, state_id)
+    for item in index_list:
+        store_location = os.path.join(location, f'{item.full_geo_code}_threshold_{threshold}.json')
         local_temp_store = os.path.join("temp", store_location)
+        item.generate_expanded_histogram()
         path = pathlib.Path(local_temp_store)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(local_temp_store, 'w+') as filehandler:
-            json.dump(multi_index_list, filehandler)
-        (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), store_location))
-        put_object(bucket, key, local_temp_store)
-        print(f"Upload: {local_temp_store} s3://{bucket}/{key}")
-
-
-def expand_state_dict(group_by_state_dict):
-    result = defaultdict(set)
-    for key, value in group_by_state_dict.items():
-        for v in value:
-            expanded_list = cartesian_iterative(v)
-            for tuple_to_add in expanded_list:
-                result[key].add(tuple_to_add)
-    return result
-
-
-def cartesian_iterative(pools):
-    result = [()]
-    for pool in pools:
-        result = [x+(y,) for x in result for y in pool]
-    return result
+        with open(local_temp_store, 'a+') as filehandler:
+            json.dump(item.histogram_expanded, filehandler)
+    folder_location = os.path.join("temp", location, "*")
+    files = [f for f in glob.glob(folder_location)]
+    for file in files:
+        (bucket, key) = get_bucket_key(os.path.join(os.getenv('DAS_S3ROOT'), file))
+        key = key.split("temp/")[1]
+        put_object(bucket, key, file)
+        print(f"Upload: {file} s3://{bucket}/{key}")
         
 
 def print_table(result):

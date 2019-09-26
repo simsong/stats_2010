@@ -2,6 +2,9 @@ from copy import deepcopy
 import math
 from functools import reduce
 from string import ascii_uppercase
+from geocode import GeoCode
+from collections import defaultdict
+import pprint
 
 default_HHGQ = range(8)
 default_SEX = range(2)
@@ -56,11 +59,11 @@ def get_correct_builder(table_name, values):
 
 
 class Histogram:
-    def __init__(self, row, summary_level, histogram):
+    def __init__(self, histogram, full_geo_code=None):
+        self.full_geo_code = "" if full_geo_code is None else full_geo_code
         self.geo_code_parts = {}
-        self.full_geo_code = ""
         self.histogram = histogram
-        self.create_geocode(row, summary_level)
+        # self.create_geocode(row, summary_level)
         self.histogram_expanded = None
 
         self.histogram.insert(0, [self.full_geo_code])
@@ -105,6 +108,27 @@ class Builder:
         print(f"Table Name: {table_name} Length to return: {len(to_return)}")
         return to_return
 
+    def process_block_results(self, summary_level, results, table_name, cell_size_num, scale_map, code_2010):
+        # This is a test function trying to implement the new block level scaling
+        to_return = []
+        map = defaultdict(int)
+        for row in results.collect():
+            geocode_2000 = GeoCode(row['STATE'], row['COUNTY'], row['TRACT'],
+                                   row['BLOCK'])
+            for key, value in self.map.items():
+                print(f'Original Size {str(row[key])}. New Size {str(row[key] * scale_map[str(geocode_2000)] )}')
+                map[key] += (row[key] * scale_map[str(geocode_2000)])
+        pp = pprint.PrettyPrinter(indent=4)
+        pp.pprint(map)
+        print(f"Map Length {len(map.keys())}")
+        for k, v in map.items():
+            average_contained_cell_size = self.compute_average_contained_cell_size(v, self.map[k])
+            if average_contained_cell_size <= cell_size_num:
+                current_histogram = Histogram(deepcopy(self.map[k]), full_geo_code=code_2010)
+                to_return.append(current_histogram)
+        print(f"Table Name: {table_name} Length to return: {len(to_return)}")
+        return to_return
+
     def compute_average_contained_cell_size(self, count, cell_array):
         try:
             cell_array_lengths = [len(current) for current in cell_array]
@@ -118,8 +142,6 @@ class Builder:
         pass
 
 
-# I am not sure this is the best way to do this but I could not find anywhere else that mapped the data dict variables to 
-# the 6-D array
 class P3_Builder(Builder):
 
     def __init__(self, variables):

@@ -285,10 +285,9 @@ def filter_ids_persons(ids):
     total_table_reference += ["PCT013001", "PCT013002", "PCT013026"]
     return filter_based_on_list(ids=ids, total_table_reference=total_table_reference)
 
-    # tables += [f"PCT13{letter}" for letter in ascii_uppercase[:9]]
 
 def filter_based_on_list(ids, total_table_reference):
-    if(ids in total_table_reference):
+    if ids in total_table_reference:
         return False
     else:
         return True

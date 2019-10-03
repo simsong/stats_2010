@@ -32,6 +32,7 @@ import pathlib
 import time
 import pprint
 import glob
+import uuid
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -240,7 +241,7 @@ def build_tract_compare_relationship_file():
 
 
 def save_data(summary_level, state_id, index_list, threshold):
-    location = os.path.join(os.getenv("JBID", default=""), "smallcell", "fixed_json", args.type,
+    location = os.path.join("users", os.getenv("JBID", default=""), "smallcell", str(uuid.uuid4())[:5], args.type,
                             summary_level, state_id)
     output_dict = defaultdict(list)
     for item in index_list:

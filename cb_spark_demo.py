@@ -174,7 +174,6 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
     print("Geolevels by state and summary level:")
     sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
     multi_index_list = []
-    tables = ["P3"]
     for table in tables:
         try:
             # Just wanted to break after first loop to stop for testing.
@@ -206,8 +205,9 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
 
     start_time = time.time()
     state_dict = build_state_level(multi_index_list=multi_index_list)
+    uuid_str = str(uuid.uuid4())[:5]
     for v, k in state_dict.items():
-        save_data(summary_level, v, k, threshold)
+        save_data(summary_level, v, k, threshold, uuid_str)
     end_time = time.time()
     print(f'Save data in {end_time - start_time}')
 
@@ -240,9 +240,9 @@ def build_tract_compare_relationship_file():
     printer.pprint(tract_map)
 
 
-def save_data(summary_level, state_id, index_list, threshold):
+def save_data(summary_level, state_id, index_list, threshold, uuid_str):
     location = os.path.join("users", os.getenv("JBID", default=""), "smallcell", args.type,
-                            summary_level, str(uuid.uuid4())[:5] + "_threshold_" + str(threshold), state_id)
+                            summary_level, uuid_str + "_threshold_" + str(threshold), state_id)
     output_dict = defaultdict(list)
     for item in index_list:
         store_location = os.path.join(location, f'{item.full_geo_code}_threshold_{threshold}.json')

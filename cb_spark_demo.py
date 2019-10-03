@@ -242,7 +242,7 @@ def build_tract_compare_relationship_file():
 
 def save_data(summary_level, state_id, index_list, threshold):
     location = os.path.join("users", os.getenv("JBID", default=""), "smallcell", args.type,
-                            summary_level, str(uuid.uuid4())[:5], state_id)
+                            summary_level, str(uuid.uuid4())[:5] + "_threshold_" + str(threshold), state_id)
     output_dict = defaultdict(list)
     for item in index_list:
         store_location = os.path.join(location, f'{item.full_geo_code}_threshold_{threshold}.json')

@@ -240,16 +240,19 @@ def build_tract_compare_relationship_file():
 
 
 def save_data(summary_level, state_id, index_list, threshold):
-    location = os.path.join(os.getenv("JBID", default=""), "smallcell", "new", args.type,
+    location = os.path.join(os.getenv("JBID", default=""), "smallcell", "fixed_json", args.type,
                             summary_level, state_id)
+    output_dict = defaultdict(list)
     for item in index_list:
         store_location = os.path.join(location, f'{item.full_geo_code}_threshold_{threshold}.json')
         local_temp_store = os.path.join("temp", store_location)
         item.generate_expanded_histogram()
         path = pathlib.Path(local_temp_store)
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(local_temp_store, 'a+') as filehandler:
-            json.dump(item.histogram_expanded, filehandler)
+        output_dict[local_temp_store].extend(item.histogram_expanded)
+    for local_file_location, histogram in output_dict.items():
+        with open(local_file_location, "w+") as filehandler:
+            json.dump(histogram, filehandler)
     folder_location = os.path.join("temp", location, "*")
     files = [f for f in glob.glob(folder_location)]
     for file in files:

@@ -1,4 +1,4 @@
-This is the clean rewrite of the existing database reconstruction code.
+This is the cleanup of the existing database reconstruction code.
 
 __Please read this file through to the end before starting.__
 

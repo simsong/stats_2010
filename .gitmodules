@@ -1,6 +1,9 @@
 [submodule "ctools"]
 	path = ctools
-	url = git@github.com:dpcomp-org/ctools.git
+	url = git@github.com:simsong/ctools.git
 [submodule "dfxml"]
 	path = dfxml
 	url = https://github.com/simsong/dfxml.git
+[submodule "census_etl"]
+	path = census_etl
+	url = git@github.com:simsong/census_etl.git

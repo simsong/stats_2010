@@ -26,26 +26,22 @@ This is encoded as:
 
 This coding form resulted in very sparse problems and huge LP files. The LP files were also very hard to audit and to map to specific tables, which made it difficult to map the methodology to other problem regimes.
 
-The new coding format creates multiple variables for each person. The coding method using the above is:
+The new coding format creates multiple variables for each person. The coding starts by assuming that we are solving tract-by-tract, so the variables do not encode state, county or tract information. Instead, the variable looks like this:
 
-    P02198_000300_1010_xxxx   - a unique identifier for each person on the block. xxxx is a hexadecimal number ranging from 0000 to ffff, allowing for up to 65,536 people per block.
+    P1010_x   - a unique identifier for each person on block 1010. x is a decimal number ranging from 0 to the maximum number of people on the block.
 
 For each person, there are 
 
-    P02198_000300_1010_xxxx_A - person abcd's Age  [0..110]
-    P02198_000300_1010_xxxx_R - person abcd's Race # [0..63]
-    P02198_000300_1010_xxxx_H - person abcd's Hispanic code [0,1]
-    P02198_000300_1010_xxxx_S - person abcd's sex code [0,1]
-    
-Race coding:  This reconstruction treats race as a bitfield. This is NOT the standard census coding, but that it allows for significantly more efficient representations. Our coding is:
-
-     0x01 - White (WHITE)
-     0x02 - Black or African American (BLACK)
-     0x04 - American Indian or Alaksa Native (AIAN)
-     0x08 - Asian (ASIAN)
-     0x10 - Native Hawaiian or Other Pacific Islander (NHOPI)
-     0x20 - Some Other Race (SOR)         
-
+    P1010_xA - person x's Age  [0..110]
+    P1010_xH - person x's Hispanic code [0,1]
+    P1010_xS - person x's sex code [0,1]
+    P1010_xw - person x's is White [0,1]
+    P1010_xb - person x's is Black or African American [0,1]
+    P1010_xi - person x's is American Indian or Alaska Native [0,1]
+    P1010_xs - person x's is Asian [0,1]
+    P1010_xh - person x's is Native Hawaiian or Other Pacific Islander [0,1]
+    P1010_xo - person x's is Some Other Race [0,1]
+        
 Database reconstruction can be performed almost entirely with block-level data (most of the relevant tabels are published at the block level). However, single-year age is only published at the tract level. Thus, the solution approach is to construct constraints for every block in the tract and for the tract as a whole, and then to solve tract-by-tract.
 
 Solution approach is as follows.
@@ -77,21 +73,21 @@ For example, if we are processing table P12 (Sex by Age), variable P0120010 (Mal
 
 Continuing the above example, for person 000a in 02198_000300_1010, the expansion would be:
 
-     (ite (and (and (>= P02198_000300_1010_00a_A 22) (<= P02198_000300_1010_00a_A 24) 
-                    (= P02198_000300_1010_00a_S MALE)))
+     (ite (and (and (>= P1010_00a_A 22) (<= P1010_00a_A 24) 
+                    (= P1010_00a_S MALE)))
           1 0)
 
 Which is simplifed to:
-(ite (and (>= P02198_000300_1010_00a_A 22)
-          (<= P02198_000300_1010_00a_A 24) 
-          (=  P02198_000300_1010_00a_S MALE))
+(ite (and (>= P1010_00a_A 22)
+          (<= P1010_00a_A 24) 
+          (=  P1010_00a_S MALE))
      1 0)
 
 If we replace 00a with {pnum} (person number) then the and if the value of P0120010 for 02198_00300_1010 is 10, and if there are 30 people on the block, then assert statement is:
 
-y = [f"""(ite (and (>= P02198_000300_1010_{hex4(pnum)}_A 22)
-            (<= P02198_000300_1010_{hex4(pnum)}_A 24) 
-             (=  P02198_000300_1010_{hex4(pnum)}_S MALE))
+y = [f"""(ite (and (>= P1010_{hex4(pnum)}_A 22)
+            (<= P1010_{hex4(pnum)}_A 24) 
+             (=  P1010_{hex4(pnum)}_S MALE))
           1 0)""" for pnum in range(0,30)]
 
 f"(assert (= 10) (sum {y}))"
@@ -143,3 +139,69 @@ V1 uses Gurobi.
 
 For V2, we tried to encode each tract problem as a (SMT-LIB)[http://smtlib.cs.uiowa.edu/index.shtml] problem.
 
+# Developing
+
+This was developed using Alaska (AK) county 105, tract 000200, which is the smallest tract. It contains just 12 blocks with a total of 95 people:
+
+```
+sqlite> select * from blocks where state='AK' and county=105 and tract=200;
+AK|105|200|1000|24728|2||
+AK|105|200|1001|24729|3||
+AK|105|200|1002|24730|9||
+AK|105|200|1003|24731|20||
+AK|105|200|1004|24732|15||
+AK|105|200|1005|24733|5||
+AK|105|200|1006|24734|29||
+AK|105|200|1007|24735|0||
+AK|105|200|1008|24736|0||
+AK|105|200|1009|24737|0||
+AK|105|200|1010|24738|0||
+AK|105|200|1011|24739|12||
+sqlite> select sum(pop) from blocks where state='AK' and county=105 and tract=200;
+95
+sqlite>
+```
+AK|105|200|12
+
+(It turns out that county 198, tract 000300 only has 87 people, but it has 27 blocks.)
+
+
+# Changes from v1
+
+V1 only used the following tables:
+
+```
+% awk -F, '{print $2}' sf1_vars_race_binaries.csv | sort | uniq | grep -v table_number
+P1
+P11
+P12
+P12A
+P12B
+P12C
+P12D
+P12E
+P12F
+P12G
+P12H
+P12I
+P14
+P6
+P7
+P9
+PCT12
+PCT12A
+PCT12B
+PCT12C
+PCT12D
+PCT12E
+PCT12F
+PCT12G
+PCT12H
+PCT12I
+PCT12J
+PCT12K
+PCT12L
+PCT12M
+PCT12N
+PCT12O
+```

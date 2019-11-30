@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 #
 """
-dbload.py: create an SQLite3 database from PL94 data. Data loaded includes:
-  STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED
+dbload.py: create an SQLite3 database from PL94 data for blocks and tracts. Data loaded includes:
+Blocks:
+  STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED 
+
+Tracts:
+  STATE | COUNTY | TRACT | LOGRECNO  
 
 Datasources:
   STATE|COUNTY|TRACT|BLOCK => LOGRECNO  -- Geography file
@@ -10,7 +14,7 @@ Datasources:
   HOUSES|OCCUPIED --- File 22010
 """
 
-__version__ = '0.0.1'
+__version__ = '0.1.0'
 import datetime
 import json
 import os
@@ -24,7 +28,7 @@ import io
 
 DBFILE="pl94.sqlite3"
 
-CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.
+CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is a 16MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
 SQL_SCHEMA="""

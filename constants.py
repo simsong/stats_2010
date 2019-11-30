@@ -46,6 +46,9 @@ AIANSF = 'aiansf'
 UR1  = 'ur1'
 PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
 
+SUMLEV_TRACT = 140
+SUMLEV_BLOCK = 750
+
 PRODUCT_EXTS = { PL94:'pl',
                  SF1:'sf1',
                  SF2:'sf2',
@@ -166,6 +169,7 @@ STATE_DATA=[
     "West_Virginia,WV,54",
     "Wisconsin,WI,55",
     "Wyoming,WY,56" ]
+SDICTS=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
 
 
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
@@ -235,6 +239,7 @@ LINKAGE_VARIABLE_NAMES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
 CIFSN_GEO=0
 
 class YPSS:
+    """A Class that defines the Year, Product, State, Segment and Characteristic Iteration, which is the way that each file in the PL94/SF1/SF2 are named."""
     __slots__=('year','product','state','segment','chariter')
     def __init__(self,year,product,state,segment,chariter=0):
         assert year in YEARS

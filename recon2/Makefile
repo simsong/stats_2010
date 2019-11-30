@@ -1,3 +1,3 @@
 check:
-	python z3solve.py > solve.z3
-	z3 solve.z3
+	python z3solve.py 
+	z3 parallel.enable=true solve.z3

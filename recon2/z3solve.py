@@ -23,6 +23,8 @@ DBFILE="pl94.sqlite3"
 CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is a 16MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
+VAR_SUFFIXES = 'AHSwbisho'
+
 class SLGSQL:
     def iso_now():
         """Report current time in ISO-8601 format"""
@@ -48,13 +50,13 @@ def make_database(conn):
 def db_connection(filename=DBFILE):
     return sqlite3.connect(filename)
 
-def p(block,i,var=None):
+def p(block,i,suffix=None):
     """Return the variable for person i on block block"""
-    if var is None:
-        var = ""
+    if suffix is None:
+        suffix = ""
     else:
-        assert var in "AHSwbisho"
-    return f"P{block}_{i}{var}"
+        assert suffix in VAR_SUFFIXES
+    return f"P{block}_{i}{suffix}"
 
 def pcount(block,i,quals):
     """Return a counter for person i on block with the qualifiers"""
@@ -63,7 +65,7 @@ def pcount(block,i,quals):
         if q=='start_age':
             tquals.append(f"(>= {p(block,i,'A')} {quals['start_age']})")
         elif q=='end_age':
-            tquals.append(f"(>= {p(block,i,'A')} {quals['end_age']})")
+            tquals.append(f"(<= {p(block,i,'A')} {quals['end_age']})")
         else:
             tquals.append(f"(= {p(block,i,q)} {quals[q]})")
     if tquals == []:
@@ -84,6 +86,8 @@ def process(conn,state,county,tract):
 
     vars = []
     with open("solve.z3","w") as f:
+        f.write("(define-fun Male () Bool true)\n")
+        f.write("(define-fun Female () Bool false)\n")
         block_pop = {}
         for LOGRECNO in blockpops:
             block = blockpops[LOGRECNO]['block']
@@ -91,11 +95,13 @@ def process(conn,state,county,tract):
             f.write(f"; block: {block} pop: {pop}\n")
             for i in range(pop):
                 _ = p(block,i)  # variable prefix
-                # age is between 0 and 115
-                f.write(f"(declare-const {_}A Int) (assert (and (>= {_}A 0) (<= {_}A 115)))\n")
-                # the remainder are Booleans
-                for ch in "HSwbisno":
-                    f.write(f"(declare-const {_}{ch} Bool) \n")
+                for ch in VAR_SUFFIXES:
+                    if ch=='A':
+                        # age is between 0 and 115
+                        f.write(f"(declare-const {_}A Int) (assert (and (>= {_}A 0) (<= {_}A 115)))\n")
+                    else:
+                        # the remainder are Booleans
+                        f.write(f"(declare-const {_}{ch} Bool) \n")
                 f.write("\n")
                 vars.extend([_+ch for ch in "AHSwbisho"])
 
@@ -119,7 +125,9 @@ def process(conn,state,county,tract):
                 census_variable = sf1var['cell_number']
                 if census_variable in row:
                     count = row[census_variable]
-                    print(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (block {block} pop={pop})")
+                    f.write(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (block {block} pop={pop})\n")
+                    if pop==0:
+                        continue
                     quals = {}
                     for (a,b) in [('hispanic','H'),
                                   ('sex','S'),
@@ -129,8 +137,8 @@ def process(conn,state,county,tract):
                                   ('asian','s'),
                                   ('nhopi','h'),
                                   ('sor','o')]:
-                        MAPPING = {'Y':'True',
-                                   'N':'False',
+                        MAPPING = {'Y':'true',
+                                   'N':'false',
                                    'male':'Male',
                                    'female':'Female',
                                    'hispanic':'Hispanic'}
@@ -140,23 +148,18 @@ def process(conn,state,county,tract):
                         quals['start_age'] = sf1var['start_age']
                     if sf1var['end_age']!='missing':
                         quals['end_age'] = sf1var['end_age']
-                    print(f"(assert (= {count} (+ ")
-                    print("  "+"  ".join([pcount(block,i,quals) for i in range(pop)]),end='')
-                    print(")))")
-                    print("")
-        exit(0)
-
-        for fn in layouts:
-            if "P0110001" in layouts[fn]:
-                print("P0110001 is in ",fn)
+                    f.write(f"(assert (= {count} (+ \n")
+                    f.write("  "+"  ".join([pcount(block,i,quals) for i in range(pop)]))
+                    f.write(")))\n\n")
 
         # PCT12 is the single-digit year track-level statistics by race. Add them.
-        with open("layouts/sf1_vars_race_binaries.csv") as vrb:
-            for row in csv.DictReader(vrb):
-                print(row)
+        #with open("layouts/sf1_vars_race_binaries.csv") as vrb:
+        #    for row in csv.DictReader(vrb):
+        #        print(row)
 
         f.write("(check-sat)\n")
         f.write("(get-value (" + " ".join(vars) + "))\n")
+        exit(0)
 
 if __name__ == "__main__":
     import argparse

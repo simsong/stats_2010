@@ -44,6 +44,12 @@ For each person, there are
         
 Database reconstruction can be performed almost entirely with block-level data (most of the relevant tabels are published at the block level). However, single-year age is only published at the tract level. Thus, the solution approach is to construct constraints for every block in the tract and for the tract as a whole, and then to solve tract-by-tract.
 
+We are now using an SMT solver. There are several to choose from:
+* Microsoft's Z3
+* VeriT - https://verit.loria.fr
+* Yices - https://yices.csl.sri.com
+
+
 Solution approach is as follows.
 
 1. The geography file is scanned and loaded into a database, so that the geocode for every LOGREC is known.
@@ -64,6 +70,7 @@ That is, each cell becomes and assertion such that:
      - the ethnicity of the matching people (either 0, 1, or both)
 
 NOTE: We are currently not reconstructing household, but we trivially could do so using the approach described herein.
+
 
 For example, if we are processing table P12 (Sex by Age), variable P0120010 (Male, 22 to 24 years old) is described by:
 

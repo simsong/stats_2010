@@ -47,7 +47,8 @@ UR1  = 'ur1'
 PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
 
 SUMLEV_TRACT = 140
-SUMLEV_BLOCK = 750
+PL94_SUMLEV_BLOCK = 750
+SF1_SUMLEV_BLOCK = 101
 
 PRODUCT_EXTS = { PL94:'pl',
                  SF1:'sf1',
@@ -57,17 +58,19 @@ PRODUCT_EXTS = { PL94:'pl',
                  UR1:'ur1' }
                     
 # Number of files per data product
-SEGMENTS_FOR_YEAR_PRODUCT = {2000: {PL94: 2,
-                                 SF1 : 39,
-                                 SF2 : -1, 
-                                 SF3 : -1,
-                                 SF4 : -1,
-                                 AIANSF: -1 },
-                          2010: {PL94: 2,
-                                 SF1 : 47,
-                                 UR1 : 48,
-                                 SF2 : -1, 
-                                 AIANSF: -1 } }
+SEGMENTS_FOR_YEAR_PRODUCT = {2000:
+                             {PL94: 2,
+                              SF1 : 39,
+                              SF2 : -1, 
+                              SF3 : -1,
+                              SF4 : -1,
+                              AIANSF: -1 },
+                             2010:
+                             {PL94: 2,
+                              SF1 : 47,
+                              UR1 : 48,
+                              SF2 : -1, 
+                              AIANSF: -1 } }
 
 MAX_CIFSN = 49                # highest anywhere
 

@@ -1,11 +1,15 @@
 DB=sf1.sqlite3
 DBDIR=../data/2010_sf1
 
-TODO: Options to print the blocks in the tract; options to restrict model to specific blocks (and no tract-level.)
-
+# Note --state=AK --county=105 --tract=200 --maxsegments=30 took 1695 seconds, never went multi-threaded, and got unsat
+#      --state=AK --county=105 --tract=200 --maxsegments=48 produced "unknown" without combined_solver.solver2_unknown=2; took YY seconds otherwise
 check: $(DB)
-	python smt_solve.py --db $(DB) --segments 8 --onlytables P12F,P12G,P12H
-	time z3 parallel.enable=true solve_AK105000200.smt
+	python smt_solve.py --db $(DB) --maxsegments=30
+	time z3 parallel.enable=true combined_solver.solver2_unknown=2 solve_AK105000200.smt
+
+quick: $(DB)
+	python smt_solve.py --db $(DB) --maxsegments=4
+	time z3 parallel.enable=true combined_solver.solver2_unknown=2 solve_AK105000200.smt
 
 $(DB): ../dbload.py
 	/bin/rm -f sf1.sqlite3

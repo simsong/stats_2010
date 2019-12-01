@@ -25,6 +25,7 @@ DBFILE="pl94.sqlite3"
 CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is a 16MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 VAR_SUFFIXES = 'AHSwbisho'
+RACES='wbisho'
 
 COL_TO_SUFFIX_MAP = {'hispanic':'H',
                      'sex':'S',
@@ -62,14 +63,21 @@ def pcount(block,i,quals):
             tquals.append(f"(>= {p(block,i,'A')} {quals['start_age']})")
         elif q=='end_age':
             tquals.append(f"(<= {p(block,i,'A')} {quals['end_age']})")
+        elif q=='two' and quals['two']=='two':
+            tquals.append("(<= 2 (+ " + " ".join([f"(ite {p(block,i,race)} 1 0) " for race in RACES]) + "))")
         else:
+            # boolean variable
+            #if quals[q]=='true':
+            #    tquals.append(f" {p(block,i,q)} ")
+            #else:
+            #    tquals.append(f" (not {p(block,i,q)}) ")
             tquals.append(f"(= {p(block,i,q)} {quals[q]})")
     if tquals == []:
         return "1"              # no qualification, always count
     return "(ite (and " + " ".join(tquals) + ") 1 0)\n"
         
 class ConstraintBuilder:
-    def __init__(self,conn,state,county,tract,onlytables=[]):
+    def __init__(self,conn,state,county,tract,onlyblock=None,onlytables=[]):
         # Get all of the data fields
 
         self.state = state
@@ -77,6 +85,7 @@ class ConstraintBuilder:
         self.tract  = tract
         self.block_constraints = 0
         self.tract_constraints = 0
+        self.onlyblock         = onlyblock
         self.onlytables = onlytables
         c = conn.cursor()
         c.execute("SELECT logrecno,block,pop from blocks where state=? and county=? and tract=?",(state,county,tract))
@@ -125,6 +134,8 @@ class ConstraintBuilder:
         # Create the variables for each person on each block
         for LOGRECNO in self.blockpops:
             block = self.block_for_LOGRECNO(LOGRECNO)
+            if self.onlyblock and block!=self.onlyblock:
+                continue
             pop   = self.pop_for_LOGRECNO(LOGRECNO)
             self.f.write(f"; block: {block} pop: {pop}\n")
             for i in range(pop):
@@ -184,6 +195,8 @@ class ConstraintBuilder:
             quals['start_age'] = sf1var['start_age']
         if sf1var['end_age']!='missing':
             quals['end_age'] = sf1var['end_age']
+        if sf1var['two']!='missing':
+            quals['two'] = True
         return quals
 
     def add_constraints(self, LOGRECNO, census_variable, sf1var, count):
@@ -196,12 +209,21 @@ class ConstraintBuilder:
         sexp = []
         sexp.append(f'(assert (= {count} (+ \n')
         if sf1var['level']=='block':
+            # block-level constraints
             block = self.block_for_LOGRECNO(LOGRECNO)
+            if self.onlyblock and block!=self.onlyblock:
+                return
             self.f.write(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (block {block} pop={pop})\n")
+            self.f.write(f";{sf1var['title']}\n")
             sexp.append("  "+"  ".join([pcount(block,i,quals) for i in range(pop)]))
             self.block_constraints += 1
+
         elif sf1var['level']=='tract':
+            # tract-level constraints
+            if self.onlyblock:
+                return
             self.f.write(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (tract {self.tract_logrecno} tractpop={self.tract_pop})\n")
+            self.f.write(f";{sf1var['title']}\n")
             for block in self.blocks():
                 pop = self.pop_for_block(block)
                 if pop>0:
@@ -233,21 +255,25 @@ if __name__ == "__main__":
     parser.add_argument("--state", default='AK')
     parser.add_argument("--county", default=105, type=int)
     parser.add_argument("--tract", default=200, type=int)
-    parser.add_argument("--max", type=int, default=47, help="Only process this many SF1 files")
-    parser.add_argument("--segments", type=str, help="specify the segments you wish, seperated by commas")
-    parser.add_argument("--onlytables", help="Only use these tables")
+    parser.add_argument("--maxsegments", type=int, default=47, help="Only process this many SF1 files")
+    parser.add_argument("--onlysegments", type=str, help="specify the segments you wish, seperated by commas")
+    parser.add_argument("--onlytables", help="Only use these tables (for debugging)")
+    parser.add_argument("--onlyblock", type=int, help="Only use this block (for debugging)")
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
 
     # open database and give me a big cache
     conn = sqlite3.connect(args.db)
-    c = ConstraintBuilder(conn,args.state,args.county,args.tract,onlytables=args.onlytables.split(","))
+    onlytables = args.onlytables.split(",") if args.onlytables else None
+    c = ConstraintBuilder(conn,args.state,args.county,args.tract,
+                          onlyblock=args.onlyblock,
+                          onlytables=onlytables)
     c.setup( f"solve_{args.state}{args.county:03}{args.tract:06}.smt")
-    if args.segments:
-        segments = [int(x) for x in args.segments.split(",")]
+    if args.onlysegments:
+        segments = [int(x) for x in args.onlysegments.split(",")]
     else:
-        segments = range(1, args.max)
+        segments = range(1, args.maxsegments)
     for seg in segments:
         fname = f"../data/2010_sf1/ak000{seg:02}2010.sf1"
         logging.info("Adding %s",fname)

@@ -48,7 +48,7 @@ We are now using an SMT solver. There are several to choose from:
 * Microsoft's Z3
 * VeriT - https://verit.loria.fr
 * Yices - https://yices.csl.sri.com
-
+* http://optimathsat.disi.unitn.it/
 
 Solution approach is as follows.
 

@@ -63,14 +63,9 @@ def pcount(block,i,quals):
             tquals.append(f"(>= {p(block,i,'A')} {quals['start_age']})")
         elif q=='end_age':
             tquals.append(f"(<= {p(block,i,'A')} {quals['end_age']})")
-        elif q=='two' and quals['two']=='two':
+        elif q=='two' and quals['two']==True:
             tquals.append("(<= 2 (+ " + " ".join([f"(ite {p(block,i,race)} 1 0) " for race in RACES]) + "))")
         else:
-            # boolean variable
-            #if quals[q]=='true':
-            #    tquals.append(f" {p(block,i,q)} ")
-            #else:
-            #    tquals.append(f" (not {p(block,i,q)}) ")
             tquals.append(f"(= {p(block,i,q)} {quals[q]})")
     if tquals == []:
         return "1"              # no qualification, always count
@@ -259,6 +254,7 @@ if __name__ == "__main__":
     parser.add_argument("--onlysegments", type=str, help="specify the segments you wish, seperated by commas")
     parser.add_argument("--onlytables", help="Only use these tables (for debugging)")
     parser.add_argument("--onlyblock", type=int, help="Only use this block (for debugging)")
+    parser.add_argument("--outfile", help="output file")
     args = parser.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
@@ -269,7 +265,8 @@ if __name__ == "__main__":
     c = ConstraintBuilder(conn,args.state,args.county,args.tract,
                           onlyblock=args.onlyblock,
                           onlytables=onlytables)
-    c.setup( f"solve_{args.state}{args.county:03}{args.tract:06}.smt")
+    outfile = args.outfile if args.outfile else f"solve_{args.state}{args.county:03}{args.tract:06}.smt"
+    c.setup(outfile )
     if args.onlysegments:
         segments = [int(x) for x in args.onlysegments.split(",")]
     else:

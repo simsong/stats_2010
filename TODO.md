@@ -13,3 +13,4 @@ For each table, define:
 - Try to process existing .LP files with GLPK
 ## Recon2
 - Produce .LP files to solve as MIPs.
+- Explore using https://pythonhosted.org/PuLP/CaseStudies/a_sudoku_problem.html to produce the .LP files

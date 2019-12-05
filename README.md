@@ -177,10 +177,11 @@ PLST  AK04000000  00000014902                                                   
 ```
 
 # Understanding SF1
-Start with [2010 Census Summary File 1](doc/sf1.pdf). This is a 730-page document. Key things to read:
+Start with [2010 Census Summary File 1](doc/sf1.pdf). This is a 730-page document. Key things to read are described below:
 
-## Abstract, pp. 1-1 through.
+## Abstract
 Key points:
+
 * 177 population tables ("P") and 58 housing tables ("H") down to the block level.
 * 82 population tables ("PCT") and 4 housing tables ("HCT") down to Census Tract.
 * 10 populations ("PCO") down to county level, for a total of 331 tables.
@@ -188,10 +189,12 @@ Key points:
 * Total number of tables: 333
 
 Tables with major race and Hispanic or Latino groups:
+
 * 14 population tables and 4 housing tables to the block level.
 * 5 population tables down to census tract.
 
 Supported geographic levels:
+
 * State (including DC & PR)
 * County 
 * County subdivision5
@@ -203,8 +206,9 @@ Supported geographic levels:
 The SF1 uses the FIPS 55 Code Series to the American National Standards Institute (ANSI) Code Series to define each place. 
 
 "It is easiest to think of the file set as a logical file. However, this logical file consists of 48 physical files:
-the geographic header record file and file01 through file47 (or file48). This file design is comparable to
-that used in Census 2000."
+the geographic header record file and file01 through file47 (or file48). This file design is comparable to that used in Census 2000."
+
+However, this description does not make it clear that the geographic header, despite being position-specified rather than comma-delimitd, is actually joined line-by-line with files01 through file47.
 
 "A unique logical record number (LOGRECNO in the geographic header) is assigned to all files for a specific
 geographic entity. This is done so all records for that specific entity can be linked together across files.
@@ -221,48 +225,62 @@ Suffixes are used on variables to indicate race codes.
 "For example, PCT13, when repeated for the White alone population, is labeled PCT13A."
 
 The suffixes are:
-White alone                                        A suffix
-Black or African American alone                    B suffix
-American Indian and Alaska Native alone		   C suffix
-Asian alone 	    	   	  	           D suffix
-Native Hawaiian and Other Pacific Islander alone   E suffix
-Some Other Race alone 	  	  	   	   F suffix
-Two or More Races 				   G suffix
-Hispanic or Latino 				   H suffix
-White alone, not Hispanic or Latino 		   I suffix
+
+| Meaning   | Suffix    |
+|-----------|-----------|
+|White alone|   A suffix|
+|Black or African American alone|                    B suffix|
+|American Indian and Alaska Native alone | C suffix|
+|Asian alone 	  |  	   	  	           D suffix|
+|Native Hawaiian and Other Pacific Islander alone|   E suffix|
+|Some Other Race alone| 	  	  	   	   F suffix|
+|Two or More Races|	   G suffix|
+|Hispanic or Latino| 				   H suffix|
+|White alone, not Hispanic or Latino 	|   I suffix|
 
 One matrix, PCT12, is repeated not only for the above nine groups but also for the following:
 
-Black or African American alone, not Hispanic or Latino                    J suffix
-American Indian and Alaska Native alone, not Hispanic or Latino 	   K suffix
-Asian alone, not Hispanic or Latino 	     	      	 		   L suffix
-Native Hawaiian and Other Pacific Islander alone, not Hispanic or Latino   M suffix
-Some Other Race alone, not Hispanic or Latino 	      	       	  	   N suffix
-Two or More Races, not Hispanic or Latino 				   O suffix
+| Meaning   | Suffix    |
+|-----------|-----------|
+|Black or African American alone, not Hispanic or Latino   |J suffix|
+|American Indian and Alaska Native alone, not Hispanic or Latino|	   K suffix|
+|Asian alone, not Hispanic or Latino 	|   L suffix|
+|Native Hawaiian and Other Pacific Islander alone, not Hispanic or Latino |  M suffix|
+|Some Other Race alone, not Hispanic or Latino |  N suffix|
+|Two or More Races, not Hispanic or Latino |   O suffix|
 
 
 What is wanted:
 
 block x cenrace x hispanic
+
 SF1 P8 and P9
 
 According to the documentation:
 
 p. 3-6:
+
+```
 Hispanic or Latino, and Not Hispanic or Latino
   Population 18 Years and Over, by Race: P11
   Total Population, by Race:             P9
+```
 
 p. 310
+
+```
 Race (also see asterisks throughout index)
   Total Population:     P3, P8, PCT23
+```
 
 # Chapter 5:
 
+```
 P8 RACE - Universe: Total Population ... 71 data cells
    Universe: Total population
 P9 Hispanic or Latino, And not Hispanic or Latino by Race .. 73 data cells
    Universe: Total population
+```
 
 # Chapter 6: Data Dictionary
 Chapter pages 6-1 through 6-349
@@ -271,14 +289,19 @@ PDF pages 163-512
 
 The data is viewed as a single Matrix split into multiple files. 
 Each line of each file contains the first 5 fields:
+
+```
      1. FILEID - File ID, should be ST1ST (State file).
      2. STUSAB - State/U.S. Abbreviation (USPS)
      3. SUMLEV - Summary Level
      4. CHARITER - Characteristic Iteration. (000 means not an iteration)
      5. CIFSN    - Charistic Iteration File Sequence Number
      5. LOGRECNO - Logical Record Number
+```
 
 Notes:
+
+```
 FILEID - A unique, six-character identifier for each file series.
 GEOCOMP - Geographic Component - Ignore this.
 CHARITER - Ignore this. ("These iteration fields apply to Summary File 2 (SF 2) and the American Indian and Alaska Native Summary File only.")
@@ -286,9 +309,11 @@ CIFSN - The sequence number of the table file within the set of physical files f
 header record file and one or more table files).
 LOGRECNO - The logical record is the complete record for a geographic entity defined by the summary level, but
 exclusive of the characteristic iteration. A logical record may have one or more parts (or segments).
+```
+
 Each logical record has an assigned sequential integer number within the file.
 
-
+```
 The Matrix files begin:
 File 01 --- File Linking Fields (comma delimited)
      1. FILEID - File ID, should be ST1ST (State file).
@@ -314,34 +339,32 @@ File 03 --- File Linking Fields
      3. CHARITER - Characteristic Iteration. (000 means not an iteration)
      4. CIFSN    - Charistic Iteration File Sequence Number
      5. LOGRECNO - Logical Record Number
-P3:
-P4
-P5
-P6
-P7
+```
 
 All of the files are then combined into a single huge matrix.
 
 So it looks like we do the following:
+
 1. Scan the geofile for all of the LOGRECNOs in a particular summary level.
-2. Scan file 3. For each line, if we have a matching LOGRECNO, decode the line.
-   To decode the line, we need to parse the PDF for Section 6, the data dictionary.
+2. Scan file 3. For each line, if we have a matching LOGRECNO, decode the line.   To decode the line, we need to parse the PDF for Section 6, the data dictionary.
 
 So it looks like we need to get the summary level for the LOGRECNO from the identification section.
 
 
-
 p. 6-24 defines the P8 data dictionary:
+
+```
 Values P0080001 through P0080071  (Segment 3, Max Size 9)
+```
 
 p. 6-27 defines the P9 data dictionary:
+
+```
 Values P0090001 through P0090073  (Segment 3, Max Size 9)
+```
 
 The contents of File 3 are defined in the PDF, pages 6-22 through 6-29.
 I have extracted these in the doc/ directory:
-
-Robert wants:
-P1 & P2 from PL94
 
 * Each file has a header describing what the columns are
 * CSV file

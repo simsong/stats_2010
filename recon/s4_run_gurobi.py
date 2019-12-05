@@ -23,7 +23,8 @@ from dbrecon import DB
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
 
 def db_fail(state_abbr, county, tract):
-    DB.csfr("UPDATE tracts SET lp_start=NULL where state=%s and county=%s and tract=%s",(state_abbr,county,tract))
+    print(f"db_fail({state_abbr},{county},{tract})")
+    DB.csfr("UPDATE tracts SET sol_start=NULL,sol_end=NULL,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",(state_abbr,county,tract))
 
 
 class InfeasibleError(RuntimeError):
@@ -58,26 +59,25 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
         raise RuntimeError("This must be modified to allow Gurobi to read files from S3 using the stdin hack.")
 
     # make sure input file exists and is valid
-    if not os.path.exists(lpgz_filename):
-        raise FileNotFoundError("File does not exist: {}".format(lpgz_filename))
-
-    if os.path.getsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
-        # lp file is too small. Delete it and remove it from the database
-        logging.warning("File {} is too small ({}). Removing".format(lpgz_filename,os.path.getsize(lpgz_filename)))
-        os.unlink(lpgz_filename)
-        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where state=%s and county=%s and tract=%s',
+    if not os.path.exists(lpgz_filename) or dbrecon.dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
+        if os.path.exists(lpgz_filename):
+            logging.warning("File {} is too small ({}). Removing and updating database.".format(lpgz_filename,os.path.getsize(lpgz_filename)))
+            os.unlink(lpgz_filename)
+        else:
+            logging.warning("File does not exist: {}. Updating database.".format(lpgz_filename))
+        dbrecon.DB.csfr('UPDATE tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where stusab=%s and county=%s and tract=%s',
                         (state_abbr,county,tract))
         return
 
-    # Make sure output does not exist
+    # Make sure output does not exist. If it exists, delete it, otherwise give an error
     for fn in [sol_filename,solgz_filename]:
         if dbrecon.dpath_exists(fn):
-            raise FileExistsError(fn)
+            logging.warning("File {} exists. Removing.".format(fn,dbrecon.dgetsize(fn)))
+            dbrecon.dpath_unlink(fn)
 
     # make sure output directory exists
     dbrecon.dmakedirs( os.path.dirname( sol_filename)) 
     dbrecon.db_start('sol', state_abbr, county, tract)
-    atexit.register(db_fail, state_abbr, county, tract)
 
     try:
         customer     = dbrecon.get_config_str('gurobi','customer')
@@ -95,6 +95,7 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
     env.setParam("LogToConsole",0)
     if lpgz_filename.endswith(".lp"):
         model = gurobipy.read(lpgz_filename, env=env)
+        tempname = None
     elif lpgz_filename.endswith(".lp.gz"):
         p = subprocess.Popen(['zcat',lpgz_filename],stdout=subprocess.PIPE)
         # Because Gurobin must read from a file that ends with a .lp, 
@@ -151,19 +152,21 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
                 pass
 
         # Get the final pop
+        final_pop = dbrecon.get_final_pop_from_sol(state_abbr,county,tract,delete=False);
+        if final_pop==0:
+            raise RuntimeError("final pop cannot be 0")
         vars.append("final_pop")
-        vals.append(dbrecon.final_pop(state_abbr,county,tract))
+        vals.append(final_pop)
 
         # Get the sol_gb
         vars.append("sol_gb")
         vals.append(dbrecon.maxrss() // GB)
 
-        cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where state=%s and county=%s and tract=%s"
+        cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
         dbrecon.DB.csfr(cmd, vals+[state_abbr,county,tract])
-        
     del env
-    atexit.unregister(db_fail)
-
+    if tempname is not None:
+        os.unlink(tempname)
 
 def run_gurobi_for_county_tract(state_abbr, county, tract):
     assert len(state_abbr)==2
@@ -175,8 +178,10 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
         dbrecon.rescan_files(state_abbr, county, tract)
         return
 
-    if dbrecon.is_db_done('sol',state_abbr, county, tract):
-        logging.warning(f"SOL exists in database: {state_abbr}{county}{tract}; will not solve")
+    sol_filename= dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)
+    solgz_filename= sol_filename+".gz"
+    if dbrecon.is_db_done('sol',state_abbr, county, tract) and dbrecon.dpath_exists(solgz_filename):
+        logging.warning(f"SOL exists in database and sol file exists: {state_abbr}{county}{tract}; will not solve")
         return
 
     try:
@@ -195,15 +200,20 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
             dbrecon.dpath_unlink(lpgz_filename)
             dbrecon.rescan_files(state_abbr, county, tract)
         else:
-            dbrecon.DB.csfr('UPDATE tracts set error=%s where state=%s and county=%s and tract=%s',
+            dbrecon.DB.csfr('INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                             (str(e),state_abbr,county,tract))
+            raise e;
     except InfeasibleError as e:
         logging.error(f"Infeasible in {state_abbr} {county} {tract}")
-        dbrecon.DB.csfr('UPDATE tracts set error="infeasible" where state=%s and county=%s and tract=%s',
+        dbrecon.DB.csfr('INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                         (str(e),state_abbr,county,tract))
+        raise e
+    #except Exception as e:
+    #    logging.error(f"Unknown error: {e}")
         
+    logging.info(f"Ran Gurobi for {state_abbr} {county} {tract}")
     if args.exit1:
-        print("exit1")
+        logging.info("clean exit")
         exit(0)
 
 def run_gurobi_tuple(tt):
@@ -215,13 +225,13 @@ def run_gurobi_tuple(tt):
 def run_gurobi_for_county(state_abbr, county, tracts):
     logging.info(f"run_gurobi_for_county({state_abbr},{county})")
     if (tracts==[]) or (tracts==['all']):
-        tracts = [row[0] for row in DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND state=%s AND county=%s",
+        tracts = [row[0] for row in DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND stusab=%s AND county=%s",
                                             (state_abbr, county))]
 
         logging.info(f"Tracts require solving in {state_abbr} {county}: {tracts}")
         if tracts==[]:
             # No tracts. Report if there are tracts in county missing LP files
-            rows = DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NULL) AND state=%s AND county=%s",(state_abbr,county))
+            rows = DB.csfr("SELECT tract FROM tracts WHERE (lp_end IS NULL) AND stusab=%s AND county=%s",(state_abbr,county))
             if rows:
                 logging.warning(f"run_gurobi_for_county({state_abbr},{county}): {len(rows)} tracts do not have LP files")
             return
@@ -234,66 +244,29 @@ def run_gurobi_for_county(state_abbr, county, tracts):
         for tt in tracttuples:
             run_gurobi_tuple(tt)
 
-def make_csv_file(state_abbr, county):
-    # Make sure we have a solution file for every tract
-    county_csv_filename = dbrecon.COUNTY_CSV_FILENAME(state_abbr=state_abbr, county=county)
-    state_code = dbrecon.state_fips(state_abbr)
-    tracts     = dbrecon.tracts_for_state_county(state_abbr=state_abbr, county=county)
-    missing = 0
-    for tract in tracts:
-        solfile = dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract)
-        if not dpath_exists(solfile):
-            logging.error("No solution file for: {}".format(solfile))
-            missing += 1
-    if missing:
-        logging.warning("Missing tracts. Will not make CSV file")
-        return
-
-    with dopen(county_csv_filename,"w") as outfile:
-        w = csv.writer(outfile)
-        w.writerow(['geoid_tract','geoid_block','sex','age','white','black','aian','asian','nhopi','sor','hisp'])
-        for tract in tracts:
-            logging.info("Starting tract "+tract)
-            with dopen(dbrecon.SOLFILENAME(state_abbr=state_abbr, county=county, tract=tract),"r") as infile:
-                for line in infile:
-                    if line[0:2]=='C_': # oldstyle variable
-                        (var,count) = line.strip().split(" ")
-
-                        # don't count the zeros
-                        if count=="0":
-                            continue 
-                        c = var.split("_")
-                        tract_ = c[1][5:11]
-                        if tract != tract_:
-                            raise RuntimeError(f"{infile.name}: Expecting tract {tract} read {tract_}")
-                        geoid_tract = state_code + county + tract
-                        w.writerow([geoid_tract, c[1], c[5], c[6], c[7], c[8], c[9], c[10], c[11], c[12], c[13]])
-            logging.info("Ending tract "+tract)
-
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
-                             description="Run Gurobi on one or all off the tracts in a given state/county and convert the output to a single CSV file for the county." )
+                             description="Run Gurobi on one or all off the tracts in a given state/county." )
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("state_abbr", help="2-character state abbreviation")
     parser.add_argument("county", help="3-digit county code; can be 'all' for all counties")
     parser.add_argument("tracts", help="4-digit tract code[s]; can be 'all'",nargs="*")
     parser.add_argument("--j1", help="Specify number of tracts to solve at once (presolve doesn't parallelize)", default=1, type=int)
     parser.add_argument("--j2", help="Specify number of threads for gurobi to use", default=GUROBI_THREADS_DEFAULT, type=int)
-    parser.add_argument("--config", help="config file")
     parser.add_argument("--dry-run", help="do not run gurobi; just print model stats", action="store_true")
-    parser.add_argument("--csv",   help="Make the CSV file from the solutions", action='store_true')
     parser.add_argument("--exit1", help="Exit Gurobi after the first execution", action='store_true')
 
     if 'GUROBI_HOME' not in os.environ:
         raise RuntimeError("GUROBI_HOME not in environment")
 
     args       = parser.parse_args()
-    t0         = time.time()
-    config     = dbrecon.setup_logging_and_get_config(args,prefix="04run")
+    config     = dbrecon.setup_logging_and_get_config(args=args,prefix="04run")
     state_abbr = dbrecon.state_abbr(args.state_abbr).lower()
     tracts     = args.tracts
     
+    DB.quiet = True
+
     if args.county=='all':
         counties = dbrecon.counties_for_state(state_abbr)
     else:
@@ -301,10 +274,4 @@ if __name__=="__main__":
 
     for county in counties:
         run_gurobi_for_county(state_abbr, county, tracts)
-        td = round(time.time() - t0,2)
-        print(f"{__file__}: Finished {state_abbr} {county} {tracts} in {td} seconds")
-
-    # Create the state-level CSV files
-    if args.csv:
-        make_csv_file(state_abbr, county)
 

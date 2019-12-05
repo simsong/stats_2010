@@ -6,33 +6,34 @@ import hashlib
 import os
 import os.path
 
+sys.path.append( os.path.join( os.path.dirname(__file__), ".." ))
+
+import dbrecon
+
 TEST_CONFIG_FILE="config_test.ini"
 
-# We test the system by remaking the files for a county in alaska (ak)
+# We test by remaking the smallest of all the LP files
 
-SMALL_STATE='al'
-SMALL_COUNTY='003'
-SMALL_TRACT='011408'
-SMALL_TRACT_LP_FILE='/data/sf1/recon_test/al/01003/lp/model_01003011408.lp'
-SMALL_TRACT_LP_FILE_SHA1='ef2dbae86ed73be36de45e5015c6c96ce3225c5f'
+SMALL_STUSAB='mo'
+SMALL_STATE='29'
+SMALL_COUNTY='183'
+SMALL_TRACT='980000'
+
+
 
 def test_build_tract_lp():
-    # delete the LP files and make sure other files are present for AL
-    call(['find','/data/sf1/recon_test/al','-name','*.lp','-erase'])
-    check_call(['rsync','--exclude=*.lp','--archive','/data/sf1/recon/al','/data/sf1/recon_test/'])
-
-    assert not os.path.exists(SMALL_TRACT_LP_FILE)
-
-    # Now run for AL
-    check_call([sys.executable,'03_synth_lp_files.py','--config',TEST_CONFIG_FILE,
-          SMALL_STATE,SMALL_COUNTY,SMALL_TRACT])
-    # Now check the results
-    assert os.path.exists(SMALL_TRACT_LP_FILE)
-    
-    digest = hashlib.sha1(open(SMALL_TRACT_LP_FILE,"rb").read()).hexdigest()
-    assert digest == SMALL_TRACT_LP_FILE_SHA1
-
-
+    return 
 
 if __name__=="__main__":
-    test_all()
+    #call([sys.executable,'s3_pandas_synth_lp_files.py','--debug','--output','/tmp/model_29183980000.lp.gz',SMALL_STUSAB,SMALL_COUNTY,SMALL_TRACT,'--stdout'])
+    # Now compare the two files
+    f1 = dbrecon.dopen("/tmp/model_29183980000.lp.gz","r")
+    f2 = dbrecon.dopen("tests/model_29183980000.lp.gz","r")
+    while True:
+        line1 = f1.readline()
+        line2 = f2.readline()
+        if line1!=line2:
+            print("line1 != line2")
+        if line1=="": 
+            break
+    print("{} and {} are the same".format(f1.name,f2.name))

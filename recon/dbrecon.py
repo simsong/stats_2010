@@ -25,17 +25,30 @@ import time
 import urllib.parse 
 import xml.etree.ElementTree as ET
 import zipfile
+import psutil
 from configparser import ConfigParser
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
-import ctools.s3 as s3
-import ctools.clogging as clogging
-import ctools.dbfile as dbfile
+try:
+    import ctools.s3 as s3
+    import ctools.clogging as clogging
+    import ctools.dbfile as dbfile
+except ImportError as e:
+    raise RuntimeError("ctools submodule has not been loaded.")
+
+try:
+    from dfxml.python.dfxml.writer import DFXMLWriter
+except ImportError as e:
+    raise RuntimeError("dfxml submodule has not been loaded.")
+
+
 from ctools.gzfile import GZFile
 from total_size import total_size
 
-STOP_FILE='/tmp/stop.txt'
+RETRIES = 10
+RETRY_DELAY_TIME = 10
+DEFAULT_QUIET=True
 # For handling the config file
 SRC_DIRECTORY   = os.path.dirname(__file__)
 CONFIG_FILENAME = "config.ini"
@@ -59,6 +72,24 @@ MiB=1024*1024
 GiB=1024*1024*1024
 LP='lp'
 SOL='sol'
+CSV='csv'
+
+################################################################
+### Summary Levels #############################################
+################################################################
+
+SUMLEVS = {
+    "State": '040',
+    "County": '050',
+    "Census Tract-Block": '101',
+    "Census Tract": '140'
+}
+
+SUMLEV_STATE = '040'
+
+################################################################
+### Utility Functions ##########################################
+################################################################
 
 class Memoize:
     def __init__(self, fn):
@@ -70,33 +101,24 @@ class Memoize:
             self.memo[args] = self.fn(*args)
         return self.memo[args]
 
-################################################################
-### Database management functions
+def hostname():
+    """Hostname without domain"""
+    return socket.gethostname().partition('.')[0]
 
-class DB:
-    db_auth = None
-    quiet   = False
-    def __init__(self,config=None):
-        global config_file
-        if config==None:
-            config=config_file
-        mysql_section = config['mysql']
-        DB.db_auth = dbfile.DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
-                                database=os.path.expandvars(mysql_section['database']),
-                                user=os.path.expandvars(mysql_section['user']),
-                                password=os.path.expandvars(mysql_section['password']))
-    @staticmethod
-    def csfr(cmd, vals=None, rowcount=None, quiet=None):
-        if DB.db_auth is None:
-            DB()
-        if quiet is None:
-            quiet = DB.quiet
-        try:
-            return dbfile.DBMySQL.csfr(DB.db_auth, cmd, vals=vals, quiet=quiet, rowcount=rowcount, time_zone='+00:00')
-        except RuntimeError as e:
-            logging.error(f"PID{os.getpid()}: ERROR: {e}")
-            return []
-                                                            
+def filename_mtime(fname):
+    """Return a file's mtime as a unix time_t"""
+    if fname is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(int(os.stat(fname).st_mtime))
+    except FileNotFoundError:
+        return None
+
+################################################################
+### Database management functions ##############################
+################################################################
+
+                                                           
 db_re = re.compile("export (.*)=(.*)")
 def get_pw():
     import pwd
@@ -107,117 +129,210 @@ def get_pw():
             if m:
                 os.environ[m.group(1)] = m.group(2)
 
-def filename_mtime(fname):
-    if fname is None:
-        return None
-    try:
-        return datetime.datetime.fromtimestamp(int(os.stat(fname).st_mtime))
-    except FileNotFoundError:
-        return None
+class DB:
+    """DB class with singleton pattern"""
+    @staticmethod
+    def csfr(cmd,vals=None,quiet=False,rowcount=None):
+        """Connect, select, fetchall, and retry as necessary"""
+        try:
+            from mysql.connector.errors import ProgrammingError,InterfaceError,OperationalError
+        except ImportError as e:
+            from pymysql.err import ProgrammingError,InterfaceError,OperationalError
 
-def final_pop(state_abbr,county,tract):
+        for i in range(1,RETRIES):
+            try:
+                db = DB()
+                db.connect()
+                result = None
+                c = db.cursor()
+                try:
+                    logging.info(f"PID{os.getpid()}: {cmd} {vals}")
+                    if quiet==False:
+                        try:
+                            print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
+                        except BlockingIOError as e:
+                            pass
+                    c.execute(cmd,vals)
+                    if (rowcount is not None) and ( c.rowcount!=rowcount):
+                        logging.error(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
+                except ProgrammingError as e:
+                    logging.error("cmd: "+str(cmd))
+                    logging.error("vals: "+str(vals))
+                    logging.error(str(e))
+                    raise e
+                if cmd.upper().startswith("SELECT"):
+                    result = c.fetchall()
+                c.close()       # close the cursor
+                db.close() # close the connection
+                return result
+            except InterfaceError as e:
+                logging.error(e)
+                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                pass
+            except OperationalError as e:
+                logging.error(e)
+                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                pass
+            ftime.sleep(RETRY_DELAY_TIME)
+        raise e
+
+    def cursor(self):
+        return self.dbs.cursor()
+
+    def commit(self):
+        return self.dbs.commit()
+
+    def create_schema(self,schema):
+        return self.dbs.create_schema(schema)
+
+    def connect(self):
+        from ctools.dbfile import DBMySQLAuth,DBMySQL
+        global config_file
+        mysql_section = config_file['mysql']
+        auth = DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
+                               database=os.path.expandvars(mysql_section['database']),
+                               user=os.path.expandvars(mysql_section['user']),
+                               password=os.path.expandvars(mysql_section['password']))
+        self.dbs       = DBMySQL(auth)
+        self.dbs.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
+        self.dbs.cursor().execute('SET autocommit = 1') # autocommit
+
+    def close(self):
+        return self.dbs.close()
+
+################################################################
+### Understanding LP and SOL files #############################
+################################################################
+
+def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
     count = 0
-    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    errors = 0
     with dopen(sol_filenamegz) as f:
-        for line in f:
-            if line.startswith('C') and line.strip().endswith(" 1"):
-                count += 1
+        for (num,line) in enumerate(f,1):
+            if line.startswith('C'):
+                line = line.strip()
+                if line.endswith(" 1"):
+                    count += 1
+                elif line.endswith(" 0"):
+                    pass
+                else:
+                    if errors==0:
+                        logging.error("non-integer solutions in file "+sol_filenamegz)
+                    logging.error("line {}: {}".format(num,line))
+                    count += round(float(line.split()[1]))
+                    errors += 1
+    if errors>0 and requireInt:
+        raise RuntimeError(f"errors: {errors}")
+    return count
+
+def get_final_pop_from_sol(state_abbr,county,tract,delete=True):
+    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+    count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
-        abort()
-        dpath_unlink(sol_filenamegz)
+        if delete:
+            dpath_unlink(sol_filenamegz)
+        DB.csfr("UPDATE tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
+                (state_abbr,county,tract))
         return None
     return count
 
-def hostname():
-    """Hostname without domain"""
-    return socket.gethostname().partition('.')[0]
-
 def db_lock(state_abbr, county, tract):
-    DB.csfr(f"UPDATE tracts set hostlock=%s where state=%s and county=%s and tract=%s",
-            (hostname(),state_abbr,county,tract),
+    DB.csfr("UPDATE tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+            (hostname(),os.getpid(),state_abbr,county,tract),
             rowcount=1 )
-    logging.info(f"db_lock: {state_abbr} {county} {tract} ")
+    logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
+
+def db_unlock(state_abbr, county, tract):
+    DB.csfr("UPDATE tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+            (state_abbr,county,tract),
+            rowcount = 1 )
 
 def db_start(what,state_abbr, county, tract):
-    assert what in [LP, SOL]
-    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s where state=%s and county=%s and tract=%s",
-            (hostname(),hostname(),state_abbr,county,tract),
+    assert what in [LP, SOL, CSV]
+    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+            (hostname(),hostname(),os.getpid(),state_abbr,county,tract),
             rowcount=1 )
-    logging.info(f"db_start: {what} {state_abbr} {county} {tract} ")
+    logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
     
 def db_done(what, state_abbr, county, tract):
-    assert what in [LP,SOL]
-    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL where state=%s and county=%s and tract=%s",
+    assert what in [LP,SOL, CSV]
+    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
     
 def is_db_done(what, state_abbr, county, tract):
-    assert what in [LP,SOL]
-    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE state=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", (state_abbr,county,tract))
+    assert what in [LP,SOL, CSV]
+    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", 
+                  (state_abbr,county,tract))
     return len(row)==1
 
+def db_clean():
+    """Clear hostlock if PID is gone"""
+    rows = DB.csfr("SELECT pid,stusab,county,tract FROM tracts WHERE hostlock=%s",(hostname(),),quiet=True)
+    for (pid,stusab,country,tract) in rows:
+        if not pid:
+            db_unlock(stusab,county,tract)
+            continue
+        try:
+            p = psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            db_unlock(stusab,county,tract)
+
 def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
+    raise RuntimeError("don't do at the moment. The database is more accurate than the file system.")
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
     
-    rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop FROM tracts where state=%s and county=%s and tract=%s LIMIT 1",(state_abbr,county,tract),quiet=quiet)
+    rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
+                       "FROM tracts where stusab=%s and county=%s and tract=%s LIMIT 1",
+                       (state_abbr,county,tract),quiet=quiet)
     if len(rows)!=1:
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
     
     (lp_start,lp_end,sol_start,sol_end,final_pop_db) = rows[0]
-    logging.info("lp_start=%s lp_end=%s sol_start=%s sol_end=%s final_pop_db=%s",(lp_start,lp_end,sol_start,sol_end,final_pop_db))
+    logging.info(f"lp_start={lp_start} lp_end={lp_end} sol_start={sol_start} "
+                 f"sol_end={sol_end} final_pop_db={final_pop_db}")
     if dpath_exists(lpfilenamegz):
         if not quiet:
             print(f"{lpfilenamegz} exists")
         if lp_end is None:
             logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set lp_end=%s where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set lp_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract),quiet=quiet)
     else:
         if not quiet:
             print(f"{lpfilenamegz} does not exist")
         if (lp_start is not None) or (lp_end is not None):
             logging.warning(f"{lpfilenamegz} does not exist, but the database says it does. Deleting")
-            DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL where state=%s and county=%s and tract=%s",
-                    (state_abbr,county,tract),quiet=quiet)
+            DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL "
+                        "WHERE stusab=%s and county=%s and tract=%s",
+                        (state_abbr,county,tract),quiet=quiet)
             
     if dpath_exists(solfilenamegz):
         if sol_end is None:
             logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set sol_end=%s where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts set sol_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
         if check_final_pop:
-            final_pop_file = final_pop(state_abbr,county,tract)
+            final_pop_file = get_final_pop_from_sol(state_abbr,county,tract)
             if final_pop_db!=final_pop_file:
-                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} for {state_abbr} {county} {tract}. Correcting")
-                DB.csfr("UPDATE tracts set final_pop=%s where state=%s and county=%s and tract=%s",
+                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
+                                f"for {state_abbr} {county} {tract}. Correcting")
+                DB.csfr("UPDATE tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
     else:
         if sol_end is not None:
             logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
-            DB.csfr("UPDATE tracts set sol_start=NULL,sol_end=NULL,final_pop=NULL where state=%s and county=%s and tract=%s",
+            DB.csfr("UPDATE tracts SET sol_start=NULL,sol_end=NULL,final_pop=NULL "
+                    "WHERE stusab=%s AND county=%s AND tract=%s",
                     (state,county,tract),quiet=quiet)
 
 ################################################################
-def should_stop():
-    return os.path.exists(STOP_FILE)
-
-def check_stop():
-    if should_stop():
-        logging.warning("Clean exit")
-        os.unlink(STOP_FILE)
-        exit(0)
-
-def request_stop():
-    with open(STOP_FILE,"w") as f:
-        f.write("stop")
-        
-
+### functions that return directory and file locations  ########
 ################################################################
-### functions that return directories. dpath_expand is not called on these.
 
 def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
     fips = state_fips(state_abbr)
@@ -236,14 +351,8 @@ def SOLDIR(*,state_abbr,county):
     fips = state_fips(state_abbr)
     return f'$ROOT/{state_abbr}/{fips}{county}/sol'
 
-################################################################
-
-
 def SF1_ZIP_FILE(*,state_abbr):
     return dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr))
-
-def STEP02_DONE_FILE(*,state_abbr):
-    return dpath_expand(f'$ROOT/{state_abbr}/completed_{state_abbr}_02')
 
 def SF1_BLOCK_DATA_FILE(*,state_abbr,county):
     state_code = state_fips(state_abbr)
@@ -254,9 +363,6 @@ def SF1_TRACT_DATA_FILE(*,state_abbr,county):
     state_code = state_fips(state_abbr)
     sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
     return dpath_expand(f'{sf1_dir}/sf1_tract_{state_code}{county}.csv')
-
-def STATE_COUNTY_LIST(*,root='$ROOT',state_abbr,fips):
-    return dpath_expand(f"{root}/{state_abbr}/state_county_list_{fips}.csv")
 
 def LPFILENAMEGZ(*,state_abbr,county,tract):
     geo_id = state_fips(state_abbr)+county+tract
@@ -275,7 +381,6 @@ def SOLFILENAME(*,state_abbr,county,tract):
     
 def SOLFILENAMEGZ(*,state_abbr,county,tract):
     return SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)+".gz"
-
     
 def COUNTY_CSV_FILENAME(*,state_abbr,county):
     csvdir = STATE_COUNTY_DIR(root='$ROOT',state_abbr=state_abbr,county=county)
@@ -296,7 +401,6 @@ SECTION_PATHS='paths'
 SECTION_RUN='run'
 OPTION_NAME='NAME'
 OPTION_SRC='SRC'                # the $SRC is added to the [paths] section of the config file
-
 
 STATE_DATA=[
     "Alabama,AL,01",
@@ -358,6 +462,8 @@ def config_reload():
     config_file = ConfigParser()
     config_file.read(config_path)
     # Add our source directory to the paths
+    if SECTION_PATHS not in config_file:
+        config_file.add_section(SECTION_PATHS)
     config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
     return config_file
 
@@ -411,29 +517,22 @@ def parse_state_abbrs(statelist):
     return [state_rec(key)['state_abbr'].lower() for key in statelist.split(",")]
     
 def counties_for_state(state_abbr):
-    assert isinstance(state_abbr,str)
-    fips = state_fips(state_abbr)
-    counties = []
-    with dopen(STATE_COUNTY_LIST(state_abbr=state_abbr,fips=fips)) as f:
-        for line in f:
-            (st1,county,st2) = line.strip().split(",")
-            assert st1==fips
-            assert st2==state_abbr
-            counties.append(county)
-    return counties
+    """Return a list of the the county codes (as strings) for the counties in state_abbr"""
+    rows = DB.csfr("SELECT county FROM geo WHERE stusab=%s and sumlev='050'",(state_abbr,))
+    return [row[0] for row in rows]
 
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr("select tract from tracts where state=%s and county=%s",(state_abbr,county))
+    rows = DB.csfr("select tract from tracts where stusab=%s and county=%s",(state_abbr,county))
     return [row[0] for row in rows]
 
 ################################################################
 ### LPFile Manipulation
 ################################################################
 
-MIN_LP_SIZE = 100        # smaller than this, the file must be invalid
+MIN_LP_SIZE  =  100      # smaller than this, the file must be invalid
+MIN_SOL_SIZE = 1000      # smaller than this, the file is invalid
 def lpfile_properly_terminated(fname):
-    #
     # Small files are not valid LP files
     if dgetsize(fname) < MIN_LP_SIZE:
         return False
@@ -455,29 +554,6 @@ def lpfile_properly_terminated(fname):
 ################################################################
 ### Output Products
 ################################################################
-def tracts_with_files(state_abbr,county, filetype=LP):
-    assert isinstance(state_abbr, str)
-    assert isinstance(county, str)
-    assert isinstance(filetype, str)
-    
-    ret = []
-    state_code = state_fips(state_abbr)
-    if filetype==LP or filetype=='lp.gz':
-        dirfunc = LPDIR
-    elif filetype==SOL or filetype=='sol.gz':
-        dirfunc = SOLDIR
-    else:
-        raise RuntimeError("only filetype lp and sol supported at the moment")
-    for s in dlistdir(dirfunc(state_abbr=state_abbr, county=county)):
-        if s.endswith(filetype):
-            geo_id = state_code + county
-            tract = os.path.basename(s).replace(f"model_{geo_id}","")
-            dpos = tract.find('.')
-            if dpos>0:
-                tract = tract[0:dpos]
-            ret.append(tract)
-    return ret
-
 def valid_state_code(code):
     assert isinstance(code,str)
     return len(state)==2 and all(ch.isdigit() for ch in code)
@@ -518,13 +594,16 @@ def state_has_any_files(state_abbr, county_code, filetype=LP):
 # https://stackoverflow.com/questions/8632354/python-argparse-custom-actions-with-additional-arguments-passed
 def argparse_add_logging(parser):
     clogging.add_argument(parser)
+    parser.add_argument("--config", help="config file")
     parser.add_argument("--stdout", help="Also log to stdout", action='store_true')
     parser.add_argument("--logmem", action='store_true',
                         help="enable memory debugging. Print memory usage. "
                         "Write output to temp file and compare with correct file.")
 
 
-def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',stdout=None,args=None):
+def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
+                  stdout=None,args=None,error_alert=True):
+    global dfxml_writer
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
 
@@ -563,20 +642,20 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     logger.addHandler(error_handler)
 
     # Log to DFXML
-    from dfxml.python.dfxml.writer import DFXMLWriter
     dfxml_writer    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
     dfxml_handler   = dfxml_writer.logHandler()
     logger.addHandler(dfxml_handler)
 
-    # Log exit codes
-    atexit.register(logging_exit)
+    if error_alert:
+        # Log exit codes
+        atexit.register(logging_exit)
 
     # Finally, indicate that we have started up
-    logging.info("START %s %s  log level: %s (%s)",sys.executable, " ".join(sys.argv), loglevel,loglevel)
+    logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
         
-def setup_logging_and_get_config(args,*,prefix=''):
+def setup_logging_and_get_config(*,args,**kwargs):
     config = get_config(filename=args.config)
-    setup_logging(config=config,prefix=prefix,args=args)
+    setup_logging(config=config,**kwargs)
     return 
 
 def add_dfxml_tag(tag,text=None,attrs={}):
@@ -585,19 +664,23 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s)",
-            (hostname(), error, sys.argv[0], filename, last_value))
+    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
+            (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
+    print("LOG ERROR:",error,file=sys.stderr)
 
 def logging_exit():
     if hasattr(sys,'last_value'):
-        logging.error(sys.last_value)
-        log_error(error='logging_exit', filename=__file__, last_value=str(sys.last_value))
+        msg = f'PID{os.getpid()}: {sys.last_value}'
+        logging.error(msg)
+        log_error(error=msg, filename=__file__, last_value=str(sys.last_value))
 
 
 var_re = re.compile(r"(\$[A-Z_][A-Z_0-9]*)")
 def dpath_expand(path):
-    """dpath_expand is the main path expansion function. It substitutes $VAR for variables in the [path] section of the config
-    file. It handles VAR@HOST and expands host automatically. It is called by dopen() to do the expansion.
+    """dpath_expand is the main path expansion function. It substitutes
+    $VAR for variables in the [path] section of the config file. It
+    handles VAR@HOST and expands host automatically. It is called by
+    dopen() to do the expansion.
     """
 
     # Find and replace all of the dollar variables with those in the config file
@@ -630,13 +713,11 @@ def dpath_exists(path):
     logging.info(f"dpath_exists({path})={ret}")
     return ret
 
-
 def dpath_unlink(path):
     path = dpath_expand(path)
     if path[0:5]=='s3://':
         raise RuntimeError("dpath_unlink doesn't work with s3 paths yet")
     return os.unlink(path)
-
 
 def dlistdir(path):
     path = dpath_expand(path)
@@ -715,7 +796,6 @@ def dmakedirs(dpath):
     logging.info("mkdirs({})".format(path))
     os.makedirs(path,exist_ok=True)
 
-
 def dgetsize(dpath):
     path = dpath_expand(dpath)
     assert path.startswith("s3://")==False
@@ -769,3 +849,14 @@ def mem_info(what,df,dump=True):
         df.info(verbose=False,max_cols=160,memory_usage='deep',null_counts=True)
     print("elapsed time at {}: {:.2f}".format(what,time.time() - start_time))
     print("==============================")
+
+
+if __name__=="__main__":
+    from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
+    parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
+                             description="Get the count for SOL.GZ files" )
+    parser.add_argument("gzfile",nargs="*")
+    args     = parser.parse_args()
+    for fname in sys.gzfile:
+        print(fname,':',get_final_pop_for_gzfile(fname))
+

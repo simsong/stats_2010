@@ -20,10 +20,14 @@ import csv
 import logging
 from collections import defaultdict
 
-DBFILE="pl94.sqlite3"
-
+# Database loading
+DBFILE="sf1.sqlite3"
 CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is a 16MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
+
+
+################
+## SF1 problem encoding
 VAR_SUFFIXES = 'AHSwbisho'
 RACES='wbisho'
 
@@ -71,7 +75,57 @@ def pcount(block,i,quals):
         return "1"              # no qualification, always count
     return "(ite (and " + " ".join(tquals) + ") 1 0)\n"
         
+class ConstraintWriter:
+    # Writes out the constraints in a requested format.
+    FMT_Z3 = 'z3'
+    FMT_YICES = 'yices'
+    FMT_SUGAR = 'sugar'
+    FMT_CVC4 = 'cvc4'
+    def __init__(self,filename,fmt):
+        if fmt not in [FMT_Z3,FMT_YICES,FMT_SUGAR]:
+            raise ValueError(f"Unknown format '{fmt}'")
+        self.fmt = fmt
+        self.f   = open(filename,"w")
+        self.vars = []
+
+    def declare_const(self,name,val):
+        if type(val)==int:
+            self.f.write({FMT_Z3    : f"(declare-fun {name} () Int {val})\n",
+                     FMT_SUGAR : f"#define {name} {val}\n"}[self.fmt])
+        elif type(val)==bool:
+            self.f.write({FMT_Z3    : f"(declare-fun {name} () Bool {val})\n",
+                     FMT_SUGAR : f"#define {name} {val}\n"}[self.fmt])
+        else:
+            raise ValueError(f"Unsupported type")
+
+    def declare_int(self,name,imin,imax):
+        self.vars.append(name)
+        self.f.write({FMT_Z3 : f"(define-const {name} Int) (assert (and (>= {name} {imin}) (<= {name} {imax})))\n"}[self.fmt])
+        
+    def declare_bool(self,name):
+        self.vars.append(name)
+        self.f.write({FMT_Z3 : f"(define-const {name} Bool)\n"}[self.fmt])
+
+    def assert_sexp(self,sexp):
+        self.f.write({FMT_Z3 : f"(assert {sexp})\n"}[self.fmt])
+
+    def comment(self,c):
+        self.f.write({FMT_Z3    : f";; {c}\n",
+                      FMT_SUGAR : f";; {c}\n"}[self.fmt])
+
+
+    def dump_vars(self):
+        self.f.write({FMT_Z3    : f"(check-sat)\n(get-unsat-core)\n(get-value (" + " ".join(self.vars) + "))\n",
+                      FMT_SUGAR : f"\n"}[self.fmt])
+
+    def clos(self):
+        self.f.close()
+        
+
 class ConstraintBuilder:
+    """Creates a set of constraints for a given state,county,tract, and optionally a specific block or set of tables.
+    Can output the constraints in a variety of formats.
+    """
     def __init__(self,conn,state,county,tract,onlyblock=None,onlytables=[]):
         # Get all of the data fields
 
@@ -121,11 +175,11 @@ class ConstraintBuilder:
     def blocks(self):
         return [self.blockpops[int(LOGRECNO)]['block'] for LOGRECNO in self.blockpops]
 
-    def setup(self,outfile):
-        self.f = open(outfile,"w")
-        self.f.write("(define-fun Male () Bool true)\n")
-        self.f.write("(define-fun Female () Bool false)\n")
-        self.f.write("(define-fun Hispanic () Bool true)\n")
+    def setup(self,outfile,fmt):
+        self.w = ConstraintWriter(outfile,fmt)
+        self.w.declare_const("Male",True)
+        self.w.declare_const("Female",False)
+        self.w.declare_const("Hispanic",True)
         # Create the variables for each person on each block
         for LOGRECNO in self.blockpops:
             block = self.block_for_LOGRECNO(LOGRECNO)
@@ -139,10 +193,10 @@ class ConstraintBuilder:
                     vname = _ + ch
                     if ch=='A':
                         # age is between 0 and 115
-                        self.f.write(f"(declare-const {vname} Int) (assert (and (>= {_}A 0) (<= {_}A 115)))\n")
+                        self.w.declare_int(vname,0,115)
                     else:
                         # the remainder are Booleans
-                        self.f.write(f"(declare-const {vname} Bool) \n")
+                        self.w.declare_bool(vname)
                     self.vars.append(vname)
                 self.f.write("\n")
 
@@ -202,14 +256,14 @@ class ConstraintBuilder:
 
         self.table_constraint_count[sf1var['table_number']] += 1
         sexp = []
-        sexp.append(f'(assert (= {count} (+ \n')
+        sexp.append(f'(= {count} (+ \n')
         if sf1var['level']=='block':
             # block-level constraints
             block = self.block_for_LOGRECNO(LOGRECNO)
             if self.onlyblock and block!=self.onlyblock:
                 return
-            self.f.write(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (block {block} pop={pop})\n")
-            self.f.write(f";{sf1var['title']}\n")
+            self.w.comment(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (block {block} pop={pop})\n")
+            self.w.comment(f";{sf1var['title']}\n")
             sexp.append("  "+"  ".join([pcount(block,i,quals) for i in range(pop)]))
             self.block_constraints += 1
 
@@ -217,8 +271,8 @@ class ConstraintBuilder:
             # tract-level constraints
             if self.onlyblock:
                 return
-            self.f.write(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (tract {self.tract_logrecno} tractpop={self.tract_pop})\n")
-            self.f.write(f";{sf1var['title']}\n")
+            self.w.comment(f";LOGRECNO {LOGRECNO} {census_variable} = {count}  (tract {self.tract_logrecno} tractpop={self.tract_pop})\n")
+            self.w.comment(f";{sf1var['title']}\n")
             for block in self.blocks():
                 pop = self.pop_for_block(block)
                 if pop>0:
@@ -227,14 +281,12 @@ class ConstraintBuilder:
             self.tract_constraints += 1
         else:
             raise RuntimeError("Unknown level in: {}".format(sf1var)) 
-        sexp.append(")))\n\n")
-        self.f.write("".join(sexp))
-
+        sexp.append("))\n\n")
+        self.w.assert_sexp("".join(sexp))
 
     def done(self):
-        self.f.write("(check-sat)\n")
-        self.f.write("(get-value (" + " ".join(self.vars) + "))\n")
-        self.f.close()
+        self.w.dump_vars()
+        self.w.close()
         print("Constraints per table:")
         for (k,v) in self.table_constraint_count.items():
             print(k,v)

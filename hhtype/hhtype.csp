@@ -1,0 +1,14 @@
+;; -*- mode: lisp; -*-
+;; Define variables and their domains
+;; Households (either 1 or 2)
+;;
+
+(int SIZE 1 7)
+;(int MULTIG 0 1)
+;(int MARRIED 0 1)
+;(int SAME_SEX 0 1)
+;(int ALONE 0 1)
+;(= (if (SIZE 1) 
+
+
+

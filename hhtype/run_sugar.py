@@ -136,17 +136,17 @@ def sugar_decode_picosat_out(outdata,mapfile):
 def get_mapvars(mapfile):
     """Read the sugar .map file and return a dictionary
     where the key is the variable name and the value is the (type,start,r0,r1)
+    kind = 'bool' for boolean coding, 'int' for integer coding
     start = boolean of first value
-    type = 'bool' for boolean coding, 'int' for integer coding
     r0 = first ordinal for integer coding
     r1 = last ordinal for integer coding. Sugar uses uniary encoding."""
     mapvars = {}
     with open(mapfile,"r") as f:
         for line in f:
             fields = line.strip().split(" ")
-            (var,name,start) = fields[0:3]
+            (kind,name,start) = fields[0:3]
             start = int(start)
-            if var=="int":
+            if kind=="int":
                 if ".." in fields[3]:
                     (r0,r1) = fields[3].split("..")
                 else:
@@ -154,17 +154,17 @@ def get_mapvars(mapfile):
                 r0 = int(r0)
                 r1 = int(r1)
                 mapvars[name] = ('int',start,r0,r1)
-            elif var=='bool':
+            elif kind=='bool':
                 mapvars[name] = ('bool',start,0,0)
             else:
-                raise RuntimeError("Only variables of type {} are supported".format(var))
+                raise RuntimeError(f"Variables of type '{kind}' are not supported")
     return mapvars
 
 def python_decode_picosat_and_extract_satvars(*,solver_output_lines,mapfile,mapvars=None):
     """Read the output from a SAT solver and a map file and return the variable assignments 
     and a set of coeficients to add the dimacs file to prevent this solution."""
 
-    satvars    = {}                # extracted variables
+    satvars    = Hashabledict()
     if mapvars==None:
         mapvars = get_mapvars(mapfile)
     # Compute the highest possible variable
@@ -184,19 +184,23 @@ def python_decode_picosat_and_extract_satvars(*,solver_output_lines,mapfile,mapv
     # Now for each variable, check all of the booleans that make it up
     # to find the value of the variable. 
     for var in mapvars:
-        (start,r0,r1) = mapvars[var]
-        found = False           # we found the state change.
-        for i in range(r1-r0):
-            x = start+i
-            if x in coefs:      # check for positive
-                if not found:   # must be the transition from negative to positive
-                    satvars[var] = str(r0+i)
-                    found = True
-                coefs.add(-x)
-            else:
-                coefs.add(x)
-        if not found:
-            satvars[var] = str(r0+1)
+        (kind,start,r0,r1) = mapvars[var]
+        if kind=='int':
+            found = False           # we found the state change.
+            for i in range(r1-r0):
+                x = start+i
+                if x in coefs:      # check for positive
+                    if not found:   # must be the transition from negative to positive
+                        satvars[var] = str(r0+i)
+                        found = True
+                    coefs.add(-x)
+                else:
+                    coefs.add(x)
+            if not found:
+                satvars[var] = str(r0+1)
+        else:
+            raise RuntimeError(f'variables of type {kind} are not yet supported.')
+
     return (mapvars,satvars)
 
 ################################################################
@@ -267,17 +271,27 @@ def parse_picosat_all_file(path):
     distinct_solutions = 0
     seen = set()
     ctr = 0
+    USE_SUGAR = False
+    USE_PYTHON = True
     for lines in picosat_get_next_solution(path):
         total_solutions += 1
         print("#{}:".format(total_solutions),end='')
-        # Our version worked, but we seem to have a bug, so use the sugar code here.
-        """
-        (mapvars,ssatvars) = python_decode_picosat_and_extract_satvars(
-            solver_output_lines=lines,mapfile=args.map)
-        """
-        satvars = sugar_decode_picostat_and_extract_satvars(lines,args.map)
-        #print("{} ssatvars={} satvars={}".format(ssatvars==satvars,ssatvars,satvars))
-        seen.add(satvars)
+        # We can use either the python decoder or the sugar decoder.
+        # If we use both, we can compare them.
+        if USE_PYTHON:
+            (mapvars,ssatvars) = python_decode_picosat_and_extract_satvars(
+                solver_output_lines=lines,mapfile=args.map)
+            print(ssatvars)
+            seen.add(ssatvars)
+        
+        if USE_SUGAR:
+            satvars = sugar_decode_picostat_and_extract_satvars(lines,args.map)
+            if not USE_PYTHON:
+                print(satvars)
+            seen.add(satvars)
+
+        if USE_PYTHON and USE_SUGAR:
+            assert ssatvars==satvars
 
     for (ct,satvars) in enumerate(sorted(seen),1):
         print(f"sugar solution {ct} / {total_solutions}: {satvars}")

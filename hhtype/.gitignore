@@ -2,3 +2,4 @@ sugar-v2-3-3
 *.tmp
 *.map
 *.out
+*.cnf

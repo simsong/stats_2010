@@ -4,25 +4,40 @@
 ;;
 
 (int SIZE 1 7)
-;(bool OWN_CHILD_UNDER_6_ONLY)
-;(bool OWN_CHILD_UNDER_18)        ; biological, adopted or step
-;(bool CHILD_UNDER_18_EXCLUDING_HOUSEHOLDER_SPOUSE_UNMARRIED_PARTNER) ; anyone except householder, spouse, unmarried under 18 in household
-;(bool CHILD_UNDER_18)
-;;(int MARRIED 0 1)
-;;(int SAME_SEX 0 1)
-;;(int ALONE 0 1)
-
-;(img OWN_CHILD_UNDER_6_ONLY (not OWN_CHILD_UNDER_18))
-
-;; MULTIG RULES
-;(bool MULTIG)
-;(imp MULTIG (>= SIZE 2))
 
 ;; Marriage Rules
+(int MARRIED 0 1)
 (int MARRIED_SAME_SEX 0 1)
 (int MARRIED_OPPOSITE_SEX 0 1)
+(= MARRIED (+ MARRIED_SAME_SEX MARRIED_OPPOSITE_SEX))
 (imp (= SIZE 1) (= MARRIED_SAME_SEX 0))
 (imp (= SIZE 1) (= MARRIED_OPPOSITE_SEX 0))
 (imp (= MARRIED_SAME_SEX 1) (= MARRIED_OPPOSITE_SEX 0))
 (imp (= MARRIED_OPPOSITE_SEX 1) (= MARRIED_SAME_SEX 0))
 
+;; MULTIG RULES
+(int MULTIG 0 1)
+(imp (= MULTIG 1) (>= SIZE 2))                    ; multi-generational must have 2 or more people
+(imp (and (= SIZE 2) (= MARRIED 1)) (= MULTIG 0)) ; in a married household, multi-generational must have 3 or more
+
+;; Child rules
+(int CHILD_UNDER_18 0 1)              ; including the householder, spouse, unmarried partner
+
+(int OWN_CHILD_UNDER_6_ONLY  0 1)
+(int OWN_CHILD_BETWEEN_6_AND_17 0 1)
+(int OWN_CHILD_IN_BOTH_RANGES 0 1)
+(int OWN_CHILD_UNDER_18 0 1)         ; biological, adopted or step
+; If we have a child 0-6 or 6-17, we have a child under 18
+(imp (> 0 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
+     (= OWN_CHILD_UNDER_18 1))
+; If we have both a child 0-6 and 6-17, we have a child in both ranges
+(imp (> 0 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
+     (= OWN_CHILD_IN_BOTH_RANGES 0 1))
+
+; If we have a child under 18, we have at least two people
+(imp (= OWN_CHILD_UNDER_18 1) (>= SIZE 2))
+; If we have a child in both ranges, we have at least three people
+(imp (= OWN_CHILD_IN_BOTH_RANGES 1) (>= SIZE 3))
+
+
+;(int CHILD_UNDER_18_EXCLUDING_HOUSEHOLDER_SPOUSE_UNMARRIED_PARTNER) ; anyone except householder, spouse, unmarried under 18 in household

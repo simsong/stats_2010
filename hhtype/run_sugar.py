@@ -99,7 +99,6 @@ def run_solver(*,solver,cnffile,outfile):
     raise RuntimeError("solver failed. ret={} out='{}' err='{}'".
                        format(p.returncode,solver_out,solver_err))
 
-
 ################################################################
 ###
 ### SUGAR SUPPORT
@@ -136,35 +135,40 @@ def sugar_decode_picosat_out(outdata,mapfile):
 
 def get_mapvars(mapfile):
     """Read the sugar .map file and return a dictionary
-    where the key is the variable name and the value is the (start,r0,r1)
-    where r0 is the first ordinal and r1 is the last. Sugar uses uniary encoding."""
+    where the key is the variable name and the value is the (type,start,r0,r1)
+    start = boolean of first value
+    type = 'bool' for boolean coding, 'int' for integer coding
+    r0 = first ordinal for integer coding
+    r1 = last ordinal for integer coding. Sugar uses uniary encoding."""
     mapvars = {}
     with open(mapfile,"r") as f:
         for line in f:
-            (var,name,start,_) = line.strip().split(" ")
+            fields = line.strip().split(" ")
+            (var,name,start) = fields[0:3]
+            start = int(start)
             if var=="int":
-                if ".." in _:
-                    (r0,r1) = _.split("..")
+                if ".." in fields[3]:
+                    (r0,r1) = fields[3].split("..")
                 else:
-                    (r0,r1) = int(_),int(_)
+                    (r0,r1) = int(fields[3]),int(fields[3])
+                r0 = int(r0)
+                r1 = int(r1)
+                mapvars[name] = ('int',start,r0,r1)
+            elif var=='bool':
+                mapvars[name] = ('bool',start,0,0)
             else:
                 raise RuntimeError("Only variables of type {} are supported".format(var))
-            start = int(start)
-            r0 = int(r0)
-            r1 = int(r1)
-            mapvars[name] = (start,r0,r1)
     return mapvars
 
-def extract_vars_from_solver_output(*,solver_output_lines,mapfile,mapvars=None):
+def python_decode_picosat_and_extract_satvars(*,solver_output_lines,mapfile,mapvars=None):
     """Read the output from a SAT solver and a map file and return the variable assignments 
     and a set of coeficients to add the dimacs file to prevent this solution."""
 
-    assert len(solver_output_lines) > 10
     satvars    = {}                # extracted variables
     if mapvars==None:
         mapvars = get_mapvars(mapfile)
     # Compute the highest possible variable
-    highest = max(v[0]+v[2]-v[1] for v in mapvars.values())
+    highest = max(v[1]+v[3]-v[2] for v in mapvars.values())
     # Now read the boolean variables and map them back
     coefs = set()               # each variable is positive or negative
     for line in solver_output_lines:
@@ -178,8 +182,7 @@ def extract_vars_from_solver_output(*,solver_output_lines,mapfile,mapvars=None):
         coefs.update(vals)
 
     # Now for each variable, check all of the booleans that make it up
-    # to find the value of the variable. Also create the counter example.
-    counter = set()
+    # to find the value of the variable. 
     for var in mapvars:
         (start,r0,r1) = mapvars[var]
         found = False           # we found the state change.
@@ -194,8 +197,7 @@ def extract_vars_from_solver_output(*,solver_output_lines,mapfile,mapvars=None):
                 coefs.add(x)
         if not found:
             satvars[var] = str(r0+1)
-    print("satvars=",satvars)
-    return (mapvars,satvars,counter)
+    return (mapvars,satvars)
 
 ################################################################
 def latex_def(name,value):
@@ -267,9 +269,14 @@ def parse_picosat_all_file(path):
     ctr = 0
     for lines in picosat_get_next_solution(path):
         total_solutions += 1
+        print("#{}:".format(total_solutions),end='')
         # Our version worked, but we seem to have a bug, so use the sugar code here.
-        #(mapvars,satvars,counter) = extract_vars_from_solver_output(solver_output_lines=lines,mapfile=args.map)
+        """
+        (mapvars,ssatvars) = python_decode_picosat_and_extract_satvars(
+            solver_output_lines=lines,mapfile=args.map)
+        """
         satvars = sugar_decode_picostat_and_extract_satvars(lines,args.map)
+        #print("{} ssatvars={} satvars={}".format(ssatvars==satvars,ssatvars,satvars))
         seen.add(satvars)
 
     for (ct,satvars) in enumerate(sorted(seen),1):
@@ -301,8 +308,9 @@ if __name__=="__main__":
 
     if args.parseout:
         out = open(args.parseout,"r").read()
-        (mapvars,satvars,counter) = extract_vars_from_solver_output( solver_output_lines=out.split("\n"), 
-                                                                     mapfile=args.map) 
+        (mapvars,satvars,counter) = python_decode_picosat_and_extract_satvars(
+            solver_output_lines=out.split("\n"), 
+            mapfile=args.map) 
         print(parse_vars_to_printable(satvars))
         exit(1)
 

@@ -4,11 +4,25 @@
 ;;
 
 (int SIZE 1 7)
-(bool MULTIG)
-;(int MARRIED 0 1)
-;(int SAME_SEX 0 1)
-;(int ALONE 0 1)
+;(bool OWN_CHILD_UNDER_6_ONLY)
+;(bool OWN_CHILD_UNDER_18)        ; biological, adopted or step
+;(bool CHILD_UNDER_18_EXCLUDING_HOUSEHOLDER_SPOUSE_UNMARRIED_PARTNER) ; anyone except householder, spouse, unmarried under 18 in household
+;(bool CHILD_UNDER_18)
+;;(int MARRIED 0 1)
+;;(int SAME_SEX 0 1)
+;;(int ALONE 0 1)
 
-(imp MULTIG (>= SIZE 2))
+;(img OWN_CHILD_UNDER_6_ONLY (not OWN_CHILD_UNDER_18))
 
+;; MULTIG RULES
+;(bool MULTIG)
+;(imp MULTIG (>= SIZE 2))
+
+;; Marriage Rules
+(int MARRIED_SAME_SEX 0 1)
+(int MARRIED_OPPOSITE_SEX 0 1)
+(imp (= SIZE 1) (= MARRIED_SAME_SEX 0))
+(imp (= SIZE 1) (= MARRIED_OPPOSITE_SEX 0))
+(imp (= MARRIED_SAME_SEX 1) (= MARRIED_OPPOSITE_SEX 0))
+(imp (= MARRIED_OPPOSITE_SEX 1) (= MARRIED_SAME_SEX 0))
 

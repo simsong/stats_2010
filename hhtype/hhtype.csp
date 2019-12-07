@@ -4,11 +4,11 @@
 ;;
 
 (int SIZE 1 7)
-;(int MULTIG 0 1)
+(bool MULTIG)
 ;(int MARRIED 0 1)
 ;(int SAME_SEX 0 1)
 ;(int ALONE 0 1)
-;(= (if (SIZE 1) 
 
+(imp MULTIG (>= SIZE 2))
 
 

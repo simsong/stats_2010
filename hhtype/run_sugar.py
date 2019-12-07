@@ -350,8 +350,14 @@ if __name__=="__main__":
                            format(p.returncode,sugar_out,sugar_err))
         exit(1)
     print("sugar run time: {:.4} sec".format(t1-t0))
-    print(sugar_out)
-    print(sugar_err)
+    for line in sugar_out.split("\n"):
+        if ("ERROR" in line) and ("SOLUTIONS" not in line):
+            print("Error in running sugar:")
+            print(line)
+            exit(1)
+    
+    #print(sugar_out)
+    #print(sugar_err)
 
     if args.all:
         parse_picosat_all_file(args.picosat_out)
@@ -364,11 +370,6 @@ if __name__=="__main__":
 
     # Now constraints.out has the output from picosat
 
-    if "ERROR" in sugar_out:
-        print("Error in running sugar:")
-        print(sugar_out)
-        exit(1)
-    
     satvars = extract_vars_from_sugar_decode(sugar_out)
     results = satvars_to_codes(satvars)
 

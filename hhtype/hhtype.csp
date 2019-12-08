@@ -20,24 +20,33 @@
 (imp (= MULTIG 1) (>= SIZE 2))                    ; multi-generational must have 2 or more people
 (imp (and (= SIZE 2) (= MARRIED 1)) (= MULTIG 0)) ; in a married household, multi-generational must have 3 or more
 
-;; Child rules
-(int CHILD_UNDER_18 0 1)              ; including the householder, spouse, unmarried partner
-
+;; Child variables
+(int CHILD_UNDER_18 0 1)              ;; $PRINT including the householder, spouse, unmarried partner
 (int OWN_CHILD_UNDER_6_ONLY  0 1)     ;; $PRINT
 (int OWN_CHILD_BETWEEN_6_AND_17 0 1)  ;; $PRINT
 (int OWN_CHILD_IN_BOTH_RANGES 0 1)    ;; $PRINT
-(int OWN_CHILD_UNDER_18 0 1)         ; biological, adopted or step
-; If we have a child 0-6 or 6-17, we have a child under 18
+(int OWN_CHILD_UNDER_18 0 1)          ;; $PRINT biological, adopted or step
+
+;; Child rules
+;; If we have a child 0-6 or 6-17, we have a child under 18
 (imp (> 0 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
      (= OWN_CHILD_UNDER_18 1))
-; If we have both a child 0-6 and 6-17, we have a child in both ranges
+
+;; If we have both a child 0-6 and 6-17, we have a child in both ranges
 (imp (> 0 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
      (= OWN_CHILD_IN_BOTH_RANGES 0 1))
 
-; If we have a child under 18, we have at least two people
+;; If we have a child under 18, we have at least two people
 (imp (= OWN_CHILD_UNDER_18 1) (>= SIZE 2))
-; If we have a child in both ranges, we have at least three people
+
+;; If we have a child in both ranges, we have at least three people
 (imp (= OWN_CHILD_IN_BOTH_RANGES 1) (>= SIZE 3))
 
+;; If we do not have an own child under 18, we do not have an own child
+(imp (= OWN_CHILD_UNDER_18 0)
+     (= (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 OWN_CHILD_IN_BOTH_RANGES) 0))
 
-;(int CHILD_UNDER_18_EXCLUDING_HOUSEHOLDER_SPOUSE_UNMARRIED_PARTNER) ; anyone except householder, spouse, unmarried under 18 in household
+;; If we do have an own child under 18, at least one of the own child types must be true
+(imp (= OWN_CHILD_UNDER_18 1)
+     (>= (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 OWN_CHILD_IN_BOTH_RANGES) 1))
+

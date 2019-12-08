@@ -26,7 +26,7 @@ PICOSAT_SOLVER = '/opt/local/bin/picosat'
 GLUCOSE_SOLVER = './glucose_static'
 DEFAULT_SOLVER = PICOSAT_SOLVER
 
-DECODE_SUGAR = True
+DECODE_SUGAR = False
 DECODE_PYTHON = True
 
 
@@ -205,14 +205,12 @@ def python_decode_picosat_and_extract_satvars(*,solver_output_lines,mapvars=None
         if kind=='int':
             for i in range(r1-r0):
                 x = start+i
-                print(var,kind,start,r0,r1,i,x,coefs[x])
                 if coefs[x] > 0:    # positive value indicates the value
                     satvars[var] = r0+i
                     break
             # If they were all negative, then it's the highest value
             if var not in satvars:
                 satvars[var] = r1
-            print("satvars[%s]=%s" % (var,satvars[var]))
         else:
             raise RuntimeError(f'variables of type {kind} are not yet supported.')
     return satvars
@@ -317,28 +315,27 @@ class PicosatPrinter:
             # We can use either the python decoder or the sugar decoder.
             # If we use both, we can compare them.
             if DECODE_PYTHON:
-                ssatvars = python_decode_picosat_and_extract_satvars(solver_output_lines=lines,mapvars=mapvars)
-                print(ssatvars)
-                assert ssatvars not in psatvars_seen
-                psatvars_seen.add(ssatvars)
+                psatvars = python_decode_picosat_and_extract_satvars(solver_output_lines=lines,mapvars=mapvars)
+                assert psatvars not in psatvars_seen
+                psatvars_seen.add(psatvars)
 
             if DECODE_SUGAR:
-                satvars = sugar_decode_picostat_and_extract_satvars(lines,mapfile)
+                ssatvars = sugar_decode_picostat_and_extract_satvars(lines,mapfile)
                 if DECODE_PYTHON:
-                    if ssatvars!=satvars:
+                    if ssatvars!=psatvars:
                         print("lines:")
                         print("".join(lines))
                         print("mapfile:")
                         print(open(mapfile).read())
                         raise RuntimeError("Error in python decoder. ssatvars: %s  satvars: %s",ssatvars,satvars)
                 else:
-                    assert satvars not in ssatvars_seen
-                    ssatvars_seen.add(satvars)
+                    assert ssatvars not in ssatvars_seen
+                    ssatvars_seen.add(ssatvars)
 
-        satvars = ssatvars if DECODE_SUGAR else psatvars
+        satvars = ssatvars_seen if DECODE_SUGAR else psatvars_seen
         # Build a map of each solution to its solution number
         solutions = list(sorted(satvars))
-        seen = {satvar:ct for (ct,satvar) in enumerate(soluions)}
+        seen = {satvar:ct for (ct,satvar) in enumerate(solutions)}
 
         if not self.printvars:
             print("No $PRINT variables specified. Printing all solutions.")
@@ -355,12 +352,13 @@ class PicosatPrinter:
 
                 # If we have seen this before, indicate that two solutions have the same variables
                 print(f"# {ct}: {extracted}")
-                print(f"# {ct}: {satvars}")
+                #print(f"# {ct}: {satvars}")
                 if extracted in eseen:
                     print(f"  DEGENERATE PRINTED VARIABLES")
                     for deg in eseen[extracted]:
-                        print(f"   #{deg}: {solutions[deg]}")
-                    print(f"   #{ct}: {solutions[ct]}")
+                        print(f"   #{deg:03}: {solutions[deg]}")
+                    print(f"   #{ct:03}: {solutions[ct]}")
+                    exit(0)
                 eseen[extracted].append(ct)
                 print("")
 

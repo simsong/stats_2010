@@ -3,12 +3,12 @@
 ;; Households (either 1 or 2)
 ;;
 
-(int SIZE 1 7)
+(int SIZE 1 7)                  ;; $PRINT
 
 ;; Marriage Rules
-(int MARRIED 0 1)
-(int MARRIED_SAME_SEX 0 1)
-(int MARRIED_OPPOSITE_SEX 0 1)
+(int MARRIED 0 1)              
+(int MARRIED_SAME_SEX 0 1)      ;; $PRINT
+(int MARRIED_OPPOSITE_SEX 0 1)  ;; $PRINT
 (= MARRIED (+ MARRIED_SAME_SEX MARRIED_OPPOSITE_SEX))
 (imp (= SIZE 1) (= MARRIED_SAME_SEX 0))
 (imp (= SIZE 1) (= MARRIED_OPPOSITE_SEX 0))
@@ -16,16 +16,16 @@
 (imp (= MARRIED_OPPOSITE_SEX 1) (= MARRIED_SAME_SEX 0))
 
 ;; MULTIG RULES
-(int MULTIG 0 1)
+(int MULTIG 0 1)                 ;; $PRINT
 (imp (= MULTIG 1) (>= SIZE 2))                    ; multi-generational must have 2 or more people
 (imp (and (= SIZE 2) (= MARRIED 1)) (= MULTIG 0)) ; in a married household, multi-generational must have 3 or more
 
 ;; Child rules
 (int CHILD_UNDER_18 0 1)              ; including the householder, spouse, unmarried partner
 
-(int OWN_CHILD_UNDER_6_ONLY  0 1)
-(int OWN_CHILD_BETWEEN_6_AND_17 0 1)
-(int OWN_CHILD_IN_BOTH_RANGES 0 1)
+(int OWN_CHILD_UNDER_6_ONLY  0 1)     ;; $PRINT
+(int OWN_CHILD_BETWEEN_6_AND_17 0 1)  ;; $PRINT
+(int OWN_CHILD_IN_BOTH_RANGES 0 1)    ;; $PRINT
 (int OWN_CHILD_UNDER_18 0 1)         ; biological, adopted or step
 ; If we have a child 0-6 or 6-17, we have a child under 18
 (imp (> 0 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))

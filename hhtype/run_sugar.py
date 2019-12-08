@@ -26,7 +26,7 @@ PICOSAT_SOLVER = '/opt/local/bin/picosat'
 GLUCOSE_SOLVER = './glucose_static'
 DEFAULT_SOLVER = PICOSAT_SOLVER
 
-DECODE_SUGAR = False
+DECODE_SUGAR = True
 DECODE_PYTHON = True
 
 
@@ -117,7 +117,27 @@ def sugar_decode_picosat_out(outdata,mapfile):
         raise RuntimeError("sugar decode error: "+err)
     return out
 
-def get_mapvars(mapfile):
+def extract_vars_from_sugar_decode(outdata):
+    """Extract the variables from the sugar output. Returns a dictionary
+    with the key the variable name and the value being the variable
+    value"""
+    # vars[] is the mapping of the sugar variable to the solution
+    vars = Hashabledict()
+    for line in outdata.split("\n"):
+        line = line.strip()
+        if len(line)==0: continue
+        if line[0]=='s' and line!='s SATISFIABLE':
+            logging.error(outdata)
+            raise RuntimeError("Constraints not satisfied; line={}".format(line))
+        if line[0]=='a' and "\t" in line:
+            (var,val) = line[2:].split("\t")
+            vars[var] = int(val)
+    return vars
+
+### Same as above, but use Python.
+### This should be much faster than running a Java subprocess
+
+def python_get_mapvars(mapfile):
     """Read the sugar .map file and return a dictionary
     where the key is the variable name and the value is the (type,start,r0,r1)
     kind = 'bool' for boolean coding, 'int' for integer coding
@@ -127,8 +147,16 @@ def get_mapvars(mapfile):
     mapvars = {}
     with open(mapfile,"r") as f:
         for line in f:
-            fields = line.strip().split(" ")
-            (kind,name,start) = fields[0:3]
+            line = line.strip()
+            if len(line)==0:
+                continue
+            fields = line.split(" ")
+            try:
+                (kind,name,start) = fields[0:3]
+            except ValueError as e:
+                logging.error("line: %s",line)
+                logging.error("fields: %s",fields)
+                raise e
             start = int(start)
             if kind=="int":
                 if ".." in fields[3]:
@@ -144,48 +172,50 @@ def get_mapvars(mapfile):
                 raise RuntimeError(f"Variables of type '{kind}' are not supported")
     return mapvars
 
-def python_decode_picosat_and_extract_satvars(*,solver_output_lines,mapfile,mapvars=None):
+def python_decode_picosat_and_extract_satvars(*,solver_output_lines,mapvars=None):
     """Read the output from a SAT solver and a map file and return the variable assignments 
     and a set of coeficients to add the dimacs file to prevent this solution."""
 
     satvars    = Hashabledict()
-    if mapvars==None:
-        mapvars = get_mapvars(mapfile)
-    # Compute the highest possible variable
+    # Compute the highest variable in use. The rest are internal CNF Booleans used by Sugar which we don't need
     highest = max(v[1]+v[3]-v[2] for v in mapvars.values())
-    # Now read the boolean variables and map them back
-    coefs = set()               # each variable is positive or negative
+    # Now read the boolean variables and learn what each one's value is
+    coefs = dict()               # each variable is positive or negative
     for line in solver_output_lines:
         # For each line in the DIMACS output file
         # read the numbers and add each to the coefficients set. 
         # stop when the first line is higher than the higest variable that we care about
-        if line[0]!='v': continue
-        vals = [int(v) for v in line[2:].split(" ")]
+        line = line.strip()
+        if line[0:1]!='v':
+            continue
+        try:
+            vals = [int(v) for v in line[2:].split(" ")]
+        except ValueError as e:
+            logging.error("invalid line: %s",line)
+            raise e
+        for val in vals:
+            coefs[abs(val)] = val
         if abs(vals[0]) > highest:
             break               # no need to read any more
-        coefs.update(vals)
 
     # Now for each variable, check all of the booleans that make it up
     # to find the value of the variable. 
     for var in mapvars:
         (kind,start,r0,r1) = mapvars[var]
         if kind=='int':
-            found = False           # we found the state change.
             for i in range(r1-r0):
                 x = start+i
-                if x in coefs:      # check for positive
-                    if not found:   # must be the transition from negative to positive
-                        satvars[var] = str(r0+i)
-                        found = True
-                    coefs.add(-x)
-                else:
-                    coefs.add(x)
-            if not found:
-                satvars[var] = str(r0+1)
+                print(var,kind,start,r0,r1,i,x,coefs[x])
+                if coefs[x] > 0:    # positive value indicates the value
+                    satvars[var] = r0+i
+                    break
+            # If they were all negative, then it's the highest value
+            if var not in satvars:
+                satvars[var] = r1
+            print("satvars[%s]=%s" % (var,satvars[var]))
         else:
             raise RuntimeError(f'variables of type {kind} are not yet supported.')
-
-    return (mapvars,satvars)
+    return satvars
 
 ################################################################
 def latex_def(name,value):
@@ -209,23 +239,6 @@ def unmap(satvars,var):
         return VARMAP[var[0]][rvar]
     except KeyError:
         return rvar
-
-def extract_vars_from_sugar_decode(outdata):
-    """Extract the variables from the sugar output. Returns a dictionary
-    with the key the variable name and the value being the variable
-    value"""
-    # vars[] is the mapping of the sugar variable to the solution
-    vars = Hashabledict()
-    for line in outdata.split("\n"):
-        line = line.strip()
-        if len(line)==0: continue
-        if line[0]=='s' and line!='s SATISFIABLE':
-            logging.error(outdata)
-            raise RuntimeError("Constraints not satisfied; line={}".format(line))
-        if line[0]=='a' and "\t" in line:
-            (var,val) = line[2:].split("\t")
-            vars[var] = val
-    return vars
 
 def sugar_decode_picostat_and_extract_satvars(lines,mapfile):
     return extract_vars_from_sugar_decode( sugar_decode_picosat_out( "\n".join(lines), mapfile))
@@ -297,34 +310,44 @@ class PicosatPrinter:
         distinct_solutions = 0
         seen = dict()
         ctr = 0
-        solutions = []
+        psatvars_seen  = set()  # variables seen with python implementation
+        ssatvars_seen  = set()  # variables seen with sugar implementation
+        mapvars = python_get_mapvars(mapfile)
         for lines in picosat_get_next_solution(path):
             # We can use either the python decoder or the sugar decoder.
             # If we use both, we can compare them.
             if DECODE_PYTHON:
-                (mapvars,ssatvars) = python_decode_picosat_and_extract_satvars(solver_output_lines=lines,mapfile=mapfile)
-                solutions.append(ssatvars)
+                ssatvars = python_decode_picosat_and_extract_satvars(solver_output_lines=lines,mapvars=mapvars)
+                print(ssatvars)
+                assert ssatvars not in psatvars_seen
+                psatvars_seen.add(ssatvars)
 
             if DECODE_SUGAR:
                 satvars = sugar_decode_picostat_and_extract_satvars(lines,mapfile)
                 if DECODE_PYTHON:
-                    assert ssatvars==satvars
+                    if ssatvars!=satvars:
+                        print("lines:")
+                        print("".join(lines))
+                        print("mapfile:")
+                        print(open(mapfile).read())
+                        raise RuntimeError("Error in python decoder. ssatvars: %s  satvars: %s",ssatvars,satvars)
                 else:
-                    solutions.append(satvars)
+                    assert satvars not in ssatvars_seen
+                    ssatvars_seen.add(satvars)
 
-        # Sort solutions according to our variables
-        solutions.sort()
+        satvars = ssatvars if DECODE_SUGAR else psatvars
         # Build a map of each solution to its solution number
-        seen = {satvar:ct for (ct,satvar) in enumerate(solutions)}
+        solutions = list(sorted(satvars))
+        seen = {satvar:ct for (ct,satvar) in enumerate(soluions)}
 
         if not self.printvars:
             print("No $PRINT variables specified. Printing all solutions.")
-            for (ct,satvars) in enumerate(solutions,1):
+            for (ct,satvars) in enumerate(solutions):
                 print(f"picosat solution #{ct}: {satvars}")
         else:
             print("Printing just these varilabes in solutions: ",self.printvars)
             eseen = defaultdict(list)
-            for (ct,satvars) in enumerate(solutions,1):
+            for (ct,satvars) in enumerate(solutions):
                 # extract the printing vars from this solution
                 extracted = Hashabledict()
                 for var in self.printvars:
@@ -332,13 +355,14 @@ class PicosatPrinter:
 
                 # If we have seen this before, indicate that two solutions have the same variables
                 print(f"# {ct}: {extracted}")
+                print(f"# {ct}: {satvars}")
                 if extracted in eseen:
                     print(f"  DEGENERATE PRINTED VARIABLES")
                     for deg in eseen[extracted]:
                         print(f"   #{deg}: {solutions[deg]}")
                     print(f"   #{ct}: {solutions[ct]}")
                 eseen[extracted].append(ct)
-
+                print("")
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
@@ -366,8 +390,8 @@ if __name__=="__main__":
 
     if args.parseout:
         out = open(args.parseout,"r").read()
-        (mapvars,satvars,counter) = python_decode_picosat_and_extract_satvars(
-            solver_output_lines=out.split("\n"), mapfile=args.mapfile) 
+        mapvars = python_get_mapvars(args.mapfile)
+        satvars = python_decode_picosat_and_extract_satvars( solver_output_lines=out.split("\n"), mapvars=mapvars)
         print(parse_vars_to_printable(satvars))
         exit(1)
 

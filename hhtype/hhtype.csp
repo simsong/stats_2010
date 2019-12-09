@@ -34,9 +34,11 @@
 (int CXHHSUP_IN_BOTH_RANGES 0 1)      ;; $PRINT
 
 ;; Own Child rules
-;; If we have a child 0-6 or 6-17, we have a child under 18
+;; If we have a child 0-6 or 6-17, we have a child under 18, and a child
 (imp (> 0 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
-     (= OWN_CHILD_UNDER_18 1))
+     (and 
+      (= OWN_CHILD_UNDER_18 1)
+      (= CHILD_UNDER_18 1)))
 
 ;; If we have both a child 0-6 and 6-17, we have a child in both ranges
 (imp (> 1 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
@@ -58,9 +60,11 @@
 
 
 ;; CXXHSUP rules
-;; If we have a CXXHUP 0-6 or 6-17, we have a CXXHUP under 18
+;; If we have a CXXHUP 0-6 or 6-17, we have a CXXHUP under 18 and a child
 (imp (> 0 (+ CXHHSUP_UNDER_6_ONLY CXHHSUP_BETWEEN_6_AND_17 ))
-     (= CXHHSUP_UNDER_18 1))
+     (and 
+      (= CXHHSUP_UNDER_18 1)
+      (= CHILD_UNDER_18 1)))
 
 ;; If we have both a cxxsup 0-6 and 6-17, we have a cxxsup in both ranges
 (imp (> 1 (+ CXHHSUP_UNDER_6_ONLY CXHHSUP_BETWEEN_6_AND_17 ))

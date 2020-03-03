@@ -185,7 +185,17 @@ STATE_DATA=[
     "West_Virginia,WV,54",
     "Wisconsin,WI,55",
     "Wyoming,WY,56" ]
-SDICTS=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
+
+"""
+STATE_DICTS is a list of stat dictionaries, where each dict has the format:
+{'state_name': 'Alabama', 'state_abbr': 'AL', 'fips_state': '01'}
+"""
+STATE_DICTS=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
+
+"""
+STATE_ABBR_TO_FIPS is a dictionary where the key is the state_abbr and the value is the FIPS code
+"""
+STATE_ABBR_TO_FIPS = {d['state_abbr'] : d['fips_state'] for d in STATE_DICTS}
 
 
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
@@ -258,8 +268,13 @@ LINKAGE_VARIABLE_NAMES = [FILEID, STUSAB, CHARITER, CIFSN, LOGRECNO]
 # We use the CIFSN 0 for the geo segment
 CIFSN_GEO=0
 
+# Create an array that maps state abbrev to state code.
+# The theory is that it's faster to do a dictonary lookup than a function call and a dictionary lookup
+#STATE_ABBREV_TO_CODE = {
+
 class YPSS:
-    """A Class that defines the Year, Product, State, Segment and Characteristic Iteration, which is the way that each file in the PL94/SF1/SF2 are named."""
+    """A Class that defines the Year, Product, State, Segment and Characteristic Iteration, 
+       which is the way that each file in the PL94/SF1/SF2 are named."""
     __slots__=('year','product','state','segment','chariter')
     def __init__(self,year,product,state,segment,chariter=0):
         assert year in YEARS
@@ -283,14 +298,12 @@ class YPSS:
     def __repr__(self):
         return f"YPSS<{self.year}:{self.product}:{self.state}:{self.chariter}:{self.segment}>"
         
-        
 def download_url(ypss):
     return DOWNLOAD_URLS[ypss.year][ypss.product].format(year=ypss.year,product=ypss.product,
                                                          state_name = STATE_NAMES[ypss.state],
                                                          state=ypss.state,
                                                          chariter=ypss.chariter,
                                                          segment=ypss.segment)
-                                                         
 def zipfile_dir(ypss):
     return DEST_ZIPFILE_DIR[ypss.year].format(year=ypss.year,
                                               product=ypss.product,
@@ -315,3 +328,7 @@ def segmentfile_name(ypss):
             year=int(ypss.year),
             ext = ext)
 
+
+
+if __name__=="__main__":
+    print("SDICTS:",SDICTS)

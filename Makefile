@@ -24,6 +24,9 @@ download_pl94:
 
 load_pl94:
 	python dbload_pl94.py --wipe data/2010_pl94/dist/*.zip
+	rm -f pl94_ro.sqlite3
+	cp -c pl94.sqlite3 pl94_ro.sqlite3
+	chmod 444 pl94_ro.sqlite3
 
 load_pl94ak:
 	python dbload_pl94.py --wipe data/2010_pl94/dist/ak2010.pl.zip

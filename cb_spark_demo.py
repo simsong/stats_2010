@@ -9,8 +9,6 @@ SF1_ROOT = location of SF1.
 
 """
 
-
-
 from constants import *
 from copy import deepcopy
 from string import ascii_uppercase

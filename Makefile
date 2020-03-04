@@ -25,6 +25,9 @@ download_pl94:
 load_pl94:
 	python dbload_pl94.py --wipe data/2010_pl94/dist/*.zip
 
+load_pl94ak:
+	python dbload_pl94.py --wipe data/2010_pl94/dist/ak2010.pl.zip
+
 load_pl94_just_geo: dbload_pl94.py
 	python dbload_pl94.py data/??geo2010.pl
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Tools for accessing the decennial data from Spark.
+Tools for accessing the decennial data from Spark. Creates a data
+frame with all of the decennial data that you can then process with
+SQL.
+
 """
 
 import os

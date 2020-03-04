@@ -35,6 +35,7 @@ import zipfile
 import io
 import logging
 
+import constants
 from constants import *
 
 DBFILE="pl94.sqlite3"
@@ -43,7 +44,7 @@ CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
 SQL_SCHEMA="""
-CREATE TABLE IF NOT EXISTS blocks (goecode VARCHAR(15), state VARCHAR(2), county INTEGER, tract INTEGER, block INTEGER, logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
+CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), state VARCHAR(2), county INTEGER, tract INTEGER, block INTEGER, logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode_idx ON blocks(geocode);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx1 ON blocks(state,county,tract,block);
@@ -85,7 +86,12 @@ class SLGSQL:
         """Create the schema if it doesn't exist."""
         c = conn.cursor()
         for line in schema.split(";"):
-            c.execute(line)
+            try:
+                c.execute(line)
+            except sqlite3.OperationalError as e:
+                print("line:",line,file=sys.stderr)
+                print(e)
+                exit(1)
 
     def execselect(conn, sql, vals=()):
         """Execute a SQL query and return the first line"""
@@ -108,8 +114,8 @@ def decode_geo_line(conn,c,line):
     assert ex(GEO_FILEID) in ('PLST  ','SF1ST ')
     if exi(GEO_SUMLEV) in (SF1_SUMLEV_BLOCK,PL94_SUMLEV_BLOCK):
         try:
-            geocode = 
-            c.execute("INSERT INTO blocks (geocode, state,county,tract,block,logrecno) values (?,?,?,?,?)",
+            geocode = "".join([constants.STATE_ABBR_TO_FIPS[ex(GEO_STUSAB)], ex(GEO_COUNTY), ex(GEO_TRACT), ex(GEO_BLOCK)])
+            c.execute("INSERT INTO blocks (geocode, state,county,tract,block,logrecno) values (?,?,?,?,?,?)",
                       (geocode, ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
         except sqlite3.IntegrityError as e:
             conn.commit()          # save where we are
@@ -191,11 +197,10 @@ def db_connection(filename=DBFILE):
 
 if __name__ == "__main__":
     import argparse
-
     parser = argparse.ArgumentParser(description='Ingest the PL94 block-level population counts',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--db", help="Specify database location", default=DBFILE)
-    parser.add_argument("--wipe", help="Erase the DB file first")
+    parser.add_argument("--wipe", help="Erase the DB file first", action='store_true')
     parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file."
                         " For best results, use the ZIP file", 
                         nargs="*")

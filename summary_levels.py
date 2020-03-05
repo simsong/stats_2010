@@ -1,5 +1,5 @@
 # From http://mcdc.missouri.edu/cgi-bin/browse?/pub/sas/formats/Ssumlev.sas@
-GEOLEVELS = {
+SUMLEVS = {
  '010':"United States",
  '020':"Region",
  '030':"Division",

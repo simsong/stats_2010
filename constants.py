@@ -47,9 +47,10 @@ AIANSF = 'aiansf'
 UR1  = 'ur1'
 PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
 
-SUMLEV_TRACT = 140
-PL94_SUMLEV_BLOCK = 750
-SF1_SUMLEV_BLOCK = 101
+SUMLEV_TRACT = '140'
+SUMLEV_PL94_BLOCK = '750'
+SUMLEV_SF1_BLOCK = '101'
+SUMLEV_COUNTY = '050'
 
 PRODUCT_EXTS = { PL94:'pl',
                  SF1:'sf1',
@@ -270,7 +271,12 @@ CIFSN_GEO=0
 
 # Create an array that maps state abbrev to state code.
 # The theory is that it's faster to do a dictonary lookup than a function call and a dictionary lookup
-#STATE_ABBREV_TO_CODE = {
+
+def stusab_to_state(stusab):
+    for sd in STATE_DICTS:
+        if sd['state_abbr'] == stusab:
+            return sd['fips_state']
+    
 
 class YPSS:
     """A Class that defines the Year, Product, State, Segment and Characteristic Iteration, 

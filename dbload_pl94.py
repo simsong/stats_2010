@@ -2,11 +2,9 @@
 #
 """
 dbload_pl94.py: create an SQLite3 database from PL94 data for blocks and tracts. Data loaded includes:
-Blocks:
-  STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED 
-
-Tracts:
-  STATE | COUNTY | TRACT | LOGRECNO  
+Blocks:   STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED 
+Tracts:   STATE | COUNTY | TRACT | LOGRECNO  
+Counties: STATE | COUNTY | NAME
 
 PL94 Datasources:
   STATE|COUNTY|TRACT|BLOCK => LOGRECNO  -- Geography file
@@ -18,7 +16,6 @@ SF1 Datasources:
 NOTES: 
  * LOGRECNO is not consistent between the PL94 and SF1 files
  * HOUSES and OCCUPIED do not include GROUP QUARTERS
- * 
 
 """
 
@@ -59,20 +56,25 @@ CREATE INDEX IF NOT EXISTS tracts_idx2 ON tracts(tract);
 CREATE INDEX IF NOT EXISTS tracts_idx3 ON tracts(pop);
 CREATE INDEX IF NOT EXISTS tracts_idx4 ON tracts(houses);
 
+CREATE TABLE IF NOT EXISTS counties (state VARCHAR(2), county INTEGER, name VARCHAR(90));
+CREATE UNIQUE INDEX IF NOT EXISTS counties_idx0 ON counties(state,county);
+
 """
 
 # Define the fileds in the GEO Header. See Figure 2-5 of PL94 & SF1 publications
 # These fields are consistent for both publications
 # This could be rewritten to use the learned schema...
-GEO_FILEID=(1,6)
-GEO_STUSAB=(7,2)
-GEO_SUMLEV=(9,3)
-GEO_LOGRECNO=(19,7)
-GEO_COUNTY=(30,3)
-GEO_PLACE=(46,5)            
-GEO_TRACT=(55,6)            
-GEO_BLKGRP=(61,1)
-GEO_BLOCK=(62,4)        # first digit of block is blockgroup
+# THe fields appear exactly as they appear in the specification, which is (FIELD WIDTH, FIELD START)
+GEO_FILEID=(6,1)
+GEO_STUSAB=(2,7)
+GEO_SUMLEV=(3,9)
+GEO_LOGRECNO=(7,19)
+GEO_COUNTY=(3,30)
+GEO_PLACE=(5,46)            
+GEO_TRACT=(6,55)            
+GEO_BLKGRP=(1,61)
+GEO_BLOCK=(4,62)        # first digit of block is blockgroup
+GEO_NAME=(90,227)       # in Latin1 for 2000 and 2010
 
 DEBUG_BLOCK=None
 
@@ -107,28 +109,30 @@ def make_database(conn):
 def decode_geo_line(conn,c,line):
     """Decode the hiearchical geography lines. These must be done before the other files are read
     to get the logrecno."""
-    def ex(desc):
-        return line[desc[0]-1:desc[0]+desc[1]-1]
-    def exi(desc):
-        return int(ex(desc))
+    def ex(which):
+        return line[which[1]-1:which[1]+which[0]-1]
+    def exi(which):
+        return int(ex(which))
     assert ex(GEO_FILEID) in ('PLST  ','SF1ST ')
-    if exi(GEO_SUMLEV) in (SF1_SUMLEV_BLOCK,PL94_SUMLEV_BLOCK):
-        try:
-            geocode = "".join([constants.STATE_ABBR_TO_FIPS[ex(GEO_STUSAB)], ex(GEO_COUNTY), ex(GEO_TRACT), ex(GEO_BLOCK)])
-            c.execute("INSERT INTO blocks (geocode, state,county,tract,block,logrecno) values (?,?,?,?,?,?)",
-                      (geocode, ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
-        except sqlite3.IntegrityError as e:
-            conn.commit()          # save where we are
-            raise e
+    sumlev = ex(GEO_SUMLEV)
+
+    if (args.sumlev is not None) and (args.sumlev!=sumlev):
+        return
+
+    if sumlev in (SUMLEV_SF1_BLOCK,SUMLEV_PL94_BLOCK):
+        geocode = "".join([constants.STATE_ABBR_TO_FIPS[ex(GEO_STUSAB)], ex(GEO_COUNTY), ex(GEO_TRACT), ex(GEO_BLOCK)])
+        c.execute("INSERT INTO blocks (geocode, state,county,tract,block,logrecno) values (?,?,?,?,?,?)",
+                  (geocode, ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
             
-    elif exi(GEO_SUMLEV) == SUMLEV_TRACT:
-        try:
-            c.execute("INSERT INTO tracts (state,county,tract,logrecno) values (?,?,?,?)",
-                      (ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_LOGRECNO)))
-        except sqlite3.IntegrityError as e:
-            conn.commit()          # save where we are
-            raise e
+    elif sumlev == SUMLEV_TRACT:
+        c.execute("INSERT INTO tracts (state,county,tract,logrecno) values (?,?,?,?)",
+                  (ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_LOGRECNO)))
             
+    elif sumlev == SUMLEV_COUNTY:
+        c.execute("INSERT INTO counties (state,county,name) values (?,?,?)",
+                  (ex(GEO_STUSAB), exi(GEO_COUNTY), ex(GEO_NAME)))
+        
+
 def decode_012010(conn,c,line):
     """Update the database for a line in segemtn 1 of the 2010 PL94 or SF1 files. 
     Note that the logical record number may not be in the DB, because this line may not be for a block or tract.
@@ -204,6 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file."
                         " For best results, use the ZIP file", 
                         nargs="*")
+    parser.add_argument("--sumlev", help="Only do this summary level")
     args = parser.parse_args()
 
     if args.wipe and os.path.exists(args.db):

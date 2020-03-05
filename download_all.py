@@ -94,12 +94,12 @@ if __name__=="__main__":
         if product.lower() == "relationship":
             for state_info in STATES_FIPS_DICT:
                 try:
-                    print(f'Downloading {state_info["fips_state"]}')
-                    url = DOWNLOAD_URLS[year][product].format(state_fips=state_info['fips_state'])
+                    print(f'Downloading {state_info["state"]}')
+                    url = DOWNLOAD_URLS[year][product].format(state_fips=state_info['state'])
                     download(url, os.path.join(os.path.dirname(__file__), "relationship"))
                     count += 1
                 except Exception as error:
-                    print(f'Error downloading {state_info["fips_state"]}', error)
+                    print(f'Error downloading {state_info["state"]}', error)
     if count==0:
         print("Nothing downloaded")
         parser.print_help()

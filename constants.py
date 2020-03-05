@@ -120,7 +120,7 @@ STATE_DATA=[
     "Pennsylvania,PA,42","Rhode_Island,RI,44","South_Carolina,SC,45","South_Dakota,SD,46","Tennessee,TN,47","Texas,TX,48",
     "Utah,UT,49","Vermont,VT,50","Virginia,VA,51", "Washington,WA,53","West_Virginia,WV,54","Wisconsin,WI,55","Wyoming,WY,56" ]
 
-STATES_FIPS_DICT=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
+STATES_FIPS_DICT=[dict(zip("state_name,stusab,state".split(","),line.split(","))) for line in STATE_DATA]
 
 STATES_AND_ABBREVS = STATE_DB.split()
 STATES             = [saa.split("/")[1] for saa in STATES_AND_ABBREVS]
@@ -189,14 +189,14 @@ STATE_DATA=[
 
 """
 STATE_DICTS is a list of stat dictionaries, where each dict has the format:
-{'state_name': 'Alabama', 'state_abbr': 'AL', 'fips_state': '01'}
+{'state_name': 'Alabama', 'stusab': 'AL', 'state': '01'}
 """
-STATE_DICTS=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
+STATE_DICTS=[dict(zip("state_name,stusab,state".split(","),line.split(","))) for line in STATE_DATA]
 
 """
-STATE_ABBR_TO_FIPS is a dictionary where the key is the state_abbr and the value is the FIPS code
+STUSAB_TO_FIPS is a dictionary where the key is the stusab and the value is the FIPS code
 """
-STATE_ABBR_TO_FIPS = {d['state_abbr'] : d['fips_state'] for d in STATE_DICTS}
+STUSAB_TO_FIPS = {d['stusab'] : d['state'] for d in STATE_DICTS}
 
 
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
@@ -272,10 +272,7 @@ CIFSN_GEO=0
 # Create an array that maps state abbrev to state code.
 # The theory is that it's faster to do a dictonary lookup than a function call and a dictionary lookup
 
-def stusab_to_state(stusab):
-    for sd in STATE_DICTS:
-        if sd['state_abbr'] == stusab:
-            return sd['fips_state']
+STUSAB_TO_STATE = {sd['stusab']:sd['state'] for sd in STATE_DICTS}
     
 
 class YPSS:

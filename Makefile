@@ -19,20 +19,20 @@ clean_data:
 	@echo To erase all of the data that have been downloaded, type:
 	@echo /bin/rm -rf data
 
-download_pl94:
+pl94_download:
 	python download_all.py pl94
 
-load_pl94:
-	python dbload_pl94.py --wipe data/2010_pl94/dist/*.zip
+pl94_load:
+	python pl94_dbload.py --wipe data/2010_pl94/dist/*.zip
 	rm -f pl94_ro.sqlite3
 	cp -c pl94.sqlite3 pl94_ro.sqlite3
 	chmod 444 pl94_ro.sqlite3
 
-load_pl94ak:
-	python dbload_pl94.py --wipe data/2010_pl94/dist/ak2010.pl.zip
+pl94_loadak:
+	python pl94_dbload.py --db ak.sqlite3 --wipe data/2010_pl94/dist/ak2010.pl.zip
 
-load_pl94_just_geo: dbload_pl94.py
-	python dbload_pl94.py data/??geo2010.pl
+pl94_load_geo: pl94_dbload.py
+	python pl94_dbload.py data/??geo2010.pl
 
 download_ak:
 	@echo Downloading all of the data associated with AK.

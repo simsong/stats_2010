@@ -13,7 +13,7 @@ import os
 import sys
 
 import sqlite3
-import dbload_pl94
+import pl94_dbload
 import statistics
 import numpy as np
 import constants
@@ -170,7 +170,7 @@ if __name__=="__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--prefix", help="Report about a prefix")
     parser.add_argument("--span", type=int, help="Specify number of characters for span")
-    parser.add_argument("--db", help="Specify database location", default=dbload_pl94.DBFILE)
+    parser.add_argument("--db", help="Specify database location", default=pl94_dbload.DBFILE)
     parser.add_argument("--allcounties", help="Report by counties", action='store_true')
     parser.add_argument("--limit", type=int, help="Return only this many")
     parser.add_argument("--report", type=int, help="Give report from span 1 to report (max=12)")

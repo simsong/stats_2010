@@ -8,7 +8,7 @@ import os
 import sys
 
 import sqlite3
-import dbload_pl94
+import pl94_dbload
 import statistics
 import numpy as np
 
@@ -20,7 +20,7 @@ if __name__=="__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Gets the County Map',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--db", help="Specify database location", default=dbload_pl94.DBFILE)
+    parser.add_argument("--db", help="Specify database location", default=pl94_dbload.DBFILE)
     parser.add_argument("stusab")
     parser.add_argument("county",type=int)
     args = parser.parse_args()

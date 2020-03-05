@@ -13,9 +13,6 @@ from constants import *
 from copy import deepcopy
 from string import ascii_uppercase
 from string import ascii_uppercase
-import cb_spec_decoder
-import ctools.cspark as cspark
-import ctools.tydoc  as tydoc
 import json
 import logging
 import os
@@ -23,14 +20,19 @@ import re
 import sf1_info as info
 import sf1_info_house as info_house
 import sys
-from collections import defaultdict
-from ctools.s3 import put_object, get_bucket_key
 import shutil
 import pathlib
 import time
 import pprint
 import glob
 import uuid
+
+import cb_spec_decoder
+import ctools.cspark as cspark
+import ctools.tydoc  as tydoc
+
+from collections import defaultdict
+from ctools.s3 import put_object, get_bucket_key
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"

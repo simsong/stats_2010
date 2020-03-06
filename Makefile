@@ -28,6 +28,12 @@ pl94_load:
 	cp -c pl94.sqlite3 pl94_ro.sqlite3
 	chmod 444 pl94_ro.sqlite3
 
+r2:
+	python geocode_stats.py --db ak.sqlite3 --geocode2 --report 16 --debug --spanstart 16
+
+r1:
+	python geocode_stats.py --geocode2 --report 10 --spanstart 5
+
 pl94_loadak:
 	python pl94_dbload.py --db ak.sqlite3 --wipe data/2010_pl94/dist/ak2010.pl.zip
 
@@ -39,5 +45,6 @@ download_ak:
 	python download_all.py --state ak pl94 sf1 sf2
 
 make_crosswalks:
-	bash make_all_crosswalks
+	bash crosswalk_generator_all
+
 

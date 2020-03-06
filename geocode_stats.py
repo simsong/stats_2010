@@ -7,6 +7,9 @@ Goals of this program:
 - We want to be able to experiment with different partitioning functions, and to explore partitioning functions that are based on the data
 
 - We want to consider all geographies, inhabited 2010 geographies, and 2010 geographies with housing units or GQ facilities.
+
+
+https://openpyxl.readthedocs.io/en/stable/filters.html - add filters
 """
 
 import os
@@ -38,12 +41,14 @@ right_border = Border(
 CENTERED = Alignment(horizontal='center')
 
 def deciles(ary):
-    return np.percentile(ary, np.arange(0,100,10), interpolation='linear')
+    return np.percentile(ary, np.arange(0,101,10), interpolation='linear')
 
 class GeocodeStats:
-    def __init__(self,db):
-        self.conn = sqlite3.connect(db)
+    def __init__(self,args):
+        self.args = args
+        self.conn = sqlite3.connect(args.db)
         self.conn.row_factory = sqlite3.Row # give me dicts
+        self.geocode = 'geocode2' if args.geocode2 else 'geocode'
 
         c = self.cursor()
         c.execute(f"PRAGMA cache_size = {-1024*1024}") # 1GiB cache
@@ -63,13 +68,13 @@ class GeocodeStats:
         """
         c = self.cursor()
         pl = len(prefix)
-        cmd = f"""SELECT substr(geocode,1,{pl+child_prefix_span}) AS prefix,
+        cmd = f"""SELECT substr({self.geocode},1,{pl+child_prefix_span}) AS prefix,
                   SUM(1) AS block_count,
                   SUM( CASE WHEN pop>0 THEN 1 ELSE 0 END) as pop_block_count,
                   SUM(pop) AS pop 
                   FROM blocks 
-                  WHERE SUBSTR(geocode,1,{pl})=?
-                  GROUP BY SUBSTR(geocode,1,{pl+child_prefix_span})"""
+                  WHERE SUBSTR({self.geocode},1,{pl})=?
+                  GROUP BY SUBSTR({self.geocode},1,{pl+child_prefix_span})"""
         print(cmd)
         c.execute(cmd,[prefix])
         return c.fetchall()
@@ -79,9 +84,10 @@ class GeocodeStats:
         the number of populated blocks in each child, and the population. 
         if child_prefix_span=6, then it is a tract-by-tract report.
         """
+        print(f"county_prefix_report(child_prefix_span={child_prefix_span})")
         assert isinstance(child_prefix_span,int)
         c = self.cursor()
-        cmd = f"""SELECT substr(geocode,1,5+?) AS prefix,
+        cmd = f"""SELECT substr({self.geocode},1,5+?) AS prefix,
                   state,
                   county,
                   SUM(1) AS block_count,
@@ -91,43 +97,56 @@ class GeocodeStats:
         if WY_ONLY:
             cmd += " WHERE state='WY' "
 
-        cmd += """
-                  GROUP BY SUBSTR(geocode,1,5+?)
+        cmd += f"""
+                  GROUP BY SUBSTR({self.geocode},1,5+?)
                   ORDER BY 1
         """
         args = [child_prefix_span,child_prefix_span]
         if limit:
             cmd+= " LIMIT ?"
             args.append(limit)
-        print(cmd,args)
+        if self.args.debug:
+            print(cmd,args)
         c.execute(cmd,args)
         return c.fetchall()
 
     def add_span_report(self,wb,span):
         ws = wb.create_sheet(f'span={span}')
         try:
-            wb.remove_sheet(wb.get_sheet_by_name('Sheet'))
+            del wb['Sheet']
         except KeyError as e:
             pass
 
-        ws['A2']='State'
+        ws['A2']='STUSAB'
         ws['B2']='County'
         ws['C2']='Name'
         ws.column_dimensions['C'].width=20
         for ch in 'DEFGHIJKLMNOPQ':
             ws.column_dimensions[ch].width=10
 
-        ws.cell(column=4,row=1).value=f'Grouping by [state][county][{span} digits]'
+        s = span
+        if s>0:
+            msg  = f'Grouping by [state:{min(s,2)}]' ; s-=2
+        if s>0:
+            msg += f'[county:{min(s,3)}]'; s-=3
+        if args.geocode2 and s>0:
+            msg += f'[cousub:{min(s,4)}]'; s-=4
+        if s>0:
+            msg += f'[tract:{min(s,6)}]'; s-=6
+        if s>0:
+            msg += f'[block:{min(s,4)}]'; s-=4
+
+        ws.cell(column=4,row=1).value=msg
         ws.cell(column=4,row=1).alignment = CENTERED
         ws.merge_cells(start_row=1,end_row=1,start_column=4,end_column=7+10)
         ws.cell(column=6+9,row=1).border = right_border
-        ws.cell(column=4,row=2).value='#'
+        ws.cell(column=4,row=2).value='fanout'
         ws.cell(column=5,row=2).value='pop_tot'
         ws.cell(column=6,row=2).value='pop_avg'
-        ws.cell(column=7,row=2).value='min'
+        ws.cell(column=7,row=2).value='min pop'
         for n in range(1,10):
             ws.cell(column=7+n,row=2).value = f"{n*10}th pct."
-        ws.cell(column=7+10,row=2).value = f"max"
+        ws.cell(column=17,row=2).value='max pop'
         for col in range(4,7+10+1):
             ws.cell(column=col,row=2).alignment = CENTERED
         ws.cell(column=4,   row=2).border = right_border
@@ -146,21 +165,29 @@ class GeocodeStats:
             pops = []
             # Get all of the pops for this county...
             while counties and (state == counties[0]['state']) and (county == counties[0]['county']):
-                pops.append( counties[0]['pop'] )
+                pop = counties[0]['pop']
+                if not isinstance(pop,int):
+                    raise RuntimeError(str(dict(counties[0])))
+                pops.append( pop )
                 counties.pop(0)
-            ws[f'A{row}'] = state
-            ws[f'B{row}'] = f"{constants.stusab_to_state(state):2}{county:03}_"
-            ws[f'C{row}'] = gs.county_name(state, county)
+            name = gs.county_name(state, county)
+            ws[f'A{row}'] = constants.STATE_TO_STUSAB[state]
+            ws[f'B{row}'] = f"{state:2}{county:03}_"
+            ws[f'C{row}'] = name
             ws.cell(column=4, row=row).value = len(pops)
             ws.cell(column=4, row=row).border = right_border
             ws.cell(column=5, row=row).value = sum(pops)
             ws.cell(column=6, row=row).value = int(statistics.mean(pops))
             ws.cell(column=6, row=row).border = right_border
             d = deciles(pops)
-            for n in range(10):
+            for n in range(11):
                 ws.cell(column=7+n,row=row).value = d[n]
-            ws.cell(column=7+10,row=row).value = max(pops)
             ws.cell(column=7+10,row=row).border = right_border
+            if self.args.debug:
+                print("=============")
+                print(state,county,name)
+                print("pops:",pops)
+                print("deciles:",d)
             row += 1
         ws.freeze_panes = 'A3'
 
@@ -174,8 +201,11 @@ if __name__=="__main__":
     parser.add_argument("--allcounties", help="Report by counties", action='store_true')
     parser.add_argument("--limit", type=int, help="Return only this many")
     parser.add_argument("--report", type=int, help="Give report from span 1 to report (max=12)")
+    parser.add_argument("--geocode2", action='store_true', help="Use geocode2, not geocode")
+    parser.add_argument("--spanstart", type=int, default=5)
+    parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
-    gs = GeocodeStats(args.db)
+    gs = GeocodeStats(args)
     if args.prefix and args.span:
         count = 0
         for row in gs.prefixinfo(args.prefix,args.span):
@@ -187,10 +217,9 @@ if __name__=="__main__":
             print(dict(row))
         
     if args.report:
-        args.report = min(args.report, 12)
         print("making report")
         wb = Workbook()
-        for i in range(1,args.report+1):
-            gs.add_span_report(wb,i)
-            wb.save(f"report{i}.xlsx")
+        for span in range(args.spanstart,args.report+1):
+            gs.add_span_report(wb,span)
+            wb.save(f"report{span:02}.xlsx")
         

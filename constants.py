@@ -47,10 +47,10 @@ AIANSF = 'aiansf'
 UR1  = 'ur1'
 PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
 
-SUMLEV_TRACT = '140'
-SUMLEV_PL94_BLOCK = '750'
-SUMLEV_SF1_BLOCK = '101'
-SUMLEV_COUNTY = '050'
+SUMLEV_TRACT = 140
+SUMLEV_PL94_BLOCK = 750
+SUMLEV_SF1_BLOCK = 101
+SUMLEV_COUNTY = 50
 
 PRODUCT_EXTS = { PL94:'pl',
                  SF1:'sf1',
@@ -193,12 +193,6 @@ STATE_DICTS is a list of stat dictionaries, where each dict has the format:
 """
 STATE_DICTS=[dict(zip("state_name,stusab,state".split(","),line.split(","))) for line in STATE_DATA]
 
-"""
-STUSAB_TO_FIPS is a dictionary where the key is the stusab and the value is the FIPS code
-"""
-STUSAB_TO_FIPS = {d['stusab'] : d['state'] for d in STATE_DICTS}
-
-
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
 """
 Naming convention for SF2 data files is ssiiiyy_uf2.zip. 
@@ -209,6 +203,43 @@ which is available at http://www.census.gov/prod/cen2000/docs/sf2.pdf - page=278
 yy is the number of the file
    Valid codes are 01 through 04.  See below for distribution of tables across files.
 """
+
+FIPS_PLACE_CLASS_CODE={
+    "C1":"An active incorporated place that does not serve as a county subdivision equivalent",
+    "C2":"An active incorporated place that is legally coextensive with a county subdivision but treated as independent of any county subdivision (an independent place)",
+    "C5":"An active incorporated place that is independent of any county subdivision and serves as a county subdivision equivalent (an independent place)",
+    "C6":"An active incorporated place that is partially independent of any county subdivision and partially dependent within a legal county subdivision (exists in Iowa and Ohio only)",
+    "C7":"An incorporated place that is independent of any county (an independent city)",
+    "C8":"The balance of a consolidated city excluding the separately incorporated place(s) within that consolidated government",
+    "C9":"An inactive or nonfunctioning incorporated place",
+    "M2":"A census designated place (CDP) defined within a military or Coast Guard installation",
+    "U1":"A census designated place (CDP) with a name officially recognized by the U.S. Board on Geographic Names for a populated place",
+    "U2":"A census designated place (CDP) with a name not officially recognized by the U.S. Board on Geographic Names for a populated place"}
+
+FIPS_PLACE_CLASS_CODE={
+    "C1":"An active incorporated place that does not serve as a county subdivision equivalent",
+    "C2":"An active incorporated place that is legally coextensive with a county subdivision but treated as independent of any county subdivision (an independent place)",
+    "C5":"An active incorporated place that is independent of any county subdivision and serves as a county subdivision equivalent (an independent place)",
+    "C6":"An active incorporated place that is partially independent of any county subdivision and partially dependent within a legal county subdivision (exists in Iowa and Ohio only)",
+    "C7":"An incorporated place that is independent of any county (an independent city)",
+    "C8":"The balance of a consolidated city excluding the separately incorporated place(s) within that consolidated government",
+    "C9":"An inactive or nonfunctioning incorporated place",
+    "M2":"A census designated place (CDP) defined within a military or Coast Guard installation",
+    "U1":"A census designated place (CDP) with a name officially recognized by the U.S. Board on Geographic Names for a populated place",
+    "U2":"A census designated place (CDP) with a name not officially recognized by the U.S. Board on Geographic Names for a populated place"
+}
+
+FIPS_CONSOLIDATED_CITY={
+    "03436":"Athens-Clarke County, Georgia",
+    "04200":"Augusta-Richmond County, Georgia",
+    "11390":"Butte-Silver Bow, Montana",
+    "36000":"Indianapolis, Indiana",
+    "47500":"Milford, Connecticut",
+    "48003":"Louisville/Jefferson County, Kentucky",
+    "52004":"Nashville-Davidson, Tennessee"
+}
+
+
 
 # Download URLS.
 # Key differences between 2000 and 2010:
@@ -272,7 +303,8 @@ CIFSN_GEO=0
 # Create an array that maps state abbrev to state code.
 # The theory is that it's faster to do a dictonary lookup than a function call and a dictionary lookup
 
-STUSAB_TO_STATE = {sd['stusab']:sd['state'] for sd in STATE_DICTS}
+STUSAB_TO_STATE = {sd['stusab']:int(sd['state']) for sd in STATE_DICTS}
+STATE_TO_STUSAB = {int(sd['state']):sd['stusab'] for sd in STATE_DICTS}
     
 
 class YPSS:

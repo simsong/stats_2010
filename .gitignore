@@ -20,3 +20,5 @@ shell.out*
 \#*
 recon/logs
 recon.bash
+*.xlsx
+./*.pdf

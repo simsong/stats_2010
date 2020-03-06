@@ -41,19 +41,22 @@ CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
 SQL_SCHEMA="""
-CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
-                                   place INTEGER, aiannh INTEGER,
+CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode2 VARCHAR(15), 
+                                   state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
+                                   cousub INTEGER, aiannh INTEGER,
                                    logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode_idx ON blocks(geocode);
+CREATE UNIQUE INDEX IF NOT EXISTS geocode2_idx ON blocks(geocode2);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx1 ON blocks(state,county,tract,block);
 CREATE INDEX IF NOT EXISTS blocks_tract  ON blocks(tract);
 CREATE INDEX IF NOT EXISTS blocks_pop    ON blocks(pop);
 CREATE INDEX IF NOT EXISTS blocks_houses ON blocks(houses);
-CREATE INDEX IF NOT EXISTS blocks_place  ON blocks(place);
+CREATE INDEX IF NOT EXISTS blocks_cousub  ON blocks(cousub);
 CREATE INDEX IF NOT EXISTS blocks_aiannh ON blocks(aiannh);
 
-CREATE TABLE IF NOT EXISTS tracts (state INTEGER, county INTEGER, tract INTEGER, logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
+CREATE TABLE IF NOT EXISTS tracts (state INTEGER, county INTEGER, tract INTEGER, logrecno INTEGER, 
+                                   pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS tracts_idx0 ON tracts(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS tracts_idx1 ON tracts(state,county,tract);
 CREATE INDEX IF NOT EXISTS tracts_idx10 ON tracts(tract);
@@ -89,6 +92,7 @@ GEO_HEADER = {
     "LOGRECNO" : (7,19, nint),
     "STATE" : (2,28, nint),
     "COUNTY" : (3,30, nint),
+    "COUSUB" : (5, 37, nint),
     "PLACE" : (5,46, nint),        # Incorporated place or census designated place,
     "PLACECC" : (2,51, str),
     "TRACT" : (6,55, nint),            
@@ -100,27 +104,6 @@ GEO_HEADER = {
     "TTRACT" : (6, 99, str),
     "NAME"   : (90,227, strip_str)       # in Latin1 for 2000 and 2010,
 }
-
-FIPS_PLACE_CLASS_CODE={
-    "C1":"An active incorporated place that does not serve as a county subdivision equivalent",
-    "C2":"An active incorporated place that is legally coextensive with a county subdivision but treated as independent of any county subdivision (an independent place)",
-    "C5":"An active incorporated place that is independent of any county subdivision and serves as a county subdivision equivalent (an independent place)",
-    "C6":"An active incorporated place that is partially independent of any county subdivision and partially dependent within a legal county subdivision (exists in Iowa and Ohio only)",
-    "C7":"An incorporated place that is independent of any county (an independent city)",
-    "C8":"The balance of a consolidated city excluding the separately incorporated place(s) within that consolidated government",
-    "C9":"An inactive or nonfunctioning incorporated place",
-    "M2":"A census designated place (CDP) defined within a military or Coast Guard installation",
-    "U1":"A census designated place (CDP) with a name officially recognized by the U.S. Board on Geographic Names for a populated place",
-    "U2":"A census designated place (CDP) with a name not officially recognized by the U.S. Board on Geographic Names for a populated place"}
-
-FIPS_CONSOLIDATED_CITY={
-    "03436":"Athens-Clarke County, Georgia",
-    "04200":"Augusta-Richmond County, Georgia",
-    "11390":"Butte-Silver Bow, Montana",
-    "36000":"Indianapolis, Indiana",
-    "47500":"Milford, Connecticut",
-    "48003":"Louisville/Jefferson County, Kentucky",
-    "52004":"Nashville-Davidson, Tennessee"}
 
 DEBUG_BLOCK=None
 
@@ -147,11 +130,11 @@ def geo_extract(line):
             print(gh,extract(gh,line),end='',file=sys.stderr)
             print(GEO_HEADER[gh][2]( extract(gh,line) ),file=sys.stderr )
 
-
-
-
 def geo_geocode(line):
-    return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','TRACT','BLOCK']] )
+    return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','TRACT', 'BLOCK']] )
+
+def geo_geocode2(line):
+    return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','COUSUB','TRACT', 'BLOCK']] )
 
 def info_geo_line(conn, c, line):
     """Just print information about a geography line"""
@@ -183,11 +166,13 @@ class Loader:
             return
 
         if sumlev in (SUMLEV_SF1_BLOCK, SUMLEV_PL94_BLOCK):
-            geocode = geo_geocode(line)
+            geocode  = geo_geocode(line)
+            geocode2 = geo_geocode2(line)
             c.execute("INSERT INTO blocks "
-                      "(geocode, state, county,tract,block,place,aiannh,logrecno) values (?,?,?,?,?,?,?,?)",
-                      (geocode, geo['STATE'], geo['COUNTY'], geo['TRACT'], geo['BLOCK'], geo['PLACE'],
+                      "(geocode, geocode2, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?)",
+                       (geocode, geocode2, geo['STATE'], geo['COUNTY'], geo['TRACT'], geo['BLOCK'], geo['COUSUB'],
                        geo['AIANNH'], geo['LOGRECNO']))
+
 
         elif sumlev == SUMLEV_TRACT:
             c.execute("INSERT INTO tracts (state,county,tract,logrecno) values (?,?,?,?)",

@@ -1,6 +1,7 @@
 STATES=ak al ar az ca co ct dc de fl ga hi ia id il in ks ky la ma md me mi mn mo ms mt nc nd ne nh nj nm nv ny oh ok or pa pr ri sc sd tn tx ut va vt wa wi wv wy
 LIMIT=100
 GEODIR=/mnt/data/2010_sf1/geo
+PYTHON=/opt/anaconda3/bin/python
 
 all:
 	@echo Please read the Makefile.
@@ -20,29 +21,36 @@ clean_data:
 	@echo /bin/rm -rf data
 
 pl94_download:
-	python download_all.py pl94
+	$(PYTHON) download_all.py pl94
 
 pl94_load:
-	python pl94_dbload.py --wipe data/2010_pl94/dist/*.zip
+	$(PYTHON) pl94_dbload.py --wipe data/2010_pl94/dist/*.zip
 	rm -f pl94_ro.sqlite3
 	cp -c pl94.sqlite3 pl94_ro.sqlite3
 	chmod 444 pl94_ro.sqlite3
 
-r2:
-	python geocode_stats.py --db ak.sqlite3 --geocode2 --report 16 --debug --spanstart 16
-
 r1:
-	python geocode_stats.py --geocode2 --report 10 --spanstart 5
+	$(PYTHON) geocode_stats.py --db ak.sqlite3            --reportprefix 5 --childspan 8-8
 
-pl94_loadak:
-	python pl94_dbload.py --db ak.sqlite3 --wipe data/2010_pl94/dist/ak2010.pl.zip
+r2:
+	$(PYTHON) geocode_stats.py --db ak.sqlite3 --geocode2 --reportprefix 5 --childspan 8-8
+
+r3:
+	$(PYTHON) geocode_stats.py --db ak.sqlite3 --geocode3 --reportprefix 6 --c1 7 --c2 7 --debug
+
+ak_r3:
+	$(PYTHON) geocode_stats.py --db ak.sqlite3 --geocode3 --reportprefix 6 --c1 7 --c2 14 
+
+ak_load:
+	@echo Just loading ak in ak.sqlite3
+	$(PYTHON) pl94_dbload.py --db ak.sqlite3 --wipe data/2010_pl94/dist/ak2010.pl.zip
 
 pl94_load_geo: pl94_dbload.py
-	python pl94_dbload.py data/??geo2010.pl
+	$(PYTHON) pl94_dbload.py data/??geo2010.pl
 
 download_ak:
 	@echo Downloading all of the data associated with AK.
-	python download_all.py --state ak pl94 sf1 sf2
+	$(PYTHON) download_all.py --state ak pl94 sf1 sf2
 
 make_crosswalks:
 	bash crosswalk_generator_all

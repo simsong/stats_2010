@@ -25,14 +25,13 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment
 from openpyxl.styles.borders import Border, Side, BORDER_THIN
+from openpyxl.comments import Comment
 thin_border = Border(
     left=Side(border_style=BORDER_THIN, color='00000000'),
     right=Side(border_style=BORDER_THIN, color='00000000'),
     top=Side(border_style=BORDER_THIN, color='00000000'),
     bottom=Side(border_style=BORDER_THIN, color='00000000')
 )
-
-WY_ONLY = False
 
 right_border = Border(
     right=Side(border_style=BORDER_THIN, color='00000000')
@@ -48,7 +47,12 @@ class GeocodeStats:
         self.args = args
         self.conn = sqlite3.connect(args.db)
         self.conn.row_factory = sqlite3.Row # give me dicts
-        self.geocode = 'geocode2' if args.geocode2 else 'geocode'
+        if self.args.geocode2:
+            self.geocode = 'geocode2'
+        elif self.args.geocode3:
+            self.geocode = 'geocode3'
+        else:
+            self.geocode = 'geocode'
 
         c = self.cursor()
         c.execute(f"PRAGMA cache_size = {-1024*1024}") # 1GiB cache
@@ -61,82 +65,59 @@ class GeocodeStats:
     def county_name(self,state,county):
         return self.counties[(state,county)]
 
-    def prefixinfo(self,prefix,child_prefix_span):
-        """For a given prefix and a span of characters for the child's prefix, 
-        return a list of the children, and for each the number of blocks and number of people.
-        The fanout is the size of the list.
-        """
-        c = self.cursor()
-        pl = len(prefix)
-        cmd = f"""SELECT substr({self.geocode},1,{pl+child_prefix_span}) AS prefix,
-                  SUM(1) AS block_count,
-                  SUM( CASE WHEN pop>0 THEN 1 ELSE 0 END) as pop_block_count,
-                  SUM(pop) AS pop 
-                  FROM blocks 
-                  WHERE SUBSTR({self.geocode},1,{pl})=?
-                  GROUP BY SUBSTR({self.geocode},1,{pl+child_prefix_span})"""
-        print(cmd)
-        c.execute(cmd,[prefix])
-        return c.fetchall()
-
-    def county_prefix_report(self,child_prefix_span,limit=None):
-        """For every county, report the number of children, the blocks in each child, 
-        the number of populated blocks in each child, and the population. 
-        if child_prefix_span=6, then it is a tract-by-tract report.
-        """
-        print(f"county_prefix_report(child_prefix_span={child_prefix_span})")
+    def group_blocks_by_prefix(self,child_prefix_span,limit=None):
+        """Group all of the blocks by a given prefix and return aggregate statistics. 
+        They then get re-arregated at a higher level by the caller"""
         assert isinstance(child_prefix_span,int)
+        grouper  = f"SUBSTR({self.geocode},1,{child_prefix_span}) "
         c = self.cursor()
-        cmd = f"""SELECT substr({self.geocode},1,5+?) AS prefix,
-                  state,
-                  county,
+        cmd = f"""SELECT {grouper} AS prefix, state, county, aiannh,
                   SUM(1) AS block_count,
-                  SUM( CASE WHEN pop>0 THEN 1 ELSE 0 END) as pop_block_count,
-                  SUM(pop) AS pop 
-                  FROM blocks"""
-        if WY_ONLY:
-            cmd += " WHERE state='WY' "
-
-        cmd += f"""
-                  GROUP BY SUBSTR({self.geocode},1,5+?)
-                  ORDER BY 1
-        """
-        args = [child_prefix_span,child_prefix_span]
+                  SUM( CASE WHEN pop>0 THEN 1 ELSE 0 END) as populated_block_count,
+                  SUM(pop) AS population
+                  FROM blocks """
+        if self.args.geocode3:
+            cmd += "WHERE geocode3 is not NULL \n"
+        cmd += f"""GROUP BY {grouper}
+                  ORDER BY 1 """
         if limit:
-            cmd+= " LIMIT ?"
+            cmd+= "LIMIT ? "
             args.append(limit)
         if self.args.debug:
-            print(cmd,args)
-        c.execute(cmd,args)
+            print(cmd)
+        c.execute(cmd)
         return c.fetchall()
 
-    def add_span_report(self,wb,span):
-        ws = wb.create_sheet(f'span={span}')
-        try:
+    def decoder(self,child_prefix_span):
+        if self.args.geocode2:
+            ary = [ ('state',2), ('county',3), ('cousub',5), ('tract',4), ('block',4)]
+        elif self.args.geocode3:
+            ary = [ ('AIAN state',2), ('aiannh',4), ('tract',4), ('block',4)]
+        else:
+            ary = [ ('state',2), ('county',3), ('tract',4), ('block',4)]
+            
+        msg = 'Grouping by '
+        while child_prefix_span > 0:
+            s = min(child_prefix_span,ary[0][1])
+            msg += f"[{ary[0][0]}:{s}]"
+            child_prefix_span -= s
+            ary.pop(0)
+        return msg
+
+    def add_span_report(self,wb,child_prefix_span):
+        """Create a report for a given child_prefix_span. A span=2 is by state, a span=5 is state and county."""
+        ws = wb.create_sheet(f'S {child_prefix_span}')
+        if 'Sheet' in wb:
             del wb['Sheet']
-        except KeyError as e:
-            pass
 
         ws['A2']='STUSAB'
-        ws['B2']='County'
+        ws['B2']='Prefix'
         ws['C2']='Name'
         ws.column_dimensions['C'].width=20
         for ch in 'DEFGHIJKLMNOPQ':
             ws.column_dimensions[ch].width=10
 
-        s = span
-        if s>0:
-            msg  = f'Grouping by [state:{min(s,2)}]' ; s-=2
-        if s>0:
-            msg += f'[county:{min(s,3)}]'; s-=3
-        if args.geocode2 and s>0:
-            msg += f'[cousub:{min(s,4)}]'; s-=4
-        if s>0:
-            msg += f'[tract:{min(s,6)}]'; s-=6
-        if s>0:
-            msg += f'[block:{min(s,4)}]'; s-=4
-
-        ws.cell(column=4,row=1).value=msg
+        ws.cell(column=4,row=1).value = self.decoder(child_prefix_span)
         ws.cell(column=4,row=1).alignment = CENTERED
         ws.merge_cells(start_row=1,end_row=1,start_column=4,end_column=7+10)
         ws.cell(column=6+9,row=1).border = right_border
@@ -153,73 +134,87 @@ class GeocodeStats:
         ws.cell(column=6,   row=2).border = right_border
         ws.cell(column=7+10,row=2).border = right_border
 
-        # First get a report of all the tracts in the US and iterate through it
-        # to populate the base spreadsheet
+        # Using the grouper that we have specified for children, get the report
         total_tracts = 0
         row = 3
-        counties = gs.county_prefix_report(child_prefix_span=span)
-        last = (None,None)
+        data = gs.group_blocks_by_prefix(child_prefix_span=child_prefix_span)
+        total_population = 0
 
-        while counties:
-            (state,county) = (counties[0]['state'],counties[0]['county'])
-            pops = []
-            # Get all of the pops for this county...
-            while counties and (state == counties[0]['state']) and (county == counties[0]['county']):
-                pop = counties[0]['pop']
-                if not isinstance(pop,int):
-                    raise RuntimeError(str(dict(counties[0])))
-                pops.append( pop )
-                counties.pop(0)
-            name = gs.county_name(state, county)
+        details = []
+
+        while data:
+            reporting_prefix = data[0]['prefix'][0:self.args.reportprefix]
+            details.append((reporting_prefix,""))
+            state = data[0]['state']
+            county = data[0]['county']
+            populations = []
+            # Get all of the populations for this prefix
+            while data and (reporting_prefix == data[0]['prefix'][0:self.args.reportprefix]):
+                d = data.pop(0)
+                details.append((d['prefix'],d['population']))
+                group_population = d['population']
+                total_population += group_population
+                if not isinstance(group_population,int):
+                    raise RuntimeError(str(dict(data[0])))
+                populations.append( group_population )
             ws[f'A{row}'] = constants.STATE_TO_STUSAB[state]
-            ws[f'B{row}'] = f"{state:2}{county:03}_"
-            ws[f'C{row}'] = name
-            ws.cell(column=4, row=row).value = len(pops)
+            ws[f'B{row}'] = reporting_prefix
+            ws[f'C{row}'] = gs.county_name(state, county)
+            ws.cell(column=4, row=row).value = len(populations)
             ws.cell(column=4, row=row).border = right_border
-            ws.cell(column=5, row=row).value = sum(pops)
-            ws.cell(column=6, row=row).value = int(statistics.mean(pops))
+
+            ws.cell(column=5, row=row).value = sum(populations)
+            ws.cell(column=6, row=row).value = int(statistics.mean(populations))
             ws.cell(column=6, row=row).border = right_border
-            d = deciles(pops)
+            d = deciles(populations)
             for n in range(11):
                 ws.cell(column=7+n,row=row).value = d[n]
             ws.cell(column=7+10,row=row).border = right_border
+            details.append(("",""))
             if self.args.debug:
                 print("=============")
-                print(state,county,name)
-                print("pops:",pops)
+                print(f"reporting_prefix: {reporting_prefix}")
+                print("populations:",populations[1:10],"...")
                 print("deciles:",d)
             row += 1
         ws.freeze_panes = 'A3'
+        ws.auto_filter.ref = f'A2:Q{row-1}'
+        row += 1
+        ws.cell(column=3, row=row).value = "Total population:"
+        ws.cell(column=5, row=row).value = total_population
+        row += 2
+        ws.cell(column=3, row=row).value = "Details:"
+        row += 1
+        for (a,b) in details:
+            ws.cell(column=3, row=row).value=a
+            ws.cell(column=4, row=row).value=b
+            row += 1
+            
+
 
 if __name__=="__main__":
     import argparse
     parser = argparse.ArgumentParser(description='Report statistics about geocode prefixes',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--prefix", help="Report about a prefix")
-    parser.add_argument("--span", type=int, help="Specify number of characters for span")
+    parser.add_argument("--child_prefix_span", type=int, help="Specify number of characters for child_prefix_span")
     parser.add_argument("--db", help="Specify database location", default=pl94_dbload.DBFILE)
-    parser.add_argument("--allcounties", help="Report by counties", action='store_true')
     parser.add_argument("--limit", type=int, help="Return only this many")
-    parser.add_argument("--report", type=int, help="Give report from span 1 to report (max=12)")
     parser.add_argument("--geocode2", action='store_true', help="Use geocode2, not geocode")
-    parser.add_argument("--spanstart", type=int, default=5)
+    parser.add_argument("--geocode3", action='store_true', help="Use geocode3, not geocode")
+    parser.add_argument("--reportprefix", type=int, help="Characters in geocode for report")
+    parser.add_argument("--c1", type=int, default=6, help="Character to start child span report")
+    parser.add_argument("--c2", type=int, default=6, help="Character to end child span report")
     parser.add_argument("--debug", action='store_true')
     args = parser.parse_args()
     gs = GeocodeStats(args)
-    if args.prefix and args.span:
-        count = 0
-        for row in gs.prefixinfo(args.prefix,args.span):
-            count += 1
-            print(dict(row))
-        print("Count: ",count)
-    if args.allcounties:
-        for row in gs.county_prefix_report(args.span,limit=args.limit):
-            print(dict(row))
-        
-    if args.report:
-        print("making report")
+
+    if args.reportprefix:
         wb = Workbook()
-        for span in range(args.spanstart,args.report+1):
-            gs.add_span_report(wb,span)
-            wb.save(f"report{span:02}.xlsx")
+        for child_prefix_span in range(args.c1,args.c2+1):
+            gs.add_span_report(wb,child_prefix_span)
+            fname = f"report{child_prefix_span:02}.xlsx"
+            print("Saving",fname)
+            wb.save(fname)
+            
         

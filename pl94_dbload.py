@@ -2,9 +2,8 @@
 #
 """
 pl94_dbload.py: create an SQLite3 database from PL94 data for blocks and tracts. Data loaded includes:
-Blocks:   STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED 
-Tracts:   STATE | COUNTY | TRACT | LOGRECNO  
-Counties: STATE | COUNTY | NAME
+Blocks:   STATE  | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED 
+Geo:      (all fields we record from the GeoHeader)
 
 PL94 Datasources:
   STATE|COUNTY|TRACT|BLOCK => LOGRECNO  -- Geography file
@@ -16,6 +15,9 @@ SF1 Datasources:
 NOTES: 
  * LOGRECNO is not consistent between the PL94 and SF1 files
  * HOUSES and OCCUPIED do not include GROUP QUARTERS
+ * geocode  - basic geocode.      STATE/COUNTY/TRACT/BLOCK
+ * geocode2 -                     STATE/COUNTY/COUSUB/TRACT/BLOCK
+ * geocode3 - Just AIANs.         STATE/COUSUB/AIANNH/BLOCK
 """
 
 __version__ = '0.1.0'
@@ -40,13 +42,14 @@ DEBUG_AIAN = None
 CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is a 16MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
-SQL_SCHEMA="""
-CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode2 VARCHAR(15), 
+SQL_BLOCKS_SCHEMA="""
+CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode2 VARCHAR(15), geocode3 VARCHAR(25),
                                    state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
                                    cousub INTEGER, aiannh INTEGER,
                                    logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode_idx ON blocks(geocode);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode2_idx ON blocks(geocode2);
+CREATE UNIQUE INDEX IF NOT EXISTS geocode3_idx ON blocks(geocode3);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx1 ON blocks(state,county,tract,block);
 CREATE INDEX IF NOT EXISTS blocks_tract  ON blocks(tract);
@@ -54,19 +57,6 @@ CREATE INDEX IF NOT EXISTS blocks_pop    ON blocks(pop);
 CREATE INDEX IF NOT EXISTS blocks_houses ON blocks(houses);
 CREATE INDEX IF NOT EXISTS blocks_cousub  ON blocks(cousub);
 CREATE INDEX IF NOT EXISTS blocks_aiannh ON blocks(aiannh);
-
-CREATE TABLE IF NOT EXISTS tracts (state INTEGER, county INTEGER, tract INTEGER, logrecno INTEGER, 
-                                   pop INTEGER, houses INTEGER, occupied INTEGER);
-CREATE UNIQUE INDEX IF NOT EXISTS tracts_idx0 ON tracts(state,logrecno);
-CREATE UNIQUE INDEX IF NOT EXISTS tracts_idx1 ON tracts(state,county,tract);
-CREATE INDEX IF NOT EXISTS tracts_idx10 ON tracts(tract);
-CREATE INDEX IF NOT EXISTS tracts_idx11 ON tracts(pop);
-CREATE INDEX IF NOT EXISTS tracts_idx12 ON tracts(houses);
-
-CREATE TABLE IF NOT EXISTS counties (stusab VARCHAR(2),state INTEGER, county INTEGER, name VARCHAR(90));
-CREATE UNIQUE INDEX IF NOT EXISTS counties_idx0 ON counties(state,county);
-CREATE UNIQUE INDEX IF NOT EXISTS counties_idx1 ON counties(stusab,county);
-
 """
 
 def nint(val):
@@ -90,14 +80,14 @@ GEO_HEADER = {
     "STUSAB" : (2,7, str),
     "SUMLEV" : (3,9, nint),
     "LOGRECNO" : (7,19, nint),
-    "STATE" : (2,28, nint),
-    "COUNTY" : (3,30, nint),
+    "STATE" :  (2,28, nint),
+    "COUNTY" : (3, 30, nint),
     "COUSUB" : (5, 37, nint),
-    "PLACE" : (5,46, nint),        # Incorporated place or census designated place,
-    "PLACECC" : (2,51, str),
-    "TRACT" : (6,55, nint),            
+    "PLACE"  : (5, 46, nint),        # Incorporated place or census designated place,
+    "PLACECC": (2,51, str),
+    "TRACT"  :  (6,55, nint),            
     "BLKGRP" : (1,61, nint),       # first digit of block is blockgroup,
-    "BLOCK" : (4,62, nint),        
+    "BLOCK"  :  (4,62, nint),        
     "CONCIT": (5, 68, nint),
     "AIANNH" : (4,77, nint),
     "AITSCE" : (3, 89, nint),
@@ -118,12 +108,15 @@ def create_schema(conn,schema):
             print(e)
             exit(1)
 
+
 def extract(gh,line):
+    """Extract just the field from the GEO file"""
     return line[GEO_HEADER[gh][1]-1:GEO_HEADER[gh][1]-1+GEO_HEADER[gh][0]]
 
-def geo_extract(line):
+def extract_typed(line):
+    """Extract a typed value from the GEO file"""
     try:
-        return { gh : GEO_HEADER[gh][2]( extract(gh, line)) for gh in GEO_HEADER }
+        return { gh : GEO_HEADER[gh][2]( extract(gh, line).strip()) for gh in GEO_HEADER }
     except ValueError:
         print("line:",line,file=sys.stderr)
         for gh in GEO_HEADER:
@@ -136,9 +129,17 @@ def geo_geocode(line):
 def geo_geocode2(line):
     return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','COUSUB','TRACT', 'BLOCK']] )
 
+def geo_geocode3(line):
+    aiannh = extract('AIANNH', line)
+    if aiannh=='9999':
+        return None
+    geo3 = "".join( [ extract(gh, line) for gh in ['STATE', 'AIANNH', 'TRACT', 'BLOCK'] ])
+    geo3 = chr(64 + int(geo3[0])) + chr(64 + int(geo3[1])) + geo3[2:]
+    return geo3
+
 def info_geo_line(conn, c, line):
     """Just print information about a geography line"""
-    print( geo_geocode(line),geo_extract( line ))
+    print( geo_geocode(line),extract_typed( line ))
 
 class Loader:
     def __init__(self, args):
@@ -147,40 +148,59 @@ class Loader:
         self.conn.cursor().execute(SQL_SET_CACHE)
         self.conn.row_factory = sqlite3.Row
         self.debug_logrecno = []       # logrecs to print
-        create_schema(self.conn, SQL_SCHEMA)
+        create_schema(self.conn, SQL_BLOCKS_SCHEMA)
+        self.add_geo_schema()
+
+    def add_geo_schema(self):
+        c = self.conn.cursor()
+        f = io.StringIO()
+        f.write("CREATE TABLE IF NOT EXISTS geo (")
+        for (ct,gh) in enumerate(GEO_HEADER):
+            if ct>0:
+                f.write(",")
+            f.write(gh.lower())
+            if GEO_HEADER[gh][2] in (str,strip_str):
+                f.write(f" VARCHAR({GEO_HEADER[gh][0]}) ")
+            else:
+                f.write(f" INTEGER ")
+        f.write(");")
+        c.execute(f.getvalue())
+        for gh in GEO_HEADER:
+            c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
+        
 
     def decode_geo_line(self, c, line):
         """Decode the hiearchical geography lines. These must be done before the other files are read
         to get the logrecno."""
 
-        geo = geo_extract(line)
+        geo = extract_typed(line)
         if geo['AIANNH']==DEBUG_AIAN and geo['SUMLEV']==750:
             print(geo)
             self.debug_logrecno.append(geo['LOGRECNO'])
-        assert geo['FILEID'] in ('PLST  ','SF1ST ')
+        assert geo['FILEID'] in ('PLST','SF1ST')
 
         # Extract the fields
         sumlev = geo['SUMLEV']
 
-        if (args.sumlev is not None) and (args.sumlev!=sumlev):
+        if (self.args.sumlev is not None) and (self.args.sumlev!=sumlev):
             return
 
         if sumlev in (SUMLEV_SF1_BLOCK, SUMLEV_PL94_BLOCK):
             geocode  = geo_geocode(line)
             geocode2 = geo_geocode2(line)
+            geocode3 = geo_geocode3(line)
             c.execute("INSERT INTO blocks "
-                      "(geocode, geocode2, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?)",
-                       (geocode, geocode2, geo['STATE'], geo['COUNTY'], geo['TRACT'], geo['BLOCK'], geo['COUSUB'],
+                      "(geocode, geocode2, geocode3, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?,?)",
+                       (geocode, geocode2, geocode3, geo['STATE'], geo['COUNTY'], geo['TRACT'], geo['BLOCK'], geo['COUSUB'],
                        geo['AIANNH'], geo['LOGRECNO']))
 
+        cmd = "INSERT INTO geo (" + ",".join(GEO_HEADER.keys()) + ") values (" + ",".join(["?"]*len(GEO_HEADER)) + ")"
+        data = extract_typed(line)
+        args = [data[gh] for gh in GEO_HEADER]
+        c.execute(cmd,args)
 
-        elif sumlev == SUMLEV_TRACT:
-            c.execute("INSERT INTO tracts (state,county,tract,logrecno) values (?,?,?,?)",
-                      (geo['STATE'], geo['COUNTY'], geo['TRACT'], geo['LOGRECNO']))
+                                                                                              
 
-        elif sumlev == SUMLEV_COUNTY:
-            c.execute("INSERT INTO counties (stusab,state,county,name) values (?,?,?,?)",
-                      (geo['STUSAB'], geo['STATE'], geo['COUNTY'], geo['NAME']))
 
     def decode_012010(self, c, line):
         """Update the database for a line in segemtn 1 of the 2010 PL94 or SF1 files. 
@@ -196,7 +216,6 @@ class Loader:
         # Update the blocks. If LOGRECNO is not in database, nothing is updated
         # because of referential integrity, LOGRECNO can only be in the database once
         c.execute("UPDATE blocks SET pop=? WHERE state=? AND logrecno=?", (P0010001,state,logrecno))
-        c.execute("UPDATE tracts SET pop=? WHERE state=? AND logrecno=?", (P0010001,state,logrecno))
 
     def decode_pl94_022010(self, c, line):
         """Update the database for a line. Note that the logical record number may not be in the DB, 
@@ -215,7 +234,6 @@ class Loader:
 
         assert fileid=='PLST'
         c.execute("UPDATE blocks set houses=?,occupied=? where state=? and logrecno=?", (H0010001,H0010002,state,logrecno))
-        c.execute("UPDATE tracts set houses=?,occupied=? where state=? and logrecno=?", (H0010001,H0010002,state,logrecno))
 
     def load_file(self, f, func):
         t0 = time.time()
@@ -226,7 +244,7 @@ class Loader:
             except ValueError as e:
                 raise ValueError("bad line {}: {}".format(ll,line))
             if ll%10000==0:
-                print("{}...".format(ll),end='',file=sys.stderr)
+                print("{}...".format(ll),end='',file=sys.stderr,flush=True)
         self.conn.commit()
         t1 = time.time()
         print(f"Finished {f.name}; {ll} lines, {ll/(t1-t0):,.0f} lines/sec")
@@ -252,8 +270,7 @@ class Loader:
             zf = zipfile.ZipFile(fname)
             for zn in zf.namelist():
                 if zn.endswith(".pl"):
-                    self.process_file_name( io.TextIOWrapper(zf.open(zn), encoding='latin1'),
-                                            zn)
+                    self.process_file_name( io.TextIOWrapper(zf.open(zn), encoding='latin1'), zn)
             return
         self.process_file_name(open(fname, encoding='latin1'), name)
 

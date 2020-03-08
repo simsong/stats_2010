@@ -43,7 +43,7 @@ CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
 SQL_BLOCKS_SCHEMA="""
-CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode2 VARCHAR(15), geocode3 VARCHAR(25),
+CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode2 VARCHAR(15), geocode3 VARCHAR(26),
                                    state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
                                    cousub INTEGER, aiannh INTEGER, 
                                    logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
@@ -72,6 +72,22 @@ def nint(val):
 
 def strip_str(val):
     return str(val).strip()
+
+EXCLUDE_STATE_RECOGNIZED_TRIBES=True
+def include_aiannh(code):
+    if 1 <= code <= 4999:
+        return "Federally recognized American Indian Reservations and Off-Reservation Trust Lands"
+    elif 5000 <= code  <=5999:
+        return "Hawaiian Home Lands"
+    elif 6000 <= code <= 7999:
+        return "Alaska Native Village Statistical Areas"
+    elif 9000 <= code <= 9499:
+        if EXCLUDE_STATE_RECOGNIZED_TRIBES:
+            return False
+        else:
+            return "State recognized American Indian Reservations"
+    else:
+        return False
 
 
 # Define the fileds in the GEO Header. See Figure 2-5 of PL94 & SF1 publications
@@ -120,7 +136,7 @@ def extract(field,line):
 def extractall_typed(line):
     """Extract all the values as a typed dictionary"""
     try:
-        return { gh : GEO_HEADER[gh][2]( extract(gh, line).strip()) for gh in GEO_HEADER }
+        return { gh : GEO_HEADER[gh][2]( extract(gh, line).strip()) for gh in GEO_HEADER}
     except ValueError:
         print("line:",line,file=sys.stderr)
         for gh in GEO_HEADER:
@@ -146,39 +162,40 @@ def geo_geocode3(gh):
     6 - BLOCK                                     | BLOCK
     """
     code = []
+    block  = f"{gh['BLOCK']:04}"
+    blkgrp2 = block[0:2]         # note 2-digit block groups
     if gh['STATE']==DC_FIPS:
         # Washington DC
         code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
         code.append(f"XXX")               # COUNTY; Washington DC has no COUNTY level
         code.append(f"{int(gh['SLDU']):05}")  # PLACE in the district of columbia
-        code.append(f"{gh['TRACT']:06}")  # TRACT 
-        code.append(f"{gh['BLKGRP']:01}") # BLKGRP
-        code.append(f"{gh['BLOCK']:04}")  # BLOCK
-    elif gh['AIANNH']==9999 and gh['STATE'] not in STRONG_MCD_STATES:
-        # Non-AIAN area and 38 states not strong MCD
-        code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
-        code.append(f"{gh['COUNTY']:03}") # COUNTY; 3 characters
-        code.append(f"{gh['PLACE']:05}")  # PLACE in 38 states with strong MCD
-        code.append(f"{gh['TRACT']:06}")  # TRACT 
-        code.append(f"{gh['BLKGRP']:01}") # BLKGRP
-        code.append(f"{gh['BLOCK']:04}")  # BLOCK
-    elif gh['AIANNH']==9999 and gh['STATE'] in STRONG_MCD_STATES:
-        # Non-AIAN area in 12 state with strong MCD
-        code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
-        code.append(f"XXX")               # COUNTY; 3 characters (ignored with strong MCD)
-        code.append(f"{gh['COUSUB']:05}")  # PLACE; COUSUB in 12 strong-MCD states
-        code.append(f"{gh['TRACT']:06}")  # TRACT 
-        code.append(f"{gh['BLKGRP']:01}") # BLKGRP
-        code.append(f"{gh['BLOCK']:04}")  # BLOCK
-    else:
+        code.append(f"___{gh['TRACT']:06}")  # TRACT (9 digits)
+        code.append( blkgrp2 )  # BLKGRP
+        code.append( block   )  # BLOCK
+    elif include_aiannh(gh['AIANNH']):
         # AIANNH portion of 38-states with AIANNH
         code.append(f"{gh['STATE']:02}A") # STATE; 3 characters
         code.append(f"IAN")               # COUNTY; 3 characters (ignored in AIANNH regions)
         code.append(f"{gh['AIANNH']:05}") # PLACE; 5 characters
-        code.append(f"{gh['TRACT']:06}")  # TRACT; 6 characters
-        code.append(f"{gh['BLKGRP']:01}") # BLKGRP; 1 character
-        code.append(f"{gh['BLOCK']:04}")  # BLOCK; 4 characters
-
+        code.append(f"{gh['COUNTY']:03}{gh['TRACT']:06}")  # COUNTY + TRACT; 9 characters (for uniqueness)
+        code.append( blkgrp2 ) # BLKGRP; 1 character
+        code.append( block )  # BLOCK; 4 characters
+    elif gh['STATE'] in STRONG_MCD_STATES:
+        # Non-AIAN area in 12 state with strong MCD
+        code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
+        code.append(f"XXX")               # COUNTY; 3 characters (ignored with strong MCD)
+        code.append(f"{gh['COUSUB']:05}")  # PLACE; COUSUB in 12 strong-MCD states
+        code.append(f"{gh['COUNTY']:03}{gh['TRACT']:06}")  # COUNTY + TRACT; 9 characters (for uniqueness)
+        code.append( blkgrp2 ) # BLKGRP 2
+        code.append( block  )  # BLOCK
+    else:
+        # Non-AIAN area and 38 states not strong MCD
+        code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
+        code.append(f"{gh['COUNTY']:03}") # COUNTY; 3 characters
+        code.append(f"{gh['PLACE']:05}")  # PLACE in 38 states with strong MCD
+        code.append(f"___{gh['TRACT']:06}")  # TRACT 
+        code.append( blkgrp2 ) # BLKGRP
+        code.append( block  )  # BLOCK
     return "".join(code)
 
 def info_geo_line(conn, c, line):
@@ -191,7 +208,6 @@ class Loader:
         self.conn = db_connection(self.args.db)
         self.conn.cursor().execute(SQL_SET_CACHE)
         self.conn.row_factory = sqlite3.Row
-        self.debug_logrecno = []       # logrecs to print
         create_schema(self.conn, SQL_BLOCKS_SCHEMA)
         self.add_geo_schema()
 
@@ -218,13 +234,12 @@ class Loader:
         to get the logrecno."""
 
         gh = extractall_typed(line)
-        if gh['AIANNH']==DEBUG_AIAN and gh['SUMLEV']==750:
-            print(gh)
-            self.debug_logrecno.append(gh['LOGRECNO'])
+        if gh['LOGRECNO']==self.args.debuglogrecno:
+            print("\n",gh)
         assert gh['FILEID'] in ('PLST','SF1ST')
 
         if gh['TRACT'] and gh['TRACT'] >= 990000 and gh['TRACT'] <=990099:
-            print("Igorning ",gh,file=sys.stderr)
+            # Ignore water tracts
             return
 
         # Extract the fields
@@ -237,6 +252,10 @@ class Loader:
             geocode  = geo_geocode(line)
             geocode2 = geo_geocode2(line)
             geocode3 = geo_geocode3(gh)
+            if gh['LOGRECNO']==self.args.debuglogrecno:
+                print("geocode:",geocode)
+                print("geocode2:",geocode2)
+                print("geocode3:",geocode3)
             try:
                 c.execute("INSERT INTO blocks "
                           "(geocode, geocode2, geocode3, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?,?)",
@@ -245,15 +264,16 @@ class Loader:
             except sqlite3.IntegrityError as e:
                 print(e,sys.stderr)
                 print(f"geocode: {geocode} geocode3: {geocode3}\n{gh}",file=sys.stderr)
+                self.conn.commit()
+                c.execute("SELECT * from blocks where geocode3=?",(geocode3,))
+                r = c.fetchone()
+                print(dict(r))
                 exit(1)
 
         cmd = "INSERT INTO geo (" + ",".join(GEO_HEADER.keys()) + ") values (" + ",".join(["?"]*len(GEO_HEADER)) + ")"
         data = extractall_typed(line)
         args = [data[gh] for gh in GEO_HEADER]
         c.execute(cmd,args)
-
-                                                                                              
-
 
     def decode_012010(self, c, line):
         """Update the database for a line in segemtn 1 of the 2010 PL94 or SF1 files. 
@@ -264,8 +284,9 @@ class Loader:
         (fileid,stusab,chariter,cifsn,logrecno,P0010001) = fields[0:6]
         state = constants.STUSAB_TO_STATE[stusab]
         assert fileid in ('PLST','SF1ST')
-        if logrecno in self.debug_logrecno:
-            print(line)
+        if int(logrecno)==self.args.debuglogrecno:
+            print("\n",line)
+            print("UPDATE blocks set pop={} WHERE state={} and logrecno={}".format(P0010001,state,logrecno))
         # Update the blocks. If LOGRECNO is not in database, nothing is updated
         # because of referential integrity, LOGRECNO can only be in the database once
         c.execute("UPDATE blocks SET pop=? WHERE state=? AND logrecno=?", (P0010001,state,logrecno))
@@ -282,8 +303,8 @@ class Loader:
         state = constants.STUSAB_TO_STATE[stusab]
         (H0010001,H0010002,H0010003) = fields[-3:]
 
-        if int(logrecno) in self.debug_logrecno:
-            print(line)
+        if int(logrecno)==self.args.debuglogrecno:
+            print("\n",line)
 
         assert fileid=='PLST'
         c.execute("UPDATE blocks set houses=?,occupied=? where state=? and logrecno=?", (H0010001,H0010002,state,logrecno))
@@ -300,7 +321,8 @@ class Loader:
                 print("{}...".format(ll),end='',file=sys.stderr,flush=True)
         self.conn.commit()
         t1 = time.time()
-        print(f"Finished {f.name}; {ll} lines, {ll/(t1-t0):,.0f} lines/sec")
+        print(f"\n",file=sys.stderr)
+        print(f"Finished {f.name}; {ll} lines, {ll/(t1-t0):,.0f} lines/sec",file=sys.stderr)
 
     def process_file_name(self, f, name):
         if name[2:] in ['geo2010.pl','geo2010.sf1']:
@@ -343,6 +365,7 @@ if __name__ == "__main__":
     parser.add_argument("--sumlev", help="Only do this summary level")
     parser.add_argument("--geoinfo", help="Provide geography information only.", action='store_true')
     parser.add_argument("--aiannh", help="Print everything we know about an AIANNH")
+    parser.add_argument("--debuglogrecno", help="logrecno for debugging", type=int)
     args = parser.parse_args()
 
     if args.wipe and os.path.exists(args.db):

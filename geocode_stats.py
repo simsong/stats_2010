@@ -14,6 +14,7 @@ https://openpyxl.readthedocs.io/en/stable/filters.html - add filters
 
 import os
 import sys
+import time
 
 import sqlite3
 import pl94_dbload
@@ -55,7 +56,7 @@ class GeocodeStats:
             self.geocode = 'geocode'
 
         c = self.cursor()
-        c.execute(f"PRAGMA cache_size = {-1024*1024}") # 1GiB cache
+        c.execute(f"PRAGMA cache_size = {-1024*1024*16}")  # 1GiB cache
         c.execute("SELECT state,county,name FROM geo where sumlev=50") 
         self.counties = {(row['state'],row['county']):row['name'] for row in c.fetchall()}
 
@@ -82,6 +83,7 @@ class GeocodeStats:
         return c.fetchall()
 
     def geocode3_name(self,gc):
+        """Decode the GEOCODE3 name"""
         append = ""
         if len(gc)>=11:
             # PLACE
@@ -112,6 +114,7 @@ class GeocodeStats:
                 append=" (AIAN AREAS)"
         else:
             query="SELECT 'USA'"
+        query += " LIMIT 1"
         c = self.cursor()
         try:
             c.execute(query)
@@ -120,6 +123,7 @@ class GeocodeStats:
             print(e)
             exit(1)
         res = c.fetchone()
+        #print(f"{time.time()-t0:5.3f} {query}")
         if res is None:
             if gc[6:11]=='99999' or gc[6:11]=='00000':
                 return "(none)"
@@ -128,28 +132,31 @@ class GeocodeStats:
         res = res[0]
         if append:
             res += " " + append
-        if len(gc) > 11:
-            res += "TRACT " + gc[11:17]
-        if len(gc) > 17:
-            res += "BLKGRP " + gc[17:18]
-        if len(gc) > 18:
-            res += "BLOCK " + gc[18:]
+        if len(gc) > 14:
+            res += "TRACT " + gc[14:20]
+        if len(gc) > 20:
+            res += "BLKGRP " + gc[20:22]
+        if len(gc) > 22:
+            res += "BLOCK " + gc[22:26]
         return res
 
     def fanout_name(self,child_prefix_span):
         if self.args.geocode2:
             ary = [ ('state',2), ('county',3), ('cousub',5), ('tract',4), ('block',4)]
         elif self.args.geocode3:
-            ary = [ ('AIAN state',3), ('county',3), ('place',5), ('tract',6), ('blkgrp',1), ('block',4)]
+            ary = [ ('AIAN state',3), ('county',3), ('place',5), ('tract',9), ('blkgrp',2), ('block',4)]
         else:
             ary = [ ('state',2), ('county',3), ('tract',4), ('block',4)]
             
         msg = 'Fanout to '
-        while child_prefix_span > 0:
-            s = min(child_prefix_span,ary[0][1])
-            msg += f"[{ary[0][0]}:{s}]"
-            child_prefix_span -= s
-            ary.pop(0)
+        try:
+            while child_prefix_span > 0:
+                s = min(child_prefix_span,ary[0][1])
+                msg += f"[{ary[0][0]}:{s}]"
+                child_prefix_span -= s
+                ary.pop(0)
+        except IndexError:
+            msg + f"... {child_prefix_span}"
         return msg
 
     def add_span_report(self,wb,report_len,child_len):
@@ -158,7 +165,6 @@ class GeocodeStats:
         ws = wb.create_sheet(f'S {child_prefix_span}')
         if 'Sheet' in wb:
             del wb['Sheet']
-
         ws['A2']='STUSAB'
         ws['B2']='Prefix'
         ws['C2']='Name'
@@ -190,6 +196,7 @@ class GeocodeStats:
         total_population = 0
 
         details = []
+        print(f"report_len: {report_len} len(data): {len(data)}")
 
         while data:
             reporting_prefix = data[0]['prefix'][0:report_len]
@@ -200,47 +207,62 @@ class GeocodeStats:
             # Get all of the populations for this prefix
             while data and (reporting_prefix == data[0]['prefix'][0:report_len]):
                 d = data.pop(0)
-                details.append((d['prefix'],d['population']))
+                if args.details:
+                    details.append((d['prefix'],d['population']))
                 group_population = d['population']
-                total_population += group_population
                 if not isinstance(group_population,int):
                     raise RuntimeError(str(dict(data[0])))
+                total_population += group_population
                 populations.append( group_population )
+            print(f"  {reporting_prefix} len(populations)={len(populations)} ({len(data)} remaining)")
             ws[f'A{row}'] = constants.STATE_TO_STUSAB[state]
             ws[f'B{row}'] = reporting_prefix
-            if self.args.geocode3:
+            if self.args.geocode3 and len(reporting_prefix)<12:
                 ws[f'C{row}'] = gs.geocode3_name(reporting_prefix)
             else:
                 ws[f'C{row}'] = gs.county_name(state, county)
             ws.cell(column=4, row=row).value = len(populations)
-            ws.cell(column=4, row=row).border = right_border
 
             ws.cell(column=5, row=row).value = sum(populations)
             ws.cell(column=6, row=row).value = int(statistics.mean(populations))
-            ws.cell(column=6, row=row).border = right_border
             d = deciles(populations)
             for n in range(11):
                 ws.cell(column=7+n,row=row).value = d[n]
-            ws.cell(column=7+10,row=row).border = right_border
-            details.append(("",""))
+            if args.details:
+                details.append(("",""))
             if self.args.debug:
                 print("=============")
                 print(f"reporting_prefix: {reporting_prefix}")
                 print("populations:",populations[1:10],"...")
                 print("deciles:",d)
             row += 1
+
+        print("now adding borders")
+        for cellrow in ws.iter_rows(min_row=2, max_row=row-1, min_col=1, max_col=17):
+            cellrow[3].border = right_border
+            cellrow[5].border = right_border
+            cellrow[16].border = right_border
+
+        print("now freezing")
+        # Increase Spreadsheet usability
         ws.freeze_panes = 'A3'
         ws.auto_filter.ref = f'A2:Q{row-1}'
         row += 1
+
+
         ws.cell(column=3, row=row).value = "Total population:"
         ws.cell(column=5, row=row).value = total_population
         row += 2
-        ws.cell(column=3, row=row).value = "Details:"
-        row += 1
-        for (a,b) in details:
-            ws.cell(column=3, row=row).value=a
-            ws.cell(column=4, row=row).value=b
+
+        if args.details:
+            # Provide details
+            print("adding details")
+            ws.cell(column=3, row=row).value = "Details:"
             row += 1
+            for (a,b) in details:
+                ws.cell(column=3, row=row).value=a
+                ws.cell(column=4, row=row).value=b
+                row += 1
             
 
 
@@ -256,6 +278,7 @@ if __name__=="__main__":
     parser.add_argument("--geocode3", action='store_true', help="Use geocode3, not geocode")
     parser.add_argument("--report", help="Generate a report for one or more prefix:child_len,prefix:child_len sets.")
     parser.add_argument("--debug", action='store_true')
+    parser.add_argument("--details", action='store_true', help='Provide details for each fanout')
     args = parser.parse_args()
     gs = GeocodeStats(args)
 
@@ -264,7 +287,7 @@ if __name__=="__main__":
         for (ct,report_desc) in enumerate(args.report.split(",")):
             (prefix_len,child_len) = [int(x) for x in report_desc.split(":")]
             gs.add_span_report(wb,prefix_len,child_len)
-            fname = f"report-{ct:02}.xlsx"
+            fname = f"report-o2-{ct:02}.xlsx"
             print("Saving",fname)
             wb.save(fname)
             

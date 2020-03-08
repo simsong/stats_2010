@@ -173,7 +173,7 @@ STATE_DATA=[
     "Oklahoma,OK,40",
     "Oregon,OR,41",
     "Pennsylvania,PA,42",
-    "Puerto_Rico,PR,43",
+    "Puerto_Rico,PR,72",        # note not 43!
     "Rhode_Island,RI,44",
     "South_Carolina,SC,45",
     "South_Dakota,SD,46",

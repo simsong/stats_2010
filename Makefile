@@ -33,13 +33,13 @@ pl94_load:
 	chmod 444 pl94_ro.sqlite3
 
 r1:
-	python3 geocode_stats.py --db ak.sqlite3            --reportprefix 5 --childspan 8-8
+	python3 geocode_stats.py --db pl93.sqlite3            --reportprefix 5 --childspan 8-8
 
 r2:
-	python3 geocode_stats.py --db ak.sqlite3 --geocode2 --reportprefix 5 --childspan 8-8
+	python3 geocode_stats.py --db pl94.sqlite3 --geocode2 --reportprefix 5 --childspan 8-8
 
 r3:
-	python3 geocode_stats.py --db ak.sqlite3 --geocode3 --reportprefix 6 --c1 7 --c2 7 --debug
+	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --report "3:3,6:5,11:9,20:2,22:4"
 
 ak_r3:
 	python3 geocode_stats.py --db ak.sqlite3 --geocode3 --report "3:3,6:5,11:5,16:1,17:4"
@@ -50,6 +50,14 @@ dc_r3:
 ak_load:
 	@echo Just loading ak in ak.sqlite3
 	python3 pl94_dbload.py --db ak.sqlite3 --wipe data/2010_pl94/dist/ak2010.pl.zip
+
+az_load:
+	@echo Just loading ak in az.sqlite3
+	python3 pl94_dbload.py --db az.sqlite3 --wipe data/2010_pl94/dist/az2010.pl.zip
+
+pr_load:
+	@echo Just loading ak in pr.sqlite3
+	python3 pl94_dbload.py --db pr.sqlite3 --wipe data/2010_pl94/dist/pr2010.pl.zip --debuglogrecno=11735
 
 pl94_load_geo: pl94_dbload.py
 	python3 pl94_dbload.py data/??geo2010.pl

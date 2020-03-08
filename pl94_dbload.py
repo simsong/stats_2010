@@ -17,7 +17,7 @@ NOTES:
  * HOUSES and OCCUPIED do not include GROUP QUARTERS
  * geocode  - basic geocode.      STATE/COUNTY/TRACT/BLOCK
  * geocode2 -                     STATE/COUNTY/COUSUB/TRACT/BLOCK
- * geocode3 - Just AIANs.         STATE/COUSUB/AIANNH/BLOCK
+ * geocode3 - combined version.
 """
 
 __version__ = '0.1.0'
@@ -45,7 +45,7 @@ SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 SQL_BLOCKS_SCHEMA="""
 CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode2 VARCHAR(15), geocode3 VARCHAR(25),
                                    state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
-                                   cousub INTEGER, aiannh INTEGER,
+                                   cousub INTEGER, aiannh INTEGER, 
                                    logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode_idx ON blocks(geocode);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode2_idx ON blocks(geocode2);
@@ -58,6 +58,9 @@ CREATE INDEX IF NOT EXISTS blocks_houses ON blocks(houses);
 CREATE INDEX IF NOT EXISTS blocks_cousub  ON blocks(cousub);
 CREATE INDEX IF NOT EXISTS blocks_aiannh ON blocks(aiannh);
 """
+
+STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
+DC_FIPS=11
 
 def nint(val):
     try:
@@ -91,9 +94,10 @@ GEO_HEADER = {
     "CONCIT": (5, 68, nint),
     "AIANNH" : (4,77, nint),
     "AITSCE" : (3, 89, nint),
-    "TTRACT" : (6, 99, str),
+    "SLDU"   : (3, 156, str),
     "NAME"   : (90,227, strip_str)       # in Latin1 for 2000 and 2010,
 }
+
 
 DEBUG_BLOCK=None
 
@@ -109,12 +113,12 @@ def create_schema(conn,schema):
             exit(1)
 
 
-def extract(gh,line):
+def extract(field,line):
     """Extract just the field from the GEO file"""
-    return line[GEO_HEADER[gh][1]-1:GEO_HEADER[gh][1]-1+GEO_HEADER[gh][0]]
+    return line[GEO_HEADER[field][1]-1:GEO_HEADER[field][1]-1+GEO_HEADER[field][0]]
 
-def extract_typed(line):
-    """Extract a typed value from the GEO file"""
+def extractall_typed(line):
+    """Extract all the values as a typed dictionary"""
     try:
         return { gh : GEO_HEADER[gh][2]( extract(gh, line).strip()) for gh in GEO_HEADER }
     except ValueError:
@@ -124,22 +128,62 @@ def extract_typed(line):
             print(GEO_HEADER[gh][2]( extract(gh,line) ),file=sys.stderr )
 
 def geo_geocode(line):
+    """The original geocode used for the DAS"""
     return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','TRACT', 'BLOCK']] )
 
 def geo_geocode2(line):
+    """The geocode based on COUSUB"""
     return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','COUSUB','TRACT', 'BLOCK']] )
 
-def geo_geocode3(line):
-    aiannh = extract('AIANNH', line)
-    if aiannh=='9999':
-        return None
-    geo3 = "".join( [ extract(gh, line) for gh in ['STATE', 'AIANNH', 'TRACT', 'BLOCK'] ])
-    geo3 = chr(64 + int(geo3[0])) + chr(64 + int(geo3[1])) + geo3[2:]
-    return geo3
+def geo_geocode3(gh):
+    """The revised geocode that takes into account AIANNH. Levels are:
+    0 - Nation
+    1 - Non-AIANNH part-of-state                  | AIANNH part-of-State 
+    2 - COUNTY in non-strong MCD states           | ignored in AIANNH
+    3 - PLACE in 38 strong-MCD states, SLDU in DC | AIANNH in AIANNH states
+    4 - TRACT or 3-digit TG or 4-digit TG         | TRACT
+    5 - BLKGRP first 1 or 2 digits of block       | BLKGRP
+    6 - BLOCK                                     | BLOCK
+    """
+    code = []
+    if gh['STATE']==DC_FIPS:
+        # Washington DC
+        code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
+        code.append(f"XXX")               # COUNTY; Washington DC has no COUNTY level
+        code.append(f"{int(gh['SLDU']):05}")  # PLACE in the district of columbia
+        code.append(f"{gh['TRACT']:06}")  # TRACT 
+        code.append(f"{gh['BLKGRP']:01}") # BLKGRP
+        code.append(f"{gh['BLOCK']:04}")  # BLOCK
+    elif gh['AIANNH']==9999 and gh['STATE'] not in STRONG_MCD_STATES:
+        # Non-AIAN area and 38 states not strong MCD
+        code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
+        code.append(f"{gh['COUNTY']:03}") # COUNTY; 3 characters
+        code.append(f"{gh['PLACE']:05}")  # PLACE in 38 states with strong MCD
+        code.append(f"{gh['TRACT']:06}")  # TRACT 
+        code.append(f"{gh['BLKGRP']:01}") # BLKGRP
+        code.append(f"{gh['BLOCK']:04}")  # BLOCK
+    elif gh['AIANNH']==9999 and gh['STATE'] in STRONG_MCD_STATES:
+        # Non-AIAN area in 12 state with strong MCD
+        code.append(f"{gh['STATE']:02}X") # STATE; 3 characters
+        code.append(f"XXX")               # COUNTY; 3 characters (ignored with strong MCD)
+        code.append(f"{gh['COUSUB']:05}")  # PLACE; COUSUB in 12 strong-MCD states
+        code.append(f"{gh['TRACT']:06}")  # TRACT 
+        code.append(f"{gh['BLKGRP']:01}") # BLKGRP
+        code.append(f"{gh['BLOCK']:04}")  # BLOCK
+    else:
+        # AIANNH portion of 38-states with AIANNH
+        code.append(f"{gh['STATE']:02}A") # STATE; 3 characters
+        code.append(f"IAN")               # COUNTY; 3 characters (ignored in AIANNH regions)
+        code.append(f"{gh['AIANNH']:05}") # PLACE; 5 characters
+        code.append(f"{gh['TRACT']:06}")  # TRACT; 6 characters
+        code.append(f"{gh['BLKGRP']:01}") # BLKGRP; 1 character
+        code.append(f"{gh['BLOCK']:04}")  # BLOCK; 4 characters
+
+    return "".join(code)
 
 def info_geo_line(conn, c, line):
     """Just print information about a geography line"""
-    print( geo_geocode(line),extract_typed( line ))
+    print( geo_geocode(line),extractall_typed( line ))
 
 class Loader:
     def __init__(self, args):
@@ -173,14 +217,18 @@ class Loader:
         """Decode the hiearchical geography lines. These must be done before the other files are read
         to get the logrecno."""
 
-        geo = extract_typed(line)
-        if geo['AIANNH']==DEBUG_AIAN and geo['SUMLEV']==750:
-            print(geo)
-            self.debug_logrecno.append(geo['LOGRECNO'])
-        assert geo['FILEID'] in ('PLST','SF1ST')
+        gh = extractall_typed(line)
+        if gh['AIANNH']==DEBUG_AIAN and gh['SUMLEV']==750:
+            print(gh)
+            self.debug_logrecno.append(gh['LOGRECNO'])
+        assert gh['FILEID'] in ('PLST','SF1ST')
+
+        if gh['TRACT'] and gh['TRACT'] >= 990000 and gh['TRACT'] <=990099:
+            print("Igorning ",gh,file=sys.stderr)
+            return
 
         # Extract the fields
-        sumlev = geo['SUMLEV']
+        sumlev = gh['SUMLEV']
 
         if (self.args.sumlev is not None) and (self.args.sumlev!=sumlev):
             return
@@ -188,14 +236,19 @@ class Loader:
         if sumlev in (SUMLEV_SF1_BLOCK, SUMLEV_PL94_BLOCK):
             geocode  = geo_geocode(line)
             geocode2 = geo_geocode2(line)
-            geocode3 = geo_geocode3(line)
-            c.execute("INSERT INTO blocks "
-                      "(geocode, geocode2, geocode3, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?,?)",
-                       (geocode, geocode2, geocode3, geo['STATE'], geo['COUNTY'], geo['TRACT'], geo['BLOCK'], geo['COUSUB'],
-                       geo['AIANNH'], geo['LOGRECNO']))
+            geocode3 = geo_geocode3(gh)
+            try:
+                c.execute("INSERT INTO blocks "
+                          "(geocode, geocode2, geocode3, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?,?)",
+                          (geocode, geocode2, geocode3, gh['STATE'], gh['COUNTY'], gh['TRACT'], gh['BLOCK'], gh['COUSUB'],
+                           gh['AIANNH'], gh['LOGRECNO']))
+            except sqlite3.IntegrityError as e:
+                print(e,sys.stderr)
+                print(f"geocode: {geocode} geocode3: {geocode3}\n{gh}",file=sys.stderr)
+                exit(1)
 
         cmd = "INSERT INTO geo (" + ",".join(GEO_HEADER.keys()) + ") values (" + ",".join(["?"]*len(GEO_HEADER)) + ")"
-        data = extract_typed(line)
+        data = extractall_typed(line)
         args = [data[gh] for gh in GEO_HEADER]
         c.execute(cmd,args)
 

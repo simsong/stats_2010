@@ -217,6 +217,7 @@ SUMLEVS = {
  '622':"State House District-County",
  '623':"State House District-County-MCD-Place",
  '624':"State House District-Place",
+ '642':"State House District Upper Chamber",    
 
  '700':"VTD (Voting Tabulation District)",
  '740':"Block Group, split by VTD, MCD, and Place",

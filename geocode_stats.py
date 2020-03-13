@@ -15,20 +15,25 @@ https://openpyxl.readthedocs.io/en/stable/filters.html - add filters
 import os
 import sys
 import time
-
+import re
 import sqlite3
-import pl94_dbload
 import statistics
 import numpy as np
 import constants
 import ctools.clogging
 import logging
+import subprocess
+import itertools
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-from openpyxl.styles import Alignment, PatternFill, Border, Side, Protection, Font
+from openpyxl.styles import Alignment, PatternFill, Border, Side, Protection, Font, Fill, Color
 from openpyxl.styles.borders import Border, Side, BORDER_THIN
 from openpyxl.comments import Comment
+import openpyxl.styles.colors as colors
+
+import pl94_dbload
+
 thin_border = Border(
     left=Side(border_style=BORDER_THIN, color='00000000'),
     right=Side(border_style=BORDER_THIN, color='00000000'),
@@ -41,9 +46,14 @@ right_border = Border(
 )
 BOLD     = Font(bold=True)
 CENTERED = Alignment(horizontal='center')
+YELLOW_FILL   = PatternFill(fill_type='solid', start_color=colors.YELLOW, end_color=colors.YELLOW)
+PINK_FILL   = PatternFill(fill_type='solid', start_color='ffb6c1', end_color='ffb6c1')
 
 def deciles(ary):
-    return np.percentile(ary, np.arange(0,101,10), interpolation='linear')
+    return np.percentile(ary, np.arange(0,101,10), interpolation='lower')
+
+def flatmap(func, *iterable):
+    return itertools.chain.from_iterable(map(func, *iterable))
 
 class GeocodeStats:
     def __init__(self,args):
@@ -68,10 +78,10 @@ class GeocodeStats:
     def county_name(self,state,county):
         return self.counties[(state,county)]
 
-    def group_blocks_by_prefix(self,report_len,child_len):
+    def group_blocks_by_prefix(self,prefix_len):
         """Group all of the blocks by a given prefix and return aggregate statistics. 
         They then get re-arregated at a higher level by the caller"""
-        grouper  = f"SUBSTR({self.geocode},1,{report_len+child_len}) "
+        grouper  = f"SUBSTR({self.geocode},1,{prefix_len}) "
         c = self.cursor()
         cmd = f"""SELECT {grouper} AS prefix, state, county, aiannh,
                   SUM(1) AS block_count,
@@ -79,10 +89,13 @@ class GeocodeStats:
                   SUM(pop) AS population
                   FROM blocks """
         cmd += f"""GROUP BY {grouper} ORDER BY 1 """
-        if self.args.debug:
-            print(cmd)
+        logging.info(re.sub(' +',' ',cmd.replace("\n"," ")))
+        t0 = time.time()
         c.execute(cmd)
-        return c.fetchall()
+        res = c.fetchall()
+        t1 = time.time()
+        logging.info("QUERY TIME: %s  QUERY RESULTS: %s RESULTS/SEC: %s",t1-t0,len(res),len(res)/(t1-t0))
+        return res
 
     def geocode3_name(self,gc):
         """Decode the GEOCODE3 name"""
@@ -162,14 +175,13 @@ class GeocodeStats:
 
     def add_geocode_report(self,wb,report_len,child_len):
         """Create a report for a given report_len and child_len. A span=2 is by state, a span=5 is state and county."""
-
         # First generate the data
-        data         = gs.group_blocks_by_prefix(report_len,child_len)
-        total_tracts = 0
+        data         = gs.group_blocks_by_prefix(report_len+child_len)
         total_population = 0
 
         # Now find all of the fanout groups. Each fanout group will become a line in the report.
         fanout_groups = []
+        logging.info(f"report_len: {report_len} len(data): {len(data)}")
         while data:
             details = []
             res = {}
@@ -189,9 +201,8 @@ class GeocodeStats:
             res['deciles'] = deciles(populations)
             res['details'] = details
             fanout_groups.append(res)
-
+        logging.info("len(fanout_groups) = %s",len(fanout_groups))
         logging.info("Data have been computed. Now laying out spreadsheet")
-
         child_prefix_span = report_len + child_len
         ws = wb.create_sheet(f'S {child_prefix_span}')
         if 'Sheet' in wb:
@@ -222,8 +233,9 @@ class GeocodeStats:
 
         # Using the grouper that we have specified for children, get the report
         row = 3
-        logging.info(f"report_len: {report_len} len(data): {len(data)}")
         for res in fanout_groups:
+            if row%100==0:
+                logging.info("row=%s",row)
             state  = res['state']
             county = res['county']
             reporting_prefix = res['reporting_prefix']
@@ -273,6 +285,78 @@ class GeocodeStats:
                     row += 1
                 row += 1
 
+    def geolevel_report_setup(self,ws):
+        ws.cell(row=2, column=1).value = 'Level'
+        ws.cell(row=2, column=2).value = '# Levels'
+        ws.cell(row=2, column=3).value = 'Sublevel'
+        ws.cell(row=2, column=4).value = '# Sublevels'
+
+        ws.cell(row=1, column=5).value     = 'sublevel fanouts (interpolation=min)'
+        ws.cell(row=1, column=5).alignment = CENTERED
+        ws.cell(row=1, column=5).fill      = YELLOW_FILL
+        ws.merge_cells(start_row=1, end_row=1, start_column=5, end_column=15)
+        ws.cell(row=2, column=5).value = 'min'
+        for n in range(1,10):
+            ws.cell(row=2, column=5+n).value = f"{n*10}th pct."
+        ws.cell(row=2, column=15).value = 'max'
+        for col in range(5,16):
+            ws.cell(row=2, column=col).alignment = CENTERED
+            ws.cell(row=2, column=col).fill = YELLOW_FILL
+        
+        ws.cell(row=1, column=16).value     = 'sublevel populations (interpolation=min)'
+        ws.cell(row=1, column=16).alignment = CENTERED
+        ws.cell(row=1, column=16).fill      = PINK_FILL
+        ws.merge_cells(start_row=1, end_row=1, start_column=16, end_column=26)
+        ws.cell(row=2, column=16).value = 'min'
+        for n in range(1,10):
+            ws.cell(row=2, column=16+n).value = f"{n*10}th pct."
+        ws.cell(row=2, column=26).value = 'max'
+        for col in range(16,27):
+            ws.cell(row=2, column=col).alignment = CENTERED
+            ws.cell(row=2, column=col).fill = PINK_FILL
+        
+    def add_geolevel_report(self,ws,ct,level_name,sublevel_name,level_len,sublevel_len):
+        """Create a report of the fanout for a given geolevel."""
+
+        # First generate the data
+        row  = ct+4
+        data = gs.group_blocks_by_prefix(sublevel_len)
+
+        # Now find all of the fanout for this level
+        logging.info(f"report_len: {level_name} len(data): {len(data)}")
+        level_stats = []
+        while data:
+            res = {}
+            level = data[0]['prefix'][0:level_len]
+            sublevel_populations = []
+            while data and (level == data[0]['prefix'][0:level_len]):
+                d0 = data.pop(0)
+                sublevel_populations.append(d0['population'])
+            res['sublevel_count']       = len(sublevel_populations)
+            res['sublevel_populations'] = sublevel_populations
+            level_stats.append(res)
+        logging.info("len(level_stats) = %s",len(level_stats))
+        ws.cell(row=row, column=1).value = level_name
+        ws.cell(row=row, column=2).value = len(level_stats)
+        ws.cell(row=row, column=3).value = sublevel_name
+        ws.cell(row=row, column=4).value = sum([res['sublevel_count'] for res in level_stats])
+
+        sublevel_fanouts = [res['sublevel_count'] for res in level_stats]
+        sublevel_fanout_deciles = deciles(sublevel_fanouts)
+        for cellrow in ws.iter_rows(min_row = row, max_row=row, min_col=5, max_col = 15):
+            for (cell,value) in zip(cellrow,sublevel_fanout_deciles):
+                cell.value = value
+                cell.fill = YELLOW_FILL
+
+        all_sublevel_populations = [res['sublevel_populations'] for res in level_stats]
+        all_sublevel_populations = list(flatmap( lambda a:a, all_sublevel_populations))
+        sublevel_population_deciles = deciles(all_sublevel_populations)
+        for cellrow in ws.iter_rows(min_row = row, max_row=row, min_col=16, max_col = 26):
+            for (cell,value) in zip(cellrow,sublevel_population_deciles):
+                cell.value = value
+                cell.fill = PINK_FILL
+
+
 
 if __name__=="__main__":
     import argparse
@@ -289,18 +373,15 @@ if __name__=="__main__":
     parser.add_argument("--prefixset", help="specify the sets of prefixes to use, in the form prefix:child_len,prefix:child_len")
     parser.add_argument("--debug", action='store_true')
     parser.add_argument("--details", action='store_true', help='Provide details for each fanout')
+    parser.add_argument("--open" , action='store_true', help='automatically open on finish')
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
     ctools.clogging.setup(level = args.loglevel)
     gs = GeocodeStats(args)
+    wb = Workbook()
 
-    if args.geocode_report or args.geolevel_report:
-        wb = Workbook()
-        if args.geocode_report:
-            vintage = "report geocode "
-        if args.geolevel_report:
-            vintage = "report geolevel "
-        vintage += time.strftime("%Y-%m-%d %H%M%S")
+    if args.geocode_report:
+        vintage = "report geocode " + time.strftime("%Y-%m-%d %H%M%S")
         for (ct,report_desc) in enumerate(args.prefixset.split(",")):
             (prefix_len,child_len) = [int(x) for x in report_desc.split(":")]
             gs.add_geocode_report(wb,prefix_len,child_len)
@@ -308,4 +389,19 @@ if __name__=="__main__":
             logging.info("Saving %s",fname)
             wb.save(fname)
             
-        
+    if args.geolevel_report:
+        ws = wb.active
+        vintage = "report geolevel " + time.strftime("%Y-%m-%d %H%M%S")
+        gs.geolevel_report_setup(ws)
+        for (ct,report_desc) in enumerate(args.prefixset.split(",")):
+            logging.info(report_desc)
+            (level_name,sublevel_name,level_len,sublevel_len) = report_desc.split(":")
+            level_len = int(level_len)
+            sublevel_len  = int(sublevel_len)
+            gs.add_geolevel_report(ws, ct, level_name, sublevel_name, level_len, sublevel_len)
+            fname = f"{vintage} {ct:02}.xlsx"
+            logging.info("Saving %s",fname)
+            wb.save(fname)
+    if args.open:
+        subprocess.call(['open','fname'])
+

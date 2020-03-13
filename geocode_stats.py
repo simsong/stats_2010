@@ -21,10 +21,12 @@ import pl94_dbload
 import statistics
 import numpy as np
 import constants
+import ctools.clogging
+import logging
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, PatternFill, Border, Side, Protection, Font
 from openpyxl.styles.borders import Border, Side, BORDER_THIN
 from openpyxl.comments import Comment
 thin_border = Border(
@@ -37,7 +39,7 @@ thin_border = Border(
 right_border = Border(
     right=Side(border_style=BORDER_THIN, color='00000000')
 )
-
+BOLD     = Font(bold=True)
 CENTERED = Alignment(horizontal='center')
 
 def deciles(ary):
@@ -121,9 +123,8 @@ class GeocodeStats:
         except sqlite3.OperationalError as e:
             print(query,file=sys.stderr)
             print(e)
-            exit(1)
+            assert(0)
         res = c.fetchone()
-        #print(f"{time.time()-t0:5.3f} {query}")
         if res is None:
             if gc[6:11]=='99999' or gc[6:11]=='00000':
                 return "(none)"
@@ -159,8 +160,38 @@ class GeocodeStats:
             msg + f"... {child_prefix_span}"
         return msg
 
-    def add_span_report(self,wb,report_len,child_len):
+    def add_geocode_report(self,wb,report_len,child_len):
         """Create a report for a given report_len and child_len. A span=2 is by state, a span=5 is state and county."""
+
+        # First generate the data
+        data         = gs.group_blocks_by_prefix(report_len,child_len)
+        total_tracts = 0
+        total_population = 0
+
+        # Now find all of the fanout groups. Each fanout group will become a line in the report.
+        fanout_groups = []
+        while data:
+            details = []
+            res = {}
+            res['reporting_prefix'] = data[0]['prefix'][0:report_len]
+            res['state']  = state  = data[0]['state']
+            res['county'] = county = data[0]['county']
+            populations = []
+            while data and (res['reporting_prefix'] == data[0]['prefix'][0:report_len]):
+                d0 = data.pop(0)
+                if args.details:
+                    details.append((d0['prefix'],d0['population']))
+                group_population = d0['population']
+                if not isinstance(group_population,int):
+                    raise RuntimeError(str(dict(data[0])))
+                total_population += group_population
+                populations.append( group_population )
+            res['deciles'] = deciles(populations)
+            res['details'] = details
+            fanout_groups.append(res)
+
+        logging.info("Data have been computed. Now laying out spreadsheet")
+
         child_prefix_span = report_len + child_len
         ws = wb.create_sheet(f'S {child_prefix_span}')
         if 'Sheet' in wb:
@@ -190,65 +221,37 @@ class GeocodeStats:
         ws.cell(column=7+10,row=2).border = right_border
 
         # Using the grouper that we have specified for children, get the report
-        total_tracts = 0
         row = 3
-        data = gs.group_blocks_by_prefix(report_len,child_len)
-        total_population = 0
+        logging.info(f"report_len: {report_len} len(data): {len(data)}")
+        for res in fanout_groups:
+            state  = res['state']
+            county = res['county']
+            reporting_prefix = res['reporting_prefix']
 
-        details = []
-        print(f"report_len: {report_len} len(data): {len(data)}")
-
-        while data:
-            reporting_prefix = data[0]['prefix'][0:report_len]
-            details.append((reporting_prefix,""))
-            state = data[0]['state']
-            county = data[0]['county']
-            populations = []
-            # Get all of the populations for this prefix
-            while data and (reporting_prefix == data[0]['prefix'][0:report_len]):
-                d = data.pop(0)
-                if args.details:
-                    details.append((d['prefix'],d['population']))
-                group_population = d['population']
-                if not isinstance(group_population,int):
-                    raise RuntimeError(str(dict(data[0])))
-                total_population += group_population
-                populations.append( group_population )
-            print(f"  {reporting_prefix} len(populations)={len(populations)} ({len(data)} remaining)")
             ws[f'A{row}'] = constants.STATE_TO_STUSAB[state]
-            ws[f'B{row}'] = reporting_prefix
+            ws[f'B{row}'] = res['reporting_prefix']
             if self.args.geocode3 and len(reporting_prefix)<12:
                 ws[f'C{row}'] = gs.geocode3_name(reporting_prefix)
             else:
                 ws[f'C{row}'] = gs.county_name(state, county)
             ws.cell(column=4, row=row).value = len(populations)
-
             ws.cell(column=5, row=row).value = sum(populations)
             ws.cell(column=6, row=row).value = int(statistics.mean(populations))
-            d = deciles(populations)
             for n in range(11):
-                ws.cell(column=7+n,row=row).value = d[n]
-            if args.details:
-                details.append(("",""))
-            if self.args.debug:
-                print("=============")
-                print(f"reporting_prefix: {reporting_prefix}")
-                print("populations:",populations[1:10],"...")
-                print("deciles:",d)
+                ws.cell(column=7+n,row=row).value = res['deciles'][n]
             row += 1
 
-        print("now adding borders")
+        logging.info("now adding borders")
         for cellrow in ws.iter_rows(min_row=2, max_row=row-1, min_col=1, max_col=17):
             cellrow[3].border = right_border
             cellrow[5].border = right_border
             cellrow[16].border = right_border
 
-        print("now freezing")
+        logging.info("now freezing")
         # Increase Spreadsheet usability
         ws.freeze_panes = 'A3'
         ws.auto_filter.ref = f'A2:Q{row-1}'
         row += 1
-
 
         ws.cell(column=3, row=row).value = "Total population:"
         ws.cell(column=5, row=row).value = total_population
@@ -256,14 +259,19 @@ class GeocodeStats:
 
         if args.details:
             # Provide details
-            print("adding details")
+            logging.info("adding details")
             ws.cell(column=3, row=row).value = "Details:"
             row += 1
-            for (a,b) in details:
-                ws.cell(column=3, row=row).value=a
-                ws.cell(column=4, row=row).value=b
+            for res in fanout_groups:
+                cell       = ws.cell(column=3, row=row)
+                cell.value = res['reporting_prefix']
+                cell.font  = BOLD
                 row += 1
-            
+                for (a,b) in res['details']:
+                    ws.cell(column=3, row=row).value=a
+                    ws.cell(column=4, row=row).value=b
+                    row += 1
+                row += 1
 
 
 if __name__=="__main__":
@@ -276,19 +284,28 @@ if __name__=="__main__":
     parser.add_argument("--limit", type=int, help="Return only this many")
     parser.add_argument("--geocode2", action='store_true', help="Use geocode2, not geocode")
     parser.add_argument("--geocode3", action='store_true', help="Use geocode3, not geocode")
-    parser.add_argument("--report", help="Generate a report for one or more prefix:child_len,prefix:child_len sets.")
+    parser.add_argument("--geocode_report", help="Generate a fanout report by geocode", action='store_true')
+    parser.add_argument("--geolevel_report", help="Generate a fanout report by geolevel", action='store_true')
+    parser.add_argument("--prefixset", help="specify the sets of prefixes to use, in the form prefix:child_len,prefix:child_len")
     parser.add_argument("--debug", action='store_true')
     parser.add_argument("--details", action='store_true', help='Provide details for each fanout')
+    ctools.clogging.add_argument(parser)
     args = parser.parse_args()
+    ctools.clogging.setup(level = args.loglevel)
     gs = GeocodeStats(args)
 
-    if args.report:
+    if args.geocode_report or args.geolevel_report:
         wb = Workbook()
-        for (ct,report_desc) in enumerate(args.report.split(",")):
+        if args.geocode_report:
+            vintage = "report geocode "
+        if args.geolevel_report:
+            vintage = "report geolevel "
+        vintage += time.strftime("%Y-%m-%d %H%M%S")
+        for (ct,report_desc) in enumerate(args.prefixset.split(",")):
             (prefix_len,child_len) = [int(x) for x in report_desc.split(":")]
-            gs.add_span_report(wb,prefix_len,child_len)
-            fname = f"report-o2-{ct:02}.xlsx"
-            print("Saving",fname)
+            gs.add_geocode_report(wb,prefix_len,child_len)
+            fname = f"{vintage} {ct:02}.xlsx"
+            logging.info("Saving %s",fname)
             wb.save(fname)
             
         

@@ -32,20 +32,14 @@ pl94_load:
 	cp -c pl94.sqlite3 pl94_ro.sqlite3
 	chmod 444 pl94_ro.sqlite3
 
-r1:
-	python3 geocode_stats.py --db pl93.sqlite3            --reportprefix 5 --childspan 8-8
-
-r2:
-	python3 geocode_stats.py --db pl94.sqlite3 --geocode2 --reportprefix 5 --childspan 8-8
-
 r3:
-	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --report "3:3,6:5,11:9,20:2,22:4"
+	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --geocode_report --prefixset "3:3,6:5,11:9,20:2,22:4"
 
 ak_r3:
-	python3 geocode_stats.py --db ak.sqlite3 --geocode3 --report "3:3,6:5,11:5,16:1,17:4"
+	python3 geocode_stats.py --db ak.sqlite3 --geocode3 --geocode_report --prefixset "3:3,6:5,11:5,16:1,17:4" --loglevel INFO --details
 
 dc_r3:
-	python3 geocode_stats.py --db dc.sqlite3 --geocode3 --report "3:3,6:5,11:5,16:1,17:5"
+	python3 geocode_stats.py --db dc.sqlite3 --geocode3 --geocode_report --prefixset "3:3,6:5,11:5,16:1,17:5"
 
 ak_load:
 	@echo Just loading ak in ak.sqlite3

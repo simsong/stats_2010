@@ -61,8 +61,6 @@ class GeocodeStats:
         self.args = args
         self.conn = sqlite3.connect(args.db)
         self.conn.row_factory = sqlite3.Row # give me dicts
-        if self.args.geocode2:
-            self.geocode = 'geocode2'
         elif self.args.geocode3:
             self.geocode = 'geocode3'
         else:
@@ -157,9 +155,7 @@ class GeocodeStats:
         return res
 
     def fanout_name(self,fanout_len):
-        if self.args.geocode2:
-            ary = [ ('state',2), ('county',3), ('cousub',5), ('tract',4), ('block',4)]
-        elif self.args.geocode3:
+        if self.args.geocode3:
             ary = [ ('AIAN state',3), ('county',3), ('place',5), ('tract',9), ('blkgrp',2), ('block',4)]
         else:
             ary = [ ('state',2), ('county',3), ('tract',4), ('block',4)]
@@ -370,7 +366,6 @@ if __name__=="__main__":
     parser.add_argument("--fanout_len", type=int, help="Specify number of characters for fanout_len")
     parser.add_argument("--db", help="Specify database location", default=pl94_dbload.DBFILE)
     parser.add_argument("--limit", type=int, help="Return only this many")
-    parser.add_argument("--geocode2", action='store_true', help="Use geocode2, not geocode")
     parser.add_argument("--geocode3", action='store_true', help="Use geocode3, not geocode")
     parser.add_argument("--geocode_report", help="Generate a fanout report by geocode", action='store_true')
     parser.add_argument("--geolevel_report", help="Generate a fanout report by geolevel", action='store_true')

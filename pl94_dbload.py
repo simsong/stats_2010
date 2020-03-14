@@ -16,7 +16,6 @@ NOTES:
  * LOGRECNO is not consistent between the PL94 and SF1 files
  * HOUSES and OCCUPIED do not include GROUP QUARTERS
  * geocode  - basic geocode.      STATE/COUNTY/TRACT/BLOCK
- * geocode2 -                     STATE/COUNTY/COUSUB/TRACT/BLOCK
  * geocode3 - combined version.
 """
 
@@ -43,12 +42,11 @@ CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
 SQL_BLOCKS_SCHEMA="""
-CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode2 VARCHAR(15), geocode3 VARCHAR(26),
+CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode3 VARCHAR(26),
                                    state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
                                    cousub INTEGER, aiannh INTEGER, 
                                    logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode_idx ON blocks(geocode);
-CREATE UNIQUE INDEX IF NOT EXISTS geocode2_idx ON blocks(geocode2);
 CREATE UNIQUE INDEX IF NOT EXISTS geocode3_idx ON blocks(geocode3);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx1 ON blocks(state,county,tract,block);
@@ -72,7 +70,7 @@ def create_schema(conn,schema):
             print(e)
             exit(1)
 
-from geocode import geo_geocode,geo_geocode2,geo_geocode3,GEO_HEADER,strip_str,extractall_typed
+from geocode import geo_geocode,geo_geocode3,GEO_HEADER,strip_str,extractall_typed
 
 class Loader:
     """Class to load the blocks and geo tables"""
@@ -122,16 +120,14 @@ class Loader:
 
         if sumlev in (SUMLEV_SF1_BLOCK, SUMLEV_PL94_BLOCK):
             geocode  = geo_geocode(line)
-            geocode2 = geo_geocode2(line)
             geocode3 = geo_geocode3(gh)
             if gh['LOGRECNO']==self.args.debuglogrecno:
                 print("geocode:",geocode)
-                print("geocode2:",geocode2)
                 print("geocode3:",geocode3)
             try:
                 c.execute("INSERT INTO blocks "
-                          "(geocode, geocode2, geocode3, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?,?)",
-                          (geocode, geocode2, geocode3, gh['STATE'], gh['COUNTY'], gh['TRACT'], gh['BLOCK'], gh['COUSUB'],
+                          "(geocode, geocode3, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?,?)",
+                          (geocode, geocode3, gh['STATE'], gh['COUNTY'], gh['TRACT'], gh['BLOCK'], gh['COUSUB'],
                            gh['AIANNH'], gh['LOGRECNO']))
             except sqlite3.IntegrityError as e:
                 print(e,sys.stderr)

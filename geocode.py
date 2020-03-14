@@ -99,10 +99,6 @@ def geo_geocode(line):
     """The original geocode used for the DAS"""
     return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','TRACT', 'BLOCK']] )
 
-def geo_geocode2(line):
-    """The geocode based on COUSUB"""
-    return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','COUSUB','TRACT', 'BLOCK']] )
-
 def geo_geocode3(gh):
     """The revised geocode that takes into account AIANNH. Levels are:
     0 - Nation

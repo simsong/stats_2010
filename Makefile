@@ -33,10 +33,13 @@ pl94_load:
 	chmod 444 pl94_ro.sqlite3
 
 r3:
-	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --geocode_report --prefixset "3:3,6:5,11:9,20:2,22:4" --loglevel INFO
+	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --geocode_report \
+	        --prefixset "3:6,3:11,11:20,20:22,22:26" --loglevel INFO
 
 s3:
-	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --geolevel_report --prefixset "nation:state/aianh:0:3,state/aianh:place:3:8,place:tract:8:20,tract:blkgrp:20:22,blkgrp:block:22:26" --loglevel INFO  --open
+	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --geolevel_report \
+                --prefixset "nation:state/aianh:0:3,state:county:3:6,state/aianh:place:3:11,place:tract:11:20,tract:blkgrp:20:22,blkgrp:block:22:26"\
+	        --loglevel INFO  --open
 
 ak_r3:
 	python3 geocode_stats.py --db ak.sqlite3   --geocode3 --geocode_report --prefixset "3:3,6:5,11:5,16:1,17:4" --loglevel INFO --details

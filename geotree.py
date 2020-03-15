@@ -10,6 +10,7 @@ import time
 import zipfile
 import io
 import logging
+from collections import deque
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
@@ -58,7 +59,7 @@ CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 GEOTREE={'v1':{'names':['STATE','COUNTY','TGROUP','TRACT','BGROUP','BLOCK']}}
 
 # 
-def wb_setup_root(ws):
+def wb_setup_overview(ws):
     """Set up the root of the spreadsheet"""
     ws.cell(row=2, column=1).value = 'Level'
     ws.cell(row=2, column=2).value = '# Levels'
@@ -88,6 +89,7 @@ def wb_setup_root(ws):
     for col in range(16,27):
         ws.cell(row=2, column=col).alignment = CENTERED
         ws.cell(row=2, column=col).fill = PINK_FILL
+    return 3                    # next row
 
 def ws_setup_level(ws,name):
     ws.cell(row=2, column=1).value = 'STUSAB' # A2
@@ -143,10 +145,21 @@ class GeoTree:
 
     def dump(self):
         cmd = f"""select a.state,a.logrecno,a.p1,a.p2,a.p3,a.p4,a.p5,a.p6,b.geocode,b.pop 
-        from {self.name} a left join blocks b on a.state=b.state and a.logrecno=b.logrecno where a.state<70"""
-        c = db.execute(cmd)
+        from {self.name} a left join blocks b on a.state=b.state and a.logrecno=b.logrecno"""
+        c = self.db.execute(cmd)
         for row in c:
             print(",".join([str(x) for x in row]))
+
+    def get_geounits(self,ct):
+        reporting_prefix = "||".join(["''"] + [f"a.p{n}" for n in range(1,ct)])
+        plevels = ",".join([f"p{n}" for n in range(1,ct+1)])
+        plevels2 = ",".join([f"p{n}" for n in range(1,ct+2)])
+
+        cmd = f"""SELECT state,{reporting_prefix} as reporting_prefix,{plevels},COUNT(*),SUM(pop) as population FROM 
+        (SELECT a.state AS state,{plevels},SUM(b.pop) as pop FROM {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevels2})
+        GROUP BY {plevels}"""
+        c = self.db.execute(cmd)
+        return c.fetchall()
 
     def report(self):
         """Generate a geotree report into a spreadsheet. 
@@ -159,13 +172,40 @@ class GeoTree:
         ws_overview = wb.create_sheet("Overview")
         if 'Sheet' in wb:
             del wb['Sheet']
-        wb_setup_root(ws_overview)
-        for (ct,fanout_name) in enumerate(self.gt['names']):
+        overview_row = wb_setup_overview(ws_overview)
+        for (ct,fanout_name) in enumerate(self.gt['names'],1):
             ws_level = wb.create_sheet(fanout_name)
             ws_setup_level(ws_level,fanout_name)
+            geounits = self.get_geounits(ct)
+            logging.info(f"ct: {ct} len(geounits)={len(geounits)}")
+
+            # Turn the geounits into a queue for rapid access
+            geounits = deque(geounits)
+            # Now find all of the fanout groups
+            level_stats = []
+            while geounits:
+                res = {}
+                fanout_populations = []
+                reporting_prefix = geounits[0]['reporting_prefix']
+                while geounits and (reporting_prefix == geounits[0]['reporting_prefix']):
+                    d0 = geounits.popleft()
+                    print(dict(d0))
+                    fanout_populations.append(d0['population'])
+                res['fanout_populations'] = fanout_populations
+                res['fanout_count']       = len(fanout_populations)
+                level_stats.append(res)
+
+            # Now put in the high-level
+            ws.cell(row=overview_row, column=1).value = fanout_name
+            ws.cell(row=overview_row, column=2).value = len(level_stats)
+            ws.cell(row=overview_row, column=3).value = self.gt['names'][ct]
+            ws.cell(row=overview_row, column=4).value = sum([res['sublevel_count'] for res in level_stats])
+
             fname = f"{fnamebase} {ct}.xlsx"
             logging.info("Saving %s",fname)
             wb.save(fname)
+            print("stop")
+            exit(0)
 
 
 if __name__ == "__main__":
@@ -183,7 +223,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     ctools.clogging.setup(level=args.loglevel)
 
-    db   = ctools.dbfile.DBSqlite3(args.db)
+    db   = ctools.dbfile.DBSqlite3(args.db,dicts=True,debug=True)
     db.set_cache_bytes(4*1024*1024*1024)
 
     gt = GeoTree(db,args.name,args.scheme)

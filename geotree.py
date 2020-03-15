@@ -19,9 +19,10 @@ from collections import deque
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment, PatternFill, Border, Side, Protection, Font, Fill, Color
-from openpyxl.styles.borders import Border, Side, BORDER_THIN
+from openpyxl.styles.borders import Border, Side, BORDER_THIN, BORDER_THICK
 from openpyxl.comments import Comment
 import openpyxl.styles.colors as colors
+
 
 thin_border = Border(
     left=Side(border_style=BORDER_THIN, color='00000000'),
@@ -30,9 +31,13 @@ thin_border = Border(
     bottom=Side(border_style=BORDER_THIN, color='00000000')
 )
 
-right_border = Border(
-    right=Side(border_style=BORDER_THIN, color='00000000')
-)
+top_thick_border = Border( top=Side(border_style=BORDER_THICK, color='0000FF') )
+top_border = Border( top=Side(border_style=BORDER_THIN, color='00000000') )
+right_border = Border( right=Side(border_style=BORDER_THIN, color='00000000') )
+right_thick_border = Border( right=Side(border_style=BORDER_THICK, color='00000000') )
+bottom_border = Border( bottom=Side(border_style=BORDER_THIN, color='00000000') )
+bottom_thick_border = Border( bottom=Side(border_style=BORDER_THICK, color='00007F') )
+
 BOLD     = Font(bold=True)
 CENTERED = Alignment(horizontal='center')
 YELLOW_FILL   = PatternFill(fill_type='solid', start_color=colors.YELLOW, end_color=colors.YELLOW)
@@ -66,6 +71,7 @@ CREATE UNIQUE INDEX %TABLE%_logrecno ON %TABLE%(state,logrecno);
 CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 """
 
+#                                 P1      P2        P3       P4      P5      P6
 GEOTREE={'v1':{'names':['NATION','STATE','COUNTY','TGROUP','TRACT','BGROUP','BLOCK']}}
 
 # 
@@ -101,15 +107,15 @@ def wb_setup_overview(ws):
         ws.cell(row=2, column=col).fill = PINK_FILL
     return 3                    # next row
 
-def ws_setup_level(ws,name):
+def ws_setup_level(ws,level,fanout_level):
     ws.cell(row=2, column=1).value = 'STUSAB' # A2
     ws.cell(row=2, column=2).value = 'Prefix' # B2
-    ws.cell(row=2, column=3).value = 'Name'   # C2
+    ws.cell(row=2, column=3).value = 'Level'   # C2
     ws.column_dimensions['C'].width=20
     for ch in 'DEFGHIJKLMNOPQ':
         ws.column_dimensions[ch].width=10
 
-    ws.cell(row=1,column=4).value = f"fanout to {name}"
+    ws.cell(row=1,column=4).value = f"fanout to {fanout_level}"
     ws.cell(row=1,column=4).alignment = CENTERED
     ws.merge_cells(start_row=1,end_row=1,start_column=4,end_column=7+10)
     ws.cell(row=1,column=6+9).border = right_border
@@ -123,10 +129,8 @@ def ws_setup_level(ws,name):
     for col in range(4,7+10+1):
         ws.cell(row=2,column=col).alignment = CENTERED
     ws.cell(row=2,column=4).border = right_border
-    ws.cell(row=2,column=6).border = right_border
+    ws.cell(row=2,column=6).border = right_thick_border
     ws.cell(row=2,column=7+10).border = right_border
-
-
 
 class GeoTree:
     def __init__(self,db,name,scheme):
@@ -138,13 +142,13 @@ class GeoTree:
     def create(self):
         if self.scheme=='v1':
             self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
-            cmd = f"""INSERT INTO {name} 
+            cmd = f"""INSERT INTO {self.name} 
             SELECT state AS state,
             logrecno AS logrecno,
             printf("%02d",state) as p1,
             printf("%03d",county) as p2,
             substr(printf("%05d",tract),1,2) as p3,
-            printf("%05d",tract) as p4,
+            printf("%06d",tract) as p4,
             substr(printf("%04d",block),1,1) as p5,
             printf("%04d",block) as p6
             FROM blocks"""
@@ -162,18 +166,34 @@ class GeoTree:
 
     def get_geounits(self,ct):
         """ When ct=0, overview is nation, state page is being constructed, state rows need to be counties"""
-        reporting_prefix = "||".join(["''"] + [f"p{n}" for n in range(1,ct+2)])
+        reporting_prefix = "||' '||".join(["''"] + [f"p{n}" for n in range(1,ct+2)])
         plevel1 = ",".join([f"p{n}" for n in range(1,ct+2)])   # if ct=0, this is P1
         plevel2 = ",".join([f"p{n}" for n in range(1,ct+3)])  # if ct=0, this is P1,P2
         plevel3 = ",".join([f"p{n}" for n in range(1,ct+4)])  # if ct=0, this is P1,P2,P3
         plevel4 = ",".join([f"p{n}" for n in range(1,ct+5)])  # if ct=0, this is P1,P2,P3,P4
         print(f"ct:{ct} plevel1:{plevel1}")
 
-        cmd = f"""SELECT state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*),SUM(pop) as population FROM 
-        (SELECT a.state AS state,{plevel2},SUM(b.pop) as pop FROM {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevel3})
+        old_cmd = f"""SELECT state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*),SUM(pop) as population FROM 
+        (SELECT a.state AS state,{plevel2},SUM(b.pop) as pop FROM {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevel2})
         GROUP BY {plevel2}"""
+
+        cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*),SUM(pop) as population FROM 
+        {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevel2}"""
         c = self.db.execute(cmd)
-        return c.fetchall()
+        t0 = time.time()
+        res = c.fetchall()
+        t1 = time.time()
+        print(f"time: {t1-t0}",file=sys.stderr)
+        return res
+
+    def end_state(self,ws,start_row,end_row):
+        if start_row + 1 > end_row:
+            return
+        for cellrow in ws.iter_rows(min_row=start_row, max_row=start_row, min_col=1, max_col=17):
+            for cell in cellrow:
+                cell.border = top_thick_border
+        #  don't do grouping; it is confusing
+        #ws.row_dimensions.group(start_row,end_row-1,hidden=True)
 
     def report(self):
         """Generate a geotree report into a spreadsheet. 
@@ -181,6 +201,7 @@ class GeoTree:
         Sheet FANLEV    - report of fanout to that level.
         When ct=0, we are doing NATION on the overview and STATES on the tab.
         """
+
         vintage   = time.strftime("%Y-%m-%d %H%M%S")
         fnamebase = f"reports/report-{vintage}"
         wb = Workbook()
@@ -189,9 +210,10 @@ class GeoTree:
             del wb['Sheet']
         overview_row = wb_setup_overview(ws_overview)
         for (ct,overview_name) in enumerate(self.gt['names'][0:-1]):
-            fanout_name = self.gt['names'][ct+1]+"S"
+            fanout_name = self.gt['names'][ct+1]
+            next_level = self.gt['names'][ct+2]
             ws_level = wb.create_sheet(fanout_name)
-            ws_setup_level(ws_level,fanout_name)
+            ws_setup_level(ws_level,fanout_name,next_level)
             geounits = self.get_geounits(ct)
             logging.info(f"ct: {ct} len(geounits)={len(geounits)}")
 
@@ -199,15 +221,32 @@ class GeoTree:
             geounits = deque(geounits)
             # Now find all of the fanout groups
             level_stats = []
-            row = 3
+            row         = 3
+            state       = None
+            print_count = 0
+
+            # Crunch through the returned geounits, dividing between each state, and summarizing on each row.
             while geounits:
                 res = {}
                 fanout_populations = []
                 reporting_prefix = geounits[0]['reporting_prefix']
                 while geounits and (reporting_prefix == geounits[0]['reporting_prefix']):
                     d0 = geounits.popleft()
-                    print(dict(d0))
+                    if print_count < 10:
+                        print(dict(d0))
+                        print_count += 1
                     fanout_populations.append(d0['population'])
+
+                if state!=d0['state']:
+                    # New state!
+                    if state is not None:
+                        # End the last state
+                        self.end_state(ws_level,state_start_row,row-1)
+                    state           = d0['state']
+                    if ct>0:
+                        row += 1
+                    state_start_row = row
+
                 res['fanout_populations'] = fanout_populations
                 res['fanout_count']       = len(fanout_populations)
                 level_stats.append(res)
@@ -217,7 +256,7 @@ class GeoTree:
                     ws_level.cell(row=row,column=1).value = constants.STATE_TO_STUSAB[d0['state']]
                 else:
                     ws_level.cell(row=row,column=1).value = constants.STATE_TO_STUSAB[d0['state']]
-                ws_level.cell(row=row,column=2).value = d0['reporting_prefix']
+                ws_level.cell(row=row,column=2).value = "_"+d0['reporting_prefix']
                 if args.names:
                     if self.args.geocode3 and len(reporting_prefix)<12:
                         ws_level.cell(row=row,column=3).value = gs.geocode3_name(reporting_prefix)
@@ -226,17 +265,25 @@ class GeoTree:
                 ws_level.cell( row=row,column=4).value = len(fanout_populations)
                 ws_level.cell( row=row,column=5).value = sum(fanout_populations)
                 ws_level.cell( row=row,column=6).value = int(statistics.mean(fanout_populations))
+                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=3,max_col=6):
+                    for cell in cellrow:
+                        cell.border = right_border
+                ws_level.cell( row=row,column=6).border = right_thick_border
                 for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=7,max_col=17):
                     for(cell,value) in zip(cellrow, deciles(fanout_populations)):
                         cell.value = value
                         cell.number_format = '#,##0'
+                ws_level.cell( row=row,column=17).border = right_thick_border
                 row += 1
-
+            self.end_state(ws_level, state_start_row, row-1) # and end the last state
+            # Increase Spreadsheet usability
+            ws_level.freeze_panes    = 'A3'
+            ws_level.auto_filter.ref = f'A2:Q{row-1}'
 
             # Now put in the high-level
-            ws_overview.cell(row=overview_row, column=1).value = fanout_name
+            ws_overview.cell(row=overview_row, column=1).value = self.gt['names'][ct+1]
             ws_overview.cell(row=overview_row, column=2).value = len(level_stats)
-            ws_overview.cell(row=overview_row, column=3).value = self.gt['names'][ct]
+            ws_overview.cell(row=overview_row, column=3).value = self.gt['names'][ct+2]
             ws_overview.cell(row=overview_row, column=4).value = sum([res['fanout_count'] for res in level_stats])
 
             fanouts = [res['fanout_count'] for res in level_stats]
@@ -245,6 +292,7 @@ class GeoTree:
                 for (cell,value) in zip(cellrow,fanout_deciles):
                     cell.value = value
                     cell.fill = YELLOW_FILL
+                    cell.border = thin_border
 
             all_fanout_populations = [res['fanout_populations'] for res in level_stats]
             all_fanout_populations = list(flatmap( lambda a:a, all_fanout_populations))
@@ -254,15 +302,17 @@ class GeoTree:
                     cell.value = value
                     cell.number_format = "#,##0"
                     cell.fill = PINK_FILL
-
+                    cell.border = thin_border
+            overview_row += 1
             # Save this level
+
 
             fname = f"{fnamebase} {ct}.xlsx"
             logging.info("Saving %s",fname)
             wb.save(fname)
-            subprocess.call(['open',fname])
-            print("stop")
-            exit(0)
+            if ct+1==args.levels:
+                break
+        subprocess.call(['open',fname])
 
 
 if __name__ == "__main__":
@@ -276,6 +326,7 @@ if __name__ == "__main__":
     parser.add_argument("--scheme" , help='specify partitioning scheme')
     parser.add_argument("--report", action='store_true', help="Create a report")
     parser.add_argument("--names", action='store_true', help='display names')
+    parser.add_argument("--levels", type=int, help="how many levels")
     parser.add_argument("name", help="Name of the schema table")
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
@@ -293,7 +344,7 @@ if __name__ == "__main__":
         db.execute(f"DROP INDEX IF EXISTS {args.name}_p",debug=True)
 
     if args.create:
-        db.create()
+        gt.create()
                          
     if args.dump:
         gt.dump()

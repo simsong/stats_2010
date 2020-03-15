@@ -10,6 +10,10 @@ import time
 import zipfile
 import io
 import logging
+import numpy as np
+import itertools
+import statistics
+import subprocess
 from collections import deque
 
 from openpyxl import Workbook
@@ -40,6 +44,12 @@ import ctools.clogging
 import constants
 from constants import *
 
+def deciles(ary):
+    return np.percentile(ary, np.arange(0,101,10), interpolation='lower')
+
+def flatmap(func, *iterable):
+    return itertools.chain.from_iterable(map(func, *iterable))
+
 ###
 ### Create geotree schema
 ###
@@ -56,7 +66,7 @@ CREATE UNIQUE INDEX %TABLE%_logrecno ON %TABLE%(state,logrecno);
 CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 """
 
-GEOTREE={'v1':{'names':['STATE','COUNTY','TGROUP','TRACT','BGROUP','BLOCK']}}
+GEOTREE={'v1':{'names':['NATION','STATE','COUNTY','TGROUP','TRACT','BGROUP','BLOCK']}}
 
 # 
 def wb_setup_overview(ws):
@@ -151,13 +161,17 @@ class GeoTree:
             print(",".join([str(x) for x in row]))
 
     def get_geounits(self,ct):
-        reporting_prefix = "||".join(["''"] + [f"a.p{n}" for n in range(1,ct)])
-        plevels = ",".join([f"p{n}" for n in range(1,ct+1)])
-        plevels2 = ",".join([f"p{n}" for n in range(1,ct+2)])
+        """ When ct=0, overview is nation, state page is being constructed, state rows need to be counties"""
+        reporting_prefix = "||".join(["''"] + [f"p{n}" for n in range(1,ct+2)])
+        plevel1 = ",".join([f"p{n}" for n in range(1,ct+2)])   # if ct=0, this is P1
+        plevel2 = ",".join([f"p{n}" for n in range(1,ct+3)])  # if ct=0, this is P1,P2
+        plevel3 = ",".join([f"p{n}" for n in range(1,ct+4)])  # if ct=0, this is P1,P2,P3
+        plevel4 = ",".join([f"p{n}" for n in range(1,ct+5)])  # if ct=0, this is P1,P2,P3,P4
+        print(f"ct:{ct} plevel1:{plevel1}")
 
-        cmd = f"""SELECT state,{reporting_prefix} as reporting_prefix,{plevels},COUNT(*),SUM(pop) as population FROM 
-        (SELECT a.state AS state,{plevels},SUM(b.pop) as pop FROM {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevels2})
-        GROUP BY {plevels}"""
+        cmd = f"""SELECT state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*),SUM(pop) as population FROM 
+        (SELECT a.state AS state,{plevel2},SUM(b.pop) as pop FROM {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevel3})
+        GROUP BY {plevel2}"""
         c = self.db.execute(cmd)
         return c.fetchall()
 
@@ -165,6 +179,7 @@ class GeoTree:
         """Generate a geotree report into a spreadsheet. 
         Sheet overview      - report of all summary levels
         Sheet FANLEV    - report of fanout to that level.
+        When ct=0, we are doing NATION on the overview and STATES on the tab.
         """
         vintage   = time.strftime("%Y-%m-%d %H%M%S")
         fnamebase = f"reports/report-{vintage}"
@@ -173,7 +188,8 @@ class GeoTree:
         if 'Sheet' in wb:
             del wb['Sheet']
         overview_row = wb_setup_overview(ws_overview)
-        for (ct,fanout_name) in enumerate(self.gt['names'],1):
+        for (ct,overview_name) in enumerate(self.gt['names'][0:-1]):
+            fanout_name = self.gt['names'][ct+1]+"S"
             ws_level = wb.create_sheet(fanout_name)
             ws_setup_level(ws_level,fanout_name)
             geounits = self.get_geounits(ct)
@@ -183,6 +199,7 @@ class GeoTree:
             geounits = deque(geounits)
             # Now find all of the fanout groups
             level_stats = []
+            row = 3
             while geounits:
                 res = {}
                 fanout_populations = []
@@ -195,15 +212,55 @@ class GeoTree:
                 res['fanout_count']       = len(fanout_populations)
                 level_stats.append(res)
 
+                # Populate the per-level information with the last d0 data and info for this res
+                if ct==0:
+                    ws_level.cell(row=row,column=1).value = constants.STATE_TO_STUSAB[d0['state']]
+                else:
+                    ws_level.cell(row=row,column=1).value = constants.STATE_TO_STUSAB[d0['state']]
+                ws_level.cell(row=row,column=2).value = d0['reporting_prefix']
+                if args.names:
+                    if self.args.geocode3 and len(reporting_prefix)<12:
+                        ws_level.cell(row=row,column=3).value = gs.geocode3_name(reporting_prefix)
+                    else:
+                        ws_level.cell(row=row,column=3).value = gs.county_name(state, county)
+                ws_level.cell( row=row,column=4).value = len(fanout_populations)
+                ws_level.cell( row=row,column=5).value = sum(fanout_populations)
+                ws_level.cell( row=row,column=6).value = int(statistics.mean(fanout_populations))
+                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=7,max_col=17):
+                    for(cell,value) in zip(cellrow, deciles(fanout_populations)):
+                        cell.value = value
+                        cell.number_format = '#,##0'
+                row += 1
+
+
             # Now put in the high-level
-            ws.cell(row=overview_row, column=1).value = fanout_name
-            ws.cell(row=overview_row, column=2).value = len(level_stats)
-            ws.cell(row=overview_row, column=3).value = self.gt['names'][ct]
-            ws.cell(row=overview_row, column=4).value = sum([res['sublevel_count'] for res in level_stats])
+            ws_overview.cell(row=overview_row, column=1).value = fanout_name
+            ws_overview.cell(row=overview_row, column=2).value = len(level_stats)
+            ws_overview.cell(row=overview_row, column=3).value = self.gt['names'][ct]
+            ws_overview.cell(row=overview_row, column=4).value = sum([res['fanout_count'] for res in level_stats])
+
+            fanouts = [res['fanout_count'] for res in level_stats]
+            fanout_deciles = deciles(fanouts)
+            for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row, min_col=5, max_col = 15):
+                for (cell,value) in zip(cellrow,fanout_deciles):
+                    cell.value = value
+                    cell.fill = YELLOW_FILL
+
+            all_fanout_populations = [res['fanout_populations'] for res in level_stats]
+            all_fanout_populations = list(flatmap( lambda a:a, all_fanout_populations))
+            fanout_population_deciles = deciles(all_fanout_populations)
+            for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row, min_col=16, max_col = 26):
+                for (cell,value) in zip(cellrow,fanout_population_deciles):
+                    cell.value = value
+                    cell.number_format = "#,##0"
+                    cell.fill = PINK_FILL
+
+            # Save this level
 
             fname = f"{fnamebase} {ct}.xlsx"
             logging.info("Saving %s",fname)
             wb.save(fname)
+            subprocess.call(['open',fname])
             print("stop")
             exit(0)
 
@@ -218,6 +275,7 @@ if __name__ == "__main__":
     parser.add_argument("--dump",   action='store_true', help='print the blocks')
     parser.add_argument("--scheme" , help='specify partitioning scheme')
     parser.add_argument("--report", action='store_true', help="Create a report")
+    parser.add_argument("--names", action='store_true', help='display names')
     parser.add_argument("name", help="Name of the schema table")
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()

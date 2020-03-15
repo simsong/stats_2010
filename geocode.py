@@ -8,9 +8,8 @@ This module contains logic to create geocodes from the PL94 and SF1 geography fi
 
 We actually have three geocodes:
 
-v1 geocode:  STATE(2)|COUNTY(3)|TRACT(6)|BLOCK(4)
-
-v2 geocode:  STATE(2)|COUNTY(3)|COUSUB(4)|TRACT(6)|BLOCK(4)
+v1 geocode (what we used in the 2010 DDP):  
+  STATE(2)|COUNTY(3)|TRACT(6)|BLOCK(4)
 
 v3 geocode:
  WASHINGTON DC(3) | PADDED-SLDU(8)       | PADDED-TRACT(9) | BLKGRP(2) | BLOCK(4)
@@ -37,7 +36,6 @@ def include_aiannh(code):
             return "State recognized American Indian Reservations"
     else:
         return False
-
 
 def nint(val):
     """Return an integer or None"""
@@ -145,7 +143,6 @@ def geo_geocode3(gh):
         code.append( blkgrp2 ) # BLKGRP 2
         code.append( block  )  # BLOCK
     return "".join(code)
-
 
 
 class GeoCode:

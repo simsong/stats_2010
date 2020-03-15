@@ -19,7 +19,7 @@ NOTES:
  * geocode3 - combined version.
 """
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 import datetime
 import json
 import os
@@ -76,10 +76,11 @@ class Loader:
     """Class to load the blocks and geo tables"""
     def __init__(self, args):
         self.args = args
-        self.conn = db_connection(self.args.db)
-        self.conn.cursor().execute(SQL_SET_CACHE)
+        self.db   = ctools.dbfile.DBSqlite3(self.args.db)
+        self.conn = self.db.conn
+        self.db.execute(SQL_SET_CACHE)
         self.conn.row_factory = sqlite3.Row
-        create_schema(self.conn, SQL_BLOCKS_SCHEMA)
+        self.db.create_schema(SQL_BLOCKS_SCHEMA)
         self.add_geo_schema()
 
     def add_geo_schema(self):
@@ -217,9 +218,6 @@ class Loader:
             return
         self.process_file_name(open(fname, encoding='latin1'), name)
 
-
-def db_connection(filename=DBFILE):
-    return sqlite3.connect(filename)
 
 if __name__ == "__main__":
     import argparse

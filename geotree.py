@@ -71,8 +71,10 @@ CREATE UNIQUE INDEX %TABLE%_logrecno ON %TABLE%(state,logrecno);
 CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 """
 
-#                                 P1      P2        P3       P4      P5      P6
-GEOTREE={'v1':{'names':['NATION','STATE','COUNTY','TGROUP','TRACT','BGROUP','BLOCK']}}
+#                                 P1               P2                                       P3                                 P4         P5      P6
+GEOTREE={'v1':{'names':['NATION','STATE',          'COUNTY',                                'TGROUP',                         'TRACT',   'BGROUP','BLOCK']},
+         'v2':{'names':['NATION','DC•STATE•ASTATE','SLDU•AIANNH_COUNTY•COUSUB•COUNTY_PLACE', 'TRACT',                         'BLKGRP2', 'BLOCK', '']}
+}
 
 # 
 def wb_setup_overview(ws):
@@ -132,6 +134,52 @@ def ws_setup_level(ws,level,fanout_level):
     ws.cell(row=2,column=6).border = right_thick_border
     ws.cell(row=2,column=7+10).border = right_border
 
+STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
+DC_FIPS=11
+EXCLUDE_STATE_RECOGNIZED_TRIBES=True
+def include_aiannh(code):
+    if 1 <= code <= 4999:
+        return "Federally recognized American Indian Reservations and Off-Reservation Trust Lands"
+    elif 5000 <= code  <=5999:
+        return "Hawaiian Home Lands"
+    elif 6000 <= code <= 7999:
+        return "Alaska Native Village Statistical Areas"
+    elif 9000 <= code <= 9499:
+        if EXCLUDE_STATE_RECOGNIZED_TRIBES:
+            return False
+        else:
+            return "State recognized American Indian Reservations"
+    else:
+        return False
+
+def geocode3(gh):
+    """The revised geocode that takes into account AIANNH. Levels are:
+    0 - Nation
+    1 - Non-AIANNH part-of-state                  | AIANNH part-of-State 
+    2 - COUNTY in non-strong MCD states           | ignored in AIANNH
+    3 - PLACE in 38 strong-MCD states, SLDU in DC | AIANNH in AIANNH states
+    4 - TRACT or 3-digit TG or 4-digit TG         | TRACT
+    5 - BLKGRP first 1 or 2 digits of block       | BLKGRP
+    6 - BLOCK                                     | BLOCK
+    """
+    block  = f"{gh['block']:04}"
+    blkgrp2 = block[0:2]         # note 2-digit block groups
+    if gh['state']==DC_FIPS:
+        # Washington DC
+        return (f"{DC_FIPS:02}D",    f"____{int(gh['sldu']):05}",            f"___{gh['tract']:06}",               blkgrp2, block, None )
+    elif include_aiannh(gh['AIANNH']):
+        # AIANNH portion of 38-states with AIANNH
+        return (f"{gh['state']:02}A", f"{gh['aiannh']:05}{gh['county']:03}", f"___{gh['tract']:06}",               blkgrp2, block, None )
+    elif gh['STATE'] in STRONG_MCD_STATES:
+        # Non-AIAN area in 12 state with strong MCD.
+        # County is included in tract to make it unique, but cousubs do not cross counties.
+        return (f"{gh['state']:02}X", f"___{gh['cousub']:05}",               f"{gh['county']:03}{gh['tract']:06}", blkgrp2, block, None  )
+    else:
+        # Non-AIAN area and 38 states not strong MCD
+        return (f"{gh['state']:02}X", f"{gh['county']:03}{gh['place']:05}",  f"___{gh['tract']:06}",               blkgrp2, block, None  )
+    return "".join(code)
+
+
 class GeoTree:
     def __init__(self,db,name,scheme):
         self.db   = db
@@ -152,8 +200,22 @@ class GeoTree:
             substr(printf("%04d",block),1,1) as p5,
             printf("%04d",block) as p6
             FROM blocks"""
-            db.execute(cmd,debug=True)
-            db.commit()
+            self.db.execute(cmd,debug=True)
+            self.db.commit()
+        elif self.scheme=='v2':
+            # This could be made a LOT faster. Right now we just go row-by-row
+            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
+            c = self.db.execute("SELECT * from blocks")
+            for block in c:
+                try:
+                    p = geocode3(block)
+                except KeyError as e:
+                    print("block:",block,file=sys.stderr)
+                    print(e,file=sys.stderr)
+                    exit(1)
+                self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
+                                (block['STATE'],block['LOGRECNO'],p[0],p[1],p[2],p[3],p[4],p[5]))
+            self.db.commit()
         else:
             raise RuntimeError(f"Unknown scheme: {self.scheme}")
 
@@ -212,7 +274,7 @@ class GeoTree:
         for (ct,overview_name) in enumerate(self.gt['names'][0:-1]):
             fanout_name = self.gt['names'][ct+1]
             next_level = self.gt['names'][ct+2]
-            ws_level = wb.create_sheet(fanout_name)
+            ws_level = wb.create_sheet(fanout_name.replace("/"," "))
             ws_setup_level(ws_level,fanout_name,next_level)
             geounits = self.get_geounits(ct)
             logging.info(f"ct: {ct} len(geounits)={len(geounits)}")
@@ -332,7 +394,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     ctools.clogging.setup(level=args.loglevel)
 
-    db   = ctools.dbfile.DBSqlite3(args.db,dicts=True,debug=True)
+    db   = ctools.dbfile.DBSqlite3(args.db,dicts=True,debug=False)
     db.set_cache_bytes(4*1024*1024*1024)
 
     gt = GeoTree(db,args.name,args.scheme)

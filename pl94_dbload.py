@@ -15,8 +15,6 @@ SF1 Datasources:
 NOTES: 
  * LOGRECNO is not consistent between the PL94 and SF1 files
  * HOUSES and OCCUPIED do not include GROUP QUARTERS
- * geocode  - basic geocode.      STATE/COUNTY/TRACT/BLOCK
- * geocode3 - combined version.
 """
 
 __version__ = '0.2.0'
@@ -31,6 +29,7 @@ import time
 import zipfile
 import io
 import logging
+import ctools.dbfile
 
 import constants
 from constants import *
@@ -42,12 +41,9 @@ CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
 SQL_BLOCKS_SCHEMA="""
-CREATE TABLE IF NOT EXISTS blocks (geocode VARCHAR(15), geocode3 VARCHAR(26),
-                                   state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
-                                   cousub INTEGER, aiannh INTEGER, 
+CREATE TABLE IF NOT EXISTS blocks (state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
+                                   cousub INTEGER, aiannh INTEGER, sldu INTEGER, place INTEGER,
                                    logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
-CREATE UNIQUE INDEX IF NOT EXISTS geocode_idx ON blocks(geocode);
-CREATE UNIQUE INDEX IF NOT EXISTS geocode3_idx ON blocks(geocode3);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx1 ON blocks(state,county,tract,block);
 CREATE INDEX IF NOT EXISTS blocks_tract  ON blocks(tract);
@@ -70,7 +66,7 @@ def create_schema(conn,schema):
             print(e)
             exit(1)
 
-from geocode import geo_geocode,geo_geocode3,GEO_HEADER,strip_str,extractall_typed
+from geocode import GEO_HEADER,strip_str,extractall_typed
 
 class Loader:
     """Class to load the blocks and geo tables"""
@@ -101,43 +97,20 @@ class Loader:
             c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
         
     def decode_geo_line(self, c, line):
-        """Decode the hiearchical geography lines. These must be done before the other files are read
-        to get the logrecno."""
+        """Decode the hiearchical geography lines and store them in the geo table. 
+        These must be done before the other files are read to get the logrecno.
+        The blocks table is then created with a select 
+        """
 
         gh = extractall_typed(line)
         if gh['LOGRECNO']==self.args.debuglogrecno:
             print("\n",gh)
         assert gh['FILEID'] in ('PLST','SF1ST')
 
-        if gh['TRACT'] and gh['TRACT'] >= 990000 and gh['TRACT'] <=990099:
+        tract = gh['TRACT']
+        if (tract) and  (990000 <= tract <= 990099):
             # Ignore water tracts
             return
-
-        # Extract the fields
-        sumlev = gh['SUMLEV']
-
-        if (self.args.sumlev is not None) and (self.args.sumlev!=sumlev):
-            return
-
-        if sumlev in (SUMLEV_SF1_BLOCK, SUMLEV_PL94_BLOCK):
-            geocode  = geo_geocode(line)
-            geocode3 = geo_geocode3(gh)
-            if gh['LOGRECNO']==self.args.debuglogrecno:
-                print("geocode:",geocode)
-                print("geocode3:",geocode3)
-            try:
-                c.execute("INSERT INTO blocks "
-                          "(geocode, geocode3, state, county,tract,block,cousub,aiannh,logrecno) values (?,?,?,?,?,?,?,?,?,?)",
-                          (geocode, geocode3, gh['STATE'], gh['COUNTY'], gh['TRACT'], gh['BLOCK'], gh['COUSUB'],
-                           gh['AIANNH'], gh['LOGRECNO']))
-            except sqlite3.IntegrityError as e:
-                print(e,sys.stderr)
-                print(f"geocode: {geocode} geocode3: {geocode3}\n{gh}",file=sys.stderr)
-                self.conn.commit()
-                c.execute("SELECT * from blocks where geocode3=?",(geocode3,))
-                r = c.fetchone()
-                print(dict(r))
-                exit(1)
 
         cmd = "INSERT INTO geo (" + ",".join(GEO_HEADER.keys()) + ") values (" + ",".join(["?"]*len(GEO_HEADER)) + ")"
         data = extractall_typed(line)
@@ -145,7 +118,7 @@ class Loader:
         c.execute(cmd,args)
 
     def decode_012010(self, c, line):
-        """Update the database for a line in segemtn 1 of the 2010 PL94 or SF1 files. 
+        """Update the database for a line in segmetn 1 of the 2010 PL94 or SF1 files. 
         Note that the logical record number may not be in the DB, because this line may not be for a block or tract.
         P0010001 = Total Population
         """
@@ -195,10 +168,14 @@ class Loader:
 
     def process_file_name(self, f, name):
         if name[2:] in ['geo2010.pl','geo2010.sf1']:
-            if args.geoinfo:
-                self.load_file(f, self.info_geo_line)
-            else:
-                self.load_file(f, self.decode_geo_line)
+            # load the geo table
+            self.load_file(f, self.decode_geo_line)
+            state = constants.STUSAB_TO_STATE[name[0:2].upper()]
+            # copy to the blocks table (really unnecessary; we should just copy over the logrecno, but this makes things easier)
+            self.conn.execute("""
+            INSERT INTO blocks (state, county, tract, block, cousub, aiannh, sldu, place, logrecno)
+            SELECT state, county, tract, block, cousub, aiannh, sldu, place, logrecno 
+            FROM geo WHERE state=? AND sumlev IN (101,750)""",(state,)) 
             return
         if name[2:] in ['000012010.pl','000012010.sf1']:
             self.load_file(f, self.decode_012010)
@@ -229,7 +206,6 @@ if __name__ == "__main__":
                         " For best results, use the ZIP file", 
                         nargs="*")
     parser.add_argument("--sumlev", help="Only do this summary level")
-    parser.add_argument("--geoinfo", help="Provide geography information only.", action='store_true')
     parser.add_argument("--aiannh", help="Print everything we know about an AIANNH")
     parser.add_argument("--debuglogrecno", help="logrecno for debugging", type=int)
     args = parser.parse_args()

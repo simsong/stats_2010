@@ -62,9 +62,6 @@ pr_load:
 	@echo Just loading ak in pr.sqlite3
 	python3 pl94_dbload.py --db pr.sqlite3 --wipe data/2010_pl94/dist/pr2010.pl.zip --debuglogrecno=11735
 
-pl94_load_geo: pl94_dbload.py
-	python3 pl94_dbload.py data/??geo2010.pl
-
 download_ak:
 	@echo Downloading all of the data associated with AK.
 	python3 download_all.py --state ak pl94 sf1 sf2

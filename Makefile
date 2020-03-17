@@ -32,9 +32,19 @@ pl94_load:
 	cp -c pl94.sqlite3 pl94_ro.sqlite3
 	chmod 444 pl94_ro.sqlite3
 
-r3:
-	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --geocode_report \
-	        --prefixset "3:6,3:11,11:20,20:22,22:26" --loglevel INFO
+v123: v1 v2 v3
+
+v1:
+	@echo a quick report of the v1 geography down to the states
+	python geotree.py --db pl94.sqlite3 --scheme v1 table1 --report --xpr
+
+v2:
+	@echo a quick report of the v2 geography down to the states
+	python geotree.py --db pl94.sqlite3 --scheme v2 table2 --report --xpr
+
+v3:
+	@echo a quick report of the v2 geography down to the states
+	python geotree.py --db pl94.sqlite3 --scheme v3 table3 --report --xpr
 
 s3:
 	python3 geocode_stats.py --db pl94.sqlite3 --geocode3 --geolevel_report \

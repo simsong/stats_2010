@@ -66,7 +66,9 @@ download_ak:
 	@echo Downloading all of the data associated with AK.
 	python3 download_all.py --state ak pl94 sf1 sf2
 
-make_crosswalks:
-	bash crosswalk_generator_all
+v1_geo:
+	python3 geotree.py --erase --create --scheme v1 table1
 
+v2_geo:
+	python3 geotree.py --erase --create --scheme v2 table2
 

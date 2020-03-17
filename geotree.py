@@ -14,7 +14,23 @@ import numpy as np
 import itertools
 import statistics
 import subprocess
+import gc
+import math
 from collections import deque
+
+#                       P0        P1                  P2                  P3          P4         P5      P6
+GEOTREE={'v1':{'names':['US',    'DC•STATE',          'COUNTY',           'TGROUP',   'TRACT',   'BGROUP','BLOCK'],
+               'name':'Geography used for 2010 Demonstration Data Products' },
+
+         'v2':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•PLACE','TRACT',    'BLKGRP2', 'BLOCK', None],
+               'name':'Revised MCD and AIAN-aware geography' },
+
+         'v3':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•PLACE','LEVEL3',   'BLOCK',  None, None],
+               'name':'Revised MCD and AIAN-aware geography with synthetic LEVEL3' 
+               }
+         }
+
+
 
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
@@ -38,10 +54,28 @@ right_thick_border = Border( right=Side(border_style=BORDER_THICK, color='000000
 bottom_border = Border( bottom=Side(border_style=BORDER_THIN, color='00000000') )
 bottom_thick_border = Border( bottom=Side(border_style=BORDER_THICK, color='00007F') )
 
+# https://htmlcolorcodes.com/
+
 BOLD     = Font(bold=True)
 CENTERED = Alignment(horizontal='center')
 YELLOW_FILL   = PatternFill(fill_type='solid', start_color=colors.YELLOW, end_color=colors.YELLOW)
 PINK_FILL   = PatternFill(fill_type='solid', start_color='ffb6c1', end_color='ffb6c1')
+LIGHT_GREEN_FILL  = PatternFill(fill_type='solid', start_color='EAFAF1', end_color='EAF8F1')
+
+#PR_FILL = PatternFill(fill_type='solid', start_color='F4D03F', end_color='F4D03F')       # yellow
+PR_FILL     = PatternFill(fill_type='solid', start_color='F4D03F')       # yellow
+STATE1_FILL = PatternFill(fill_type='solid', start_color='F2F4F4')   # silver
+STATE2_FILL = PatternFill(fill_type='solid', start_color='A9CCE3') # blue
+
+def darker(openpyxl_fill):
+    rgb = openpyxl_fill.start_color.rgb
+    (r,g,b) = [int(s,16) for s in [rgb[0:2],rgb[2:4],rgb[4:6]]]
+    r = max(r-1,0)
+    g = max(g-1,0)
+    b = max(b-1,0)
+    color = f"{r:02X}{g:02X}{b:02X}"
+    return PatternFill(fill_type='solid', start_color=color)
+               
 
 import pl94_dbload
 import ctools.dbfile
@@ -71,14 +105,72 @@ CREATE UNIQUE INDEX %TABLE%_logrecno ON %TABLE%(state,logrecno);
 CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 """
 
-#                                 P1               P2                                       P3                                 P4         P5      P6
-GEOTREE={'v1':{'names':['NATION','STATE',          'COUNTY',                                'TGROUP',                         'TRACT',   'BGROUP','BLOCK']},
-         'v2':{'names':['NATION','DC•STATE•ASTATE','SLDU•AIANNH_COUNTY•COUSUB•COUNTY_PLACE', 'TRACT',                         'BLKGRP2', 'BLOCK', '']}
-}
 
+class RingBuffer:
+    from collections import deque
+    def __init__(self, data):
+        self.data = deque(data)
+
+    def append(self, x):
+        self.data.append(x)
+
+    def rotate(self):
+        self.data.append( self.data.popleft())
+
+    def next(self):
+        value = self.data.popleft()
+        self.data.append(value)
+        return value
+
+class EasyWorkbook(Workbook):
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+
+    def clean(self):
+        """Remove default 'Sheet' if exists"""
+        if 'Sheet' in self:
+            del self['Sheet']
+        
+    def format_rows(self,ws,*,min_row,max_row,column=None,skip_blank=True,min_col,max_col,fills=None,value_fills=None,stripe=False):
+        """Apply colors to each row when column changes. If column is not specified, change every row."""
+        if fills:
+            fills = RingBuffer(fills)
+            fill  = fills.next()
+        prev_value = None
+        make_darker = False
+        for cellrow in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
+            column_value = cellrow[column-min_col if column is not None else 0].value
+            if skip_blank and column_value=='': 
+                continue
+
+            make_darker  = not make_darker
+
+            if (value_fills is not None) and (column_value in value_fills):
+                fill = value_fills[column_value]
+            elif fills:
+                if column_value != prev_value:
+                    fill = fills.next()
+                    prev_value = column_value
+                    make_darker = False
+            else:
+                fill = None
+
+            #if make_darker and stripe:
+            #    fill = darker(fill)
+
+            for cell in cellrow:
+                if fill:
+                    cell.fill = fill
+
+    def set_cell(ws,*,row,column,**kwargs):
+        cell = ws.cell(row=row, column=column)
+        for (key,value) in kwargs.items():
+            setattr(cell, key, value)
+
+    
 # 
 def wb_setup_overview(ws):
-    """Set up the root of the spreadsheet"""
+    """Set up the root of the spreadsheet, adding notes and other information"""
     ws.cell(row=2, column=1).value = 'Level'
     ws.cell(row=2, column=2).value = '# Levels'
     ws.cell(row=2, column=3).value = 'Sublevel'
@@ -134,8 +226,23 @@ def ws_setup_level(ws,level,fanout_level):
     ws.cell(row=2,column=6).border = right_thick_border
     ws.cell(row=2,column=7+10).border = right_border
 
+def ws_add_notes(ws,row,fname):
+    ws.cell(row=row, column=1).value = "Notes"
+    row += 1
+    with open(fname,"r") as f:
+        for line in f:
+            ws.cell(row=row, column=1).value = line.strip()
+            row += 1
+            
+def ws_add_metadata(wb):
+    ws = wb.create_sheet("Notes")
+    ws.cell(row=1, column=1).value = "Command Line"
+    ws.cell(row=1, column=2).value = " ".join([sys.executable] + sys.argv)
+
+
 STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
 DC_FIPS=11
+PR_FIPS=72
 EXCLUDE_STATE_RECOGNIZED_TRIBES=True
 def include_aiannh(code):
     if 1 <= code <= 4999:
@@ -154,8 +261,8 @@ def include_aiannh(code):
 
 def geocode3(gh):
     """The revised geocode that takes into account AIANNH. Levels are:
-    0 - Nation
-    1 - Non-AIANNH part-of-state                  | AIANNH part-of-State 
+    0 - US or PR
+    1 - Non-AIANNH part-of-state or PR            | AIANNH part-of-State 
     2 - COUNTY in non-strong MCD states           | ignored in AIANNH
     3 - PLACE in 38 strong-MCD states, SLDU in DC | AIANNH in AIANNH states
     4 - TRACT or 3-digit TG or 4-digit TG         | TRACT
@@ -167,6 +274,9 @@ def geocode3(gh):
     if gh['state']==DC_FIPS:
         # Washington DC
         return (f"{DC_FIPS:02}D",    f"____{int(gh['sldu']):05}",            f"___{gh['tract']:06}",               blkgrp2, block, None )
+    if gh['state']==PR_FIPS:
+        # Puerto Rico
+        return (f"{PR_FIPS:02}P",    f"{gh['county']:03}{gh['place']:05}",   f"___{gh['tract']:06}",               blkgrp2, block, None )
     elif include_aiannh(gh['AIANNH']):
         # AIANNH portion of 38-states with AIANNH
         return (f"{gh['state']:02}A", f"{gh['aiannh']:05}{gh['county']:03}", f"___{gh['tract']:06}",               blkgrp2, block, None )
@@ -187,7 +297,7 @@ class GeoTree:
         self.scheme = scheme
         self.gt     = GEOTREE[scheme]
 
-    def create(self):
+    def create(self,v2table=None):
         if self.scheme=='v1':
             self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
             cmd = f"""INSERT INTO {self.name} 
@@ -204,6 +314,7 @@ class GeoTree:
             self.db.commit()
         elif self.scheme=='v2':
             # This could be made a LOT faster. Right now we just go row-by-row
+            # It takes about 5 minutes.
             self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
             c = self.db.execute("SELECT * from blocks")
             for block in c:
@@ -216,6 +327,30 @@ class GeoTree:
                 self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
                                 (block['STATE'],block['LOGRECNO'],p[0],p[1],p[2],p[3],p[4],p[5]))
             self.db.commit()
+        elif self.scheme=='v3':
+            # V2 is the v2 geography for p1 and P2, but an adaptive algorithm for P3 and P4. There is no P5.
+            # 
+            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
+            c = self.db.execute(f"SELECT state,p1,p2,count(*) as count from {v2table} group by state,p1,p2")
+            for row in c:
+                state   = row['state']
+                fanout1 = int(math.sqrt(row['count']))
+                p1 = row['p1']
+                p2 = row['p2']
+                p3 = p4 = 1
+                d = self.db.execute(f"SELECT logrecno from {v2table} where state=? and p1=? and p2=?",
+                                    (row['state'],p1,p2))
+                for row2 in d:
+                    self.db.execute(f"INSERT into {self.name} (state,logrecno,p1,p2,p3,p4) values (?,?,?,?,?,?)",
+                                    (state,row2['logrecno'],p1,p2,format(p3,"04"),format(p4,"04")))
+                    p4 += 1
+                    if p4 >= fanout1:
+                        p3 += 1
+                        p4 = 1
+                logging.info("Completed %s %s %s",state,p1,p2)
+            self.db.commit()
+                    
+
         else:
             raise RuntimeError(f"Unknown scheme: {self.scheme}")
 
@@ -229,23 +364,23 @@ class GeoTree:
     def get_geounits(self,ct):
         """ When ct=0, overview is nation, state page is being constructed, state rows need to be counties"""
         reporting_prefix = "||' '||".join(["''"] + [f"p{n}" for n in range(1,ct+2)])
-        plevel1 = ",".join([f"p{n}" for n in range(1,ct+2)])   # if ct=0, this is P1
+        plevel1 = ",".join([f"p{n}" for n in range(1,ct+2)])  # if ct=0, this is P1
         plevel2 = ",".join([f"p{n}" for n in range(1,ct+3)])  # if ct=0, this is P1,P2
         plevel3 = ",".join([f"p{n}" for n in range(1,ct+4)])  # if ct=0, this is P1,P2,P3
         plevel4 = ",".join([f"p{n}" for n in range(1,ct+5)])  # if ct=0, this is P1,P2,P3,P4
-        print(f"ct:{ct} plevel1:{plevel1}")
+        logging.info(f"ct:{ct} plevel1:{plevel1}")
 
-        old_cmd = f"""SELECT state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*),SUM(pop) as population FROM 
-        (SELECT a.state AS state,{plevel2},SUM(b.pop) as pop FROM {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevel2})
-        GROUP BY {plevel2}"""
-
-        cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*),SUM(pop) as population FROM 
-        {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno GROUP BY {plevel2}"""
+        if self.args.xpr:
+            where = f'WHERE state!={PR_FIPS}'
+        else:
+            where = ''
+        cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*) as count,SUM(pop) as population FROM 
+        {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno {where} GROUP BY {plevel2}"""
         c = self.db.execute(cmd)
         t0 = time.time()
         res = c.fetchall()
         t1 = time.time()
-        print(f"time: {t1-t0}",file=sys.stderr)
+        logging.info(f"Query Time: {t1-t0}")
         return res
 
     def end_state(self,ws,start_row,end_row):
@@ -266,18 +401,25 @@ class GeoTree:
 
         vintage   = time.strftime("%Y-%m-%d %H%M%S")
         fnamebase = f"reports/report-{vintage}"
-        wb = Workbook()
+        wb = EasyWorkbook()
         ws_overview = wb.create_sheet("Overview")
-        if 'Sheet' in wb:
-            del wb['Sheet']
+        wb.clean()
         overview_row = wb_setup_overview(ws_overview)
         for (ct,overview_name) in enumerate(self.gt['names'][0:-1]):
-            fanout_name = self.gt['names'][ct+1]
-            next_level = self.gt['names'][ct+2]
+            t0 = time.time()
+            fanout_name     = self.gt['names'][ct+1]
+            next_level_name = self.gt['names'][ct+2]
+            if self.args.xpr:
+                fanout_name = fanout_name.replace("•PR","")
+                next_level_name = fanout_name.replace("•PR","")
+
+            assert len(fanout_name) < 31
+            if next_level_name is None:
+                break
             ws_level = wb.create_sheet(fanout_name.replace("/"," "))
-            ws_setup_level(ws_level,fanout_name,next_level)
+            ws_setup_level(ws_level,fanout_name,next_level_name)
             geounits = self.get_geounits(ct)
-            logging.info(f"ct: {ct} len(geounits)={len(geounits)}")
+            logging.info(f"ct: {ct} len(geounits)={len(geounits)} t={time.time()-t0}")
 
             # Turn the geounits into a queue for rapid access
             geounits = deque(geounits)
@@ -295,35 +437,28 @@ class GeoTree:
                 while geounits and (reporting_prefix == geounits[0]['reporting_prefix']):
                     d0 = geounits.popleft()
                     if print_count < 10:
-                        print(dict(d0))
+                        logging.info(dict(d0))
                         print_count += 1
                     fanout_populations.append(d0['population'])
 
                 if state!=d0['state']:
                     # New state!
-                    if state is not None:
-                        # End the last state
-                        self.end_state(ws_level,state_start_row,row-1)
                     state           = d0['state']
                     if ct>0:
                         row += 1
-                    state_start_row = row
 
                 res['fanout_populations'] = fanout_populations
                 res['fanout_count']       = len(fanout_populations)
                 level_stats.append(res)
 
                 # Populate the per-level information with the last d0 data and info for this res
-                if ct==0:
-                    ws_level.cell(row=row,column=1).value = constants.STATE_TO_STUSAB[d0['state']]
-                else:
-                    ws_level.cell(row=row,column=1).value = constants.STATE_TO_STUSAB[d0['state']]
+                column0_label = constants.STATE_TO_STUSAB[d0['state']]
+                if d0['reporting_prefix'][3]=='A':
+                    column0_label += '-AIANNH'
+                ws_level.cell(row=row,column=1).value = column0_label
                 ws_level.cell(row=row,column=2).value = "_"+d0['reporting_prefix']
                 if args.names:
-                    if self.args.geocode3 and len(reporting_prefix)<12:
-                        ws_level.cell(row=row,column=3).value = gs.geocode3_name(reporting_prefix)
-                    else:
-                        ws_level.cell(row=row,column=3).value = gs.county_name(state, county)
+                    ws_level.cell(row=row,column=3).value = gs.county_name(state, county)
                 ws_level.cell( row=row,column=4).value = len(fanout_populations)
                 ws_level.cell( row=row,column=5).value = sum(fanout_populations)
                 ws_level.cell( row=row,column=6).value = int(statistics.mean(fanout_populations))
@@ -337,15 +472,22 @@ class GeoTree:
                         cell.number_format = '#,##0'
                 ws_level.cell( row=row,column=17).border = right_thick_border
                 row += 1
-            self.end_state(ws_level, state_start_row, row-1) # and end the last state
-            # Increase Spreadsheet usability
+
+                if row % 10_000==0:
+                    logging.info("written [%s] row %s",fanout_name, row)
+
+            logging.info("total rows=%s t=%s",row,time.time()-t0)
+            # Finalize the Sheet
             ws_level.freeze_panes    = 'A3'
             ws_level.auto_filter.ref = f'A2:Q{row-1}'
+            wb.format_rows(ws_level, min_row=3, max_row=row-1, min_col=1, max_col=17, column=1,
+                           stripe = (ct>0),
+                           fills=[STATE1_FILL, STATE2_FILL], value_fills = {'PR':PR_FILL})
 
-            # Now put in the high-level
-            ws_overview.cell(row=overview_row, column=1).value = self.gt['names'][ct+1]
+            # Now fill out the Overview Sheet
+            ws_overview.cell(row=overview_row, column=1).value = fanout_name
             ws_overview.cell(row=overview_row, column=2).value = len(level_stats)
-            ws_overview.cell(row=overview_row, column=3).value = self.gt['names'][ct+2]
+            ws_overview.cell(row=overview_row, column=3).value = next_level_name
             ws_overview.cell(row=overview_row, column=4).value = sum([res['fanout_count'] for res in level_stats])
 
             fanouts = [res['fanout_count'] for res in level_stats]
@@ -374,6 +516,11 @@ class GeoTree:
             wb.save(fname)
             if ct+1==args.levels:
                 break
+        ws_add_notes(ws_overview,overview_row+2,"geotree_notes.md")
+        ws_add_metadata(wb)
+        fname = f"{fnamebase}.xlsx"
+        logging.info("Saving %s",fname)
+        wb.save(fname)
         subprocess.call(['open',fname])
 
 
@@ -389,10 +536,13 @@ if __name__ == "__main__":
     parser.add_argument("--report", action='store_true', help="Create a report")
     parser.add_argument("--names", action='store_true', help='display names')
     parser.add_argument("--levels", type=int, help="how many levels")
+    parser.add_argument("--v2table", help="Name of a v2 table")
+    parser.add_argument("--xpr",     action='store_true', help='remove PR from reports')
     parser.add_argument("name", help="Name of the schema table")
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
     ctools.clogging.setup(level=args.loglevel)
+    gc.enable()
 
     db   = ctools.dbfile.DBSqlite3(args.db,dicts=True,debug=False)
     db.set_cache_bytes(4*1024*1024*1024)
@@ -406,7 +556,7 @@ if __name__ == "__main__":
         db.execute(f"DROP INDEX IF EXISTS {args.name}_p",debug=True)
 
     if args.create:
-        gt.create()
+        gt.create(args.v2table)
                          
     if args.dump:
         gt.dump()

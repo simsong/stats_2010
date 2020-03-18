@@ -256,10 +256,14 @@ def include_aianhh(code):
     else:
         return False
 
-NE_STATES="ME,NH,VT,MA,CT,RI"
+NEW_ENGLAND_STUSAB="ME,NH,VT,MA,CT,RI".split(",")
 V2_STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
-V21_STATE_LIST=[STUSAB_TO_STATE[stusab] for stusab in ",".split("MI,MN,NJ,NY,PA,WI" + "," + NEW_ENGLAND_STATES)]
+V21_STATE_LIST=[STUSAB_TO_STATE[stusab] for stusab in "MI,MN,NJ,NY,PA,WI".split(",") + NEW_ENGLAND_STUSAB]
 EXCLUDE_STATE_RECOGNIZED_TRIBES=True
+
+DC_STATE = STUSAB_TO_STATE['DC']
+PR_STATE = STUSAB_TO_STATE['PR']
+
 def geocode3(gh,scheme='v2'):
     """The revised geocode that takes into account AIANHH. Levels are:
     0 - US or PR
@@ -272,12 +276,12 @@ def geocode3(gh,scheme='v2'):
     """
     block  = f"{gh['block']:04}"
     blkgrp2 = block[0:2]         # note 2-digit block groups
-    if gh['state']==DC_FIPS:
+    if gh['state']==DC_STATE:
         # Washington DC
-        return (f"{DC_FIPS:02}D",    f"____{int(gh['sldu']):05}",            f"___{gh['tract']:06}",               blkgrp2, block, None )
-    if gh['state']==PR_FIPS:
+        return (f"{DC_STATE:02}D",    f"____{int(gh['sldu']):05}",            f"___{gh['tract']:06}",               blkgrp2, block, None )
+    if gh['state']==PR_STATE:
         # Puerto Rico
-        return (f"{PR_FIPS:02}P",    f"{gh['county']:03}{gh['place']:05}",   f"___{gh['tract']:06}",               blkgrp2, block, None )
+        return (f"{PR_STATE:02}P",    f"{gh['county']:03}{gh['place']:05}",   f"___{gh['tract']:06}",               blkgrp2, block, None )
     elif include_aianhh(gh['AIANHH']):
         # AIANHH portion of 38-states with AIANHH
         return (f"{gh['state']:02}A", f"{gh['aianhh']:05}{gh['county']:03}", f"___{gh['tract']:06}",               blkgrp2, block, None )
@@ -387,7 +391,7 @@ class GeoTree:
         logging.info(f"ct:{ct} plevel1:{plevel1}")
 
         if self.xpr:
-            where = f'WHERE a.state!={PR_FIPS} and b.state!={PR_FIPS}'
+            where = f'WHERE a.state!={PR_STATE} and b.state!={PR_STATE}'
         else:
             where = ''
         cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*) as count,SUM(pop) as population FROM 
@@ -560,7 +564,7 @@ if __name__ == "__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--db", help="Specify database location", default=pl94_dbload.DBFILE)
     parser.add_argument("--create", action='store_true', help='create the schema')
-    parser.add_argument("--delete", action='store_true', help='delete the schema')
+    parser.add_argument("--drop", action='store_true', help='drop the schema')
     parser.add_argument("--dump",   action='store_true', help='print the blocks')
     parser.add_argument("--scheme" , help='specify partitioning scheme')
     parser.add_argument("--report", action='store_true', help="Create a report")
@@ -580,7 +584,7 @@ if __name__ == "__main__":
     gt = GeoTree(db,args.name,args.scheme,args.xpr)
 
     # open database and give me a big cache
-    if args.delete:
+    if args.drop:
         db.execute(f"DROP TABLE IF EXISTS {args.name}",debug=True)
         db.execute(f"DROP INDEX IF EXISTS {args.name}_logrecno",debug=True)
         db.execute(f"DROP INDEX IF EXISTS {args.name}_p",debug=True)

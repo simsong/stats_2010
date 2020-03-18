@@ -2,13 +2,75 @@ STATES=ak al ar az ca co ct dc de fl ga hi ia id il in ks ky la ma md me mi mn m
 LIMIT=100
 GEODIR=/mnt/data/2010_sf1/geo
 
-all:
+help:
 	@echo Please read the Makefile.
 	@exit 1
 
-which:
-	printenv
-	which python3
+all: cb_spec_decoder.py pl94_geofile.py pl94.sqlite3 
+	make v1_geo_create 
+	make v2_geo_create 
+	make v2_geo_create 
+
+### Cleaning targets ##
+
+clean:
+	/bin/rm pl94.sqlite3
+	find . -name '*~' -print -exec rm -f {} \;
+
+clean_data:
+	@echo To erase all of the data that have been downloaded, type:
+	@echo /bin/rm -rf data
+
+################################################################
+## Load data into databases
+
+pl94_load: pl94.sqlite3 
+
+pl94.sqlite3: pl94_dbload.py
+	python3 pl94_dbload.py --wipe data/2010_pl94/dist/*.zip
+	rm -f pl94_ro.sqlite3
+	cp -c pl94.sqlite3 pl94_ro.sqlite3
+	chmod 444 pl94_ro.sqlite3
+
+# Create the geographies. These can't be parallelized because v3 depends on v2
+
+v1_geo_create: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v1
+
+v2_geo_create: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v2
+
+v3_geo_create: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v3
+
+
+################################################################
+##
+# Create the reports
+# These can be made at the same time
+v123: v1 v2 v3 
+VARGS=--db pl94.sqlite3 --report --xpr
+
+v1: geotree.py
+	@echo a quick report of the v1 geography down to the states
+	python geotree.py $(VARGS) --scheme v1 
+
+v2: geotree.py
+	@echo a quick report of the v2 geography down to the states
+	python geotree.py $(VARGS)  --scheme v2
+
+v3: geotree.py
+	@echo a quick report of the v2 geography down to the states
+	python geotree.py $(VARGS) --scheme v3
+
+v3-2: geotree.py
+	@echo a quick report of the v2 geography down to the states
+	python geotree.py $(VARGS)  --scheme v3 
+
+
+################################################################
+##
+## generate the automatically generated files
 
 pl94_geofile.py: cb_spec_decoder.py
 	python cb_spec_decoder.py --geoclassdump  pl94_geofile.py
@@ -19,59 +81,15 @@ pl94_geofile.sql: cb_spec_decoder.py
 geotree.py: pl94_geofile.py
 pl94_dbload.py: pl94_geofile.py
 
+################
 test:
 	py.test cb_spec_decoder_test.py
 
 tags:
 	etags *.py */*py
 
-clean:
-	find . -name '*~' -print -exec rm -f {} \;
-
-clean_data:
-	@echo To erase all of the data that have been downloaded, type:
-	@echo /bin/rm -rf data
-
 pl94_download:
 	python3 download_all.py pl94
-
-pl94_load: pl94_dbload.py
-	python3 pl94_dbload.py --wipe data/2010_pl94/dist/*.zip
-	rm -f pl94_ro.sqlite3
-	cp -c pl94.sqlite3 pl94_ro.sqlite3
-	chmod 444 pl94_ro.sqlite3
-
-#
-# Create the geographies
-
-v1_geo_create: pl94_geofile.py
-	python3 geotree.py --erase --create --scheme v1
-
-v2_geo_create: pl94_geofile.py
-	python3 geotree.py --erase --create --scheme v2
-
-v3_geo_create: pl94_geofile.py
-	python3 geotree.py --erase --create --scheme v3
-
-
-# Create the reports
-v123: v1 v2 v3 pl94_geofile.py
-
-v1: geotree.py
-	@echo a quick report of the v1 geography down to the states
-	python geotree.py --db pl94.sqlite3 --scheme v1 table1 --report --xpr
-
-v2: geotree.py
-	@echo a quick report of the v2 geography down to the states
-	python geotree.py --db pl94.sqlite3 --scheme v2 table2 --report --xpr
-
-v3: geotree.py
-	@echo a quick report of the v2 geography down to the states
-	python geotree.py --db pl94.sqlite3 --scheme v3 table3 --report --xpr
-
-v3-2: geotree.py
-	@echo a quick report of the v2 geography down to the states
-	python geotree.py --db pl94.sqlite3 --scheme v3 --report --xpr --levels 2
 
 
 ak_r3:

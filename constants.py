@@ -169,8 +169,6 @@ STATE_DICTS=[dict(zip("state_name,stusab,state".split(","),line.split(","))) for
 # Create some cuts through the data
 STATE_NAMES             = [state['state_name'] for state in STATE_DICTS]
 
-
-
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
 """
 Naming convention for SF2 data files is ssiiiyy_uf2.zip. 
@@ -216,8 +214,6 @@ FIPS_CONSOLIDATED_CITY={
     "48003":"Louisville/Jefferson County, Kentucky",
     "52004":"Nashville-Davidson, Tennessee"
 }
-
-
 
 # Download URLS.
 # Key differences between 2000 and 2010:
@@ -284,8 +280,6 @@ CIFSN_GEO=0
 STUSAB_TO_STATE = {sd['stusab']:int(sd['state']) for sd in STATE_DICTS}
 STATE_TO_STUSAB = {int(sd['state']):sd['stusab'] for sd in STATE_DICTS}
     
-
-
 class YPSS:
     """A Class that defines the Year, Product, State, Segment and Characteristic Iteration, 
        which is the way that each file in the PL94/SF1/SF2 are named."""

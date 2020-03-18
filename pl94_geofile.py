@@ -1,4 +1,4 @@
-# Automatically generated on Wed Mar 18 09:19:10 2020 by /Users/simsong/gits/stats_2010/ctools/schema/table.py
+# Automatically generated on Wed Mar 18 10:05:27 2020 by /Users/simsong/gits/stats_2010/ctools/schema/table.py
 
 def leftpad(x,width):
     return ' '*(width-len(str(x)))+str(x)

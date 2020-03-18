@@ -92,15 +92,13 @@ pl94_download:
 	python3 download_all.py pl94
 
 
-ak_r3:
-	python3 geocode_stats.py --db ak.sqlite3   --geocode3 --geocode_report --prefixset "3:3,6:5,11:5,16:1,17:4" --loglevel INFO --details
-
 ak_s3:
 	python3 geocode_stats.py --db ak.sqlite3   --geocode3 --geolevel_report --prefixset "nation:state/aianh:0:3,state/aianh:place:3:8,place:tract:8:20,tract:blkgrp:20:22,blkgrp:block:22:26" --loglevel INFO  --open
 
 dc_r3:
 	python3 geocode_stats.py --db dc.sqlite3 --geocode3 --geocode_report --prefixset "3:3,6:5,11:5,16:1,17:5"
 
+################
 ##
 ## Work with subsets
 
@@ -109,6 +107,10 @@ ak_load:
 	python3 pl94_dbload.py --db ak.sqlite3 --wipe data/2010_pl94/dist/ak2010.pl.zip
 
 
+ak_r3:
+	python3 geocode_stats.py --db ak.sqlite3   --geocode3 --geocode_report --prefixset "3:3,6:5,11:5,16:1,17:4" --loglevel INFO --details
+
+################
 
 az_load:
 	@echo Just loading ak in az.sqlite3

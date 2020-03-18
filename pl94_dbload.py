@@ -55,6 +55,7 @@ CREATE INDEX IF NOT EXISTS blocks_aianhh ON blocks(aianhh);
 """
 
 DEBUG_BLOCK=None
+INSERT_GROUP_COUNT=1
 
 from geocode import GEO_HEADER,strip_str,extractall_typed
 
@@ -64,13 +65,29 @@ class Loader:
         self.args = args
         self.db   = ctools.dbfile.DBSqlite3(self.args.db)
         self.conn = self.db.conn
-        self.db.execute(SQL_SET_CACHE)
         self.conn.row_factory = sqlite3.Row
-        self.db.create_schema(SQL_BLOCKS_SCHEMA)
-        self.add_geo_schema_new()
+        self.c    = self.db.conn.cursor()
+        self.db.execute(SQL_SET_CACHE)
+        if args.replace == False:
+            self.db.create_schema(SQL_BLOCKS_SCHEMA)
+            self.add_geo_schema_new()
+        self.insert = None
+        self.value_template = None
+        self.value_count = 0
+        self.values   = []
+
+    def insert_add(self,values):
+        self.value_count += 1
+        self.values.extend(values)
+
+    def insert_execute(self):
+        if self.value_count > 0:
+            cmd = self.insert + " VALUES " + ",".join([self.value_template] * self.value_count)
+            self.c.execute( cmd, self.values )
+            self.value_count = 0
+            self.values = []
 
     def add_geo_schema_legacy(self):
-        c = self.conn.cursor()
         f = io.StringIO()
         f.write("CREATE TABLE IF NOT EXISTS geo (")
         for (ct,gh) in enumerate(GEO_HEADER):
@@ -82,48 +99,36 @@ class Loader:
             else:
                 f.write(f" INTEGER ")
         f.write(");")
-        c.execute(f.getvalue())
+        self.c.execute(f.getvalue())
         for gh in GEO_HEADER:
-            c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
+            self.c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
         
     def add_geo_schema_new(self):
-        c = self.conn.cursor()
-        c.execute( open("pl94_geofile.sql","r").read())
+        self.c.execute( open("pl94_geofile.sql","r").read())
         # Add indexes for fields we care about
         for gh in GEO_HEADER:
-            c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
+            self.c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
         
-    def decode_geo_line_legacy(self, c, line):
-        """Decode the hiearchical geography lines and store them in the geo table. 
-        These must be done before the other files are read to get the logrecno.
-        The blocks table is then created with a select 
-        """
-        gh = extractall_typed(line)
-        if gh['LOGRECNO']==self.args.debuglogrecno:
-            print("\n",gh)
-        assert gh['FILEID'] in ('PLST','SF1ST')
+    def decode_geo_line_new(self, line):
+        """Use the compiled geocode decoder to create a dictionary, then insert it into the database"""
+        from geocode import nint
+        gh = pl94_geofile.geo()
+        gh.parse_column_specified(line)
 
-        tract = gh['TRACT']
-        if (tract) and  (990000 <= tract <= 990099):
+        # Linkage variables
+        if not gh.validate():
+            raise RuntimeError( gh.validate_reason())
+
+        if "990000" <= gh.TRACT <= "990099":
             # Ignore water tracts
             return
 
-        cmd = "INSERT INTO geo (" + ",".join(GEO_HEADER.keys()) + ") values (" + ",".join(["?"]*len(GEO_HEADER)) + ")"
-        data = extractall_typed(line)
-        args = [data[gh] for gh in GEO_HEADER]
-        c.execute(cmd,args)
+        values = [getattr(gh,slot) for slot in gh.__slots__]
+        self.insert_add(values)
+        if self.value_count > INSERT_GROUP_COUNT:
+            self.insert_execute()
 
-    def decode_geo_line_new(self, c, line):
-        """Use the compiled geocode decoder to create a dictionary, then insert it into the database"""
-        gh = pl94_geofile.geo()
-        gh.parse_column_specified(line)
-        if not gh.validate():
-            raise RuntimeError( gh.validate_reason())
-        cmd = "INSERT INTO geo (" + ",".join(gh.__slots__) + ") values (" + ",".join(["?"] * len(gh.__slots__)) + ")"
-        args = [getattr(gh,slot) for slot in gh.__slots__]
-        c.execute(cmd,args)
-
-    def decode_012010(self, c, line):
+    def decode_012010(self, line):
         """Update the database for a line in segmetn 1 of the 2010 PL94 or SF1 files. 
         Note that the logical record number may not be in the DB, because this line may not be for a block or tract.
         P0010001 = Total Population
@@ -132,14 +137,11 @@ class Loader:
         (fileid,stusab,chariter,cifsn,logrecno,P0010001) = fields[0:6]
         state = constants.STUSAB_TO_STATE[stusab]
         assert fileid in ('PLST','SF1ST')
-        if int(logrecno)==self.args.debuglogrecno:
-            print("\n",line)
-            print("UPDATE blocks set pop={} WHERE state={} and logrecno={}".format(P0010001,state,logrecno))
         # Update the blocks. If LOGRECNO is not in database, nothing is updated
         # because of referential integrity, LOGRECNO can only be in the database once
-        c.execute("UPDATE blocks SET pop=? WHERE state=? AND logrecno=?", (P0010001,state,logrecno))
+        self.c.execute("UPDATE blocks SET pop=? WHERE state=? AND logrecno=?", (P0010001,state,logrecno))
 
-    def decode_pl94_022010(self, c, line):
+    def decode_pl94_022010(self, line):
         """Update the database for a line. Note that the logical record number may not be in the DB, 
         because this line may not be for a block
         H0010001 = Total Housing Units
@@ -151,41 +153,60 @@ class Loader:
         state = constants.STUSAB_TO_STATE[stusab]
         (H0010001,H0010002,H0010003) = fields[-3:]
 
-        if int(logrecno)==self.args.debuglogrecno:
-            print("\n",line)
-
         assert fileid=='PLST'
-        c.execute("UPDATE blocks set houses=?,occupied=? where state=? and logrecno=?", (H0010001,H0010002,state,logrecno))
+        self.c.execute("UPDATE blocks set houses=?,occupied=? where state=? and logrecno=?",
+                  (H0010001,H0010002,state,logrecno))
 
     def load_file(self, f, func):
         t0 = time.time()
-        c = self.conn.cursor()
+        self.c = self.conn.cursor()
         for (ll,line) in enumerate(f,1):
             try:
-                func(c, line)
+                func(line)
             except ValueError as e:
                 raise ValueError("bad line {}: {}".format(ll,line))
             if ll%10000==0:
                 print("{}...".format(ll),end='',file=sys.stderr,flush=True)
+        self.insert_execute()   # finish the insert
         self.conn.commit()
         t1 = time.time()
         print(f"\n",file=sys.stderr)
         print(f"Finished {f.name}; {ll} lines, {ll/(t1-t0):,.0f} lines/sec",file=sys.stderr)
 
     def process_file_name(self, f, name):
+        state = constants.STUSAB_TO_STATE[name[0:2].upper()]
         if name[2:] in ['geo2010.pl','geo2010.sf1']:
             # load the geo table
+            if args.replace:
+                self.conn.execute("DELETE FROM geo where STATE=?",(state,))
+
+            gh = pl94_geofile.geo()
+            self.insert = "INSERT INTO geo (" + ",".join(gh.__slots__) + ")"
+            self.value_template = "(" + ",".join(["?"]*len(gh.__slots__)) + ")"
+
+
             self.load_file(f, self.decode_geo_line_new)
-            state = constants.STUSAB_TO_STATE[name[0:2].upper()]
             # copy to the blocks table (really unnecessary; we should just copy over the logrecno, but this makes things easier)
             self.conn.execute("""
             INSERT INTO blocks (state, county, tract, block, cousub, aianhh, sldu, place, logrecno)
-            SELECT state, county, tract, block, cousub, aianhh, sldu, place, logrecno 
-            FROM geo WHERE state=? AND sumlev IN (101,750)""",(state,)) 
+            SELECT cast(state as integer), 
+                   cast(county as integer), 
+                   cast(tract as integer), 
+                   cast(block as integer), 
+                   cast(cousub as integer), 
+                   cast(aianhh as integer), 
+                   cast(sldu as integer), 
+                   cast(place as integer), 
+                   cast(logrecno  as integer)
+            FROM geo WHERE cast(state as integer)=? AND cast(sumlev as integer) IN (101,750)""",(state,)) 
             return
         if name[2:] in ['000012010.pl','000012010.sf1']:
+            if args.replace:
+                self.conn.execute("UPDATE blocks set pop=0 where STATE=?",(state,))
             self.load_file(f, self.decode_012010)
         elif name[2:]=='000022010.pl':
+            if args.replace:
+                self.conn.execute("UPDATE blocks set houses=0, occupied=0 where STATE=?",(state,))
             self.load_file(f, self.decode_pl94_022010)
         else:
             raise RuntimeError("Unknown file type: {}".format(fname))
@@ -207,6 +228,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Ingest the PL94 block-level population counts',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--db", help="Specify database location", default=DBFILE)
+    parser.add_argument("--replace", help='replace data for the state', action='store_true')
     parser.add_argument("--wipe", help="Erase the DB file first", action='store_true')
     parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file."
                         " For best results, use the ZIP file", 

@@ -45,6 +45,7 @@ SF4  = 'sf4'
 RELATIONSHIP = 'relationship'
 AIANSF = 'aiansf'
 UR1  = 'ur1'
+SEGMENT_FORMAT="{segment_number:05d}"
 PRODUCTS = [PL94, SF1, SF2, SF3, SF4, AIANSF, UR1]
 
 SUMLEV_TRACT = 140
@@ -88,6 +89,8 @@ FILE_LINE_PREFIXES = {2000 : {PL94: "uPL",
 # This is chapter6 exported as a CSV using Adobe Acrobat
 # Chapter 6 is the data dictionary. In some cases, we have just it
 
+GEO="geo"
+GEO_TABLE='geo'
 SPEC_CSV_FILE     = DOC_DIR + "/{year}/{product}_philManualEdits.csv"
 CHAPTER6_CSV_FILE = DOC_DIR + "/{year}/{product}_chapter6.csv"
 CHAPTER7_CSV_FILE = DOC_DIR + "/{year}/{product}_chapter7.csv"
@@ -101,36 +104,6 @@ SPEC_FILES = [SPEC_CSV_FILE,
 # Easy-to-read list at https://en.wikipedia.org/wiki/Federal_Information_Processing_Standard_state_code
 # 
 STATE = 'state'
-# old-style database
-STATE_DB="""Alaska/ak Arizona/az Arkansas/ar California/ca Colorado/co Connecticut/ct Delaware/de
-District_of_Columbia/dc Alabama/al Florida/fl Georgia/ga Hawaii/hi Idaho/id Illinois/il Indiana/in
-Iowa/ia Kansas/ks Kentucky/ky Louisiana/la Maine/me Maryland/md Massachusetts/ma Michigan/mi
-Minnesota/mn Mississippi/ms Missouri/mo Montana/mt Nebraska/ne Nevada/nv New_Hampshire/nh
-New_Jersey/nj New_Mexico/nm New_York/ny North_Carolina/nc North_Dakota/nd Ohio/oh Oklahoma/ok
-Oregon/or Pennsylvania/pa Puerto_Rico/pr Rhode_Island/ri South_Carolina/sc South_Dakota/sd Tennessee/tn
-Texas/tx Utah/ut Vermont/vt Virginia/va Washington/wa West_Virginia/wv Wisconsin/wi Wyoming/wy"""
-
-STATE_DATA=[
-    "Alabama,AL,01", "Alaska,AK,02", "Arizona,AZ,04", "Arkansas,AR,05", "California,CA,06", "Colorado,CO,08",
-    "Connecticut,CT,09", "Delaware,DE,10", "District_of_Columbia,DC,11", "Florida,FL,12", "Georgia,GA,13",
-    "Hawaii,HI,15", "Idaho,ID,16","Illinois,IL,17","Indiana,IN,18","Iowa,IA,19","Kansas,KS,20","Kentucky,KY,21","Louisiana,LA,22",
-    "Maine,ME,23","Maryland,MD,24","Massachusetts,MA,25","Michigan,MI,26","Minnesota,MN,27","Mississippi,MS,28",
-    "Missouri,MO,29","Montana,MT,30","Nebraska,NE,31","Nevada,NV,32","New_Hampshire,NH,33","New_Jersey,NJ,34",
-    "New_Mexico,NM,35","New_York,NY,36","North_Carolina,NC,37","North_Dakota,ND,38","Ohio,OH,39","Oklahoma,OK,40","Oregon,OR,41",
-    "Pennsylvania,PA,42","Rhode_Island,RI,44","South_Carolina,SC,45","South_Dakota,SD,46","Tennessee,TN,47","Texas,TX,48",
-    "Utah,UT,49","Vermont,VT,50","Virginia,VA,51", "Washington,WA,53","West_Virginia,WV,54","Wisconsin,WI,55","Wyoming,WY,56" ]
-
-STATES_FIPS_DICT=[dict(zip("state_name,stusab,state".split(","),line.split(","))) for line in STATE_DATA]
-
-STATES_AND_ABBREVS = STATE_DB.split()
-STATES             = [saa.split("/")[1] for saa in STATES_AND_ABBREVS]
-
-# map states to state_names:
-STATE_NAMES        = {saa.split("/")[1]:saa.split("/")[0] for saa in STATES_AND_ABBREVS}
-
-SEGMENT_FORMAT="{segment_number:05d}"
-GEO="geo"
-GEO_TABLE='geo'
 
 # newstyle database; we need to transition to this.
 STATE_DATA=[
@@ -192,6 +165,11 @@ STATE_DICTS is a list of stat dictionaries, where each dict has the format:
 {'state_name': 'Alabama', 'stusab': 'AL', 'state': '01'}
 """
 STATE_DICTS=[dict(zip("state_name,stusab,state".split(","),line.split(","))) for line in STATE_DATA]
+
+# Create some cuts through the data
+STATE_NAMES             = [state['state_name'] for state in STATE_DICTS]
+
+
 
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
 """
@@ -307,6 +285,7 @@ STUSAB_TO_STATE = {sd['stusab']:int(sd['state']) for sd in STATE_DICTS}
 STATE_TO_STUSAB = {int(sd['state']):sd['stusab'] for sd in STATE_DICTS}
     
 
+
 class YPSS:
     """A Class that defines the Year, Product, State, Segment and Characteristic Iteration, 
        which is the way that each file in the PL94/SF1/SF2 are named."""
@@ -314,7 +293,7 @@ class YPSS:
     def __init__(self,year,product,state,segment,chariter=0):
         assert year in YEARS
         assert product in PRODUCTS
-        assert state in STATES
+        assert state in STATE_NAMES
         self.year     = year
         self.product  = product
         self.state    = state

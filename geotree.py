@@ -241,11 +241,7 @@ def ws_add_metadata(wb):
     ws.cell(row=1, column=2).value = " ".join([sys.executable] + sys.argv)
 
 
-STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
-DC_FIPS=11
-PR_FIPS=72
-EXCLUDE_STATE_RECOGNIZED_TRIBES=True
-def include_aiannh(code):
+def include_aianhh(code):
     if 1 <= code <= 4999:
         return "Federally recognized American Indian Reservations and Off-Reservation Trust Lands"
     elif 5000 <= code  <=5999:
@@ -260,12 +256,16 @@ def include_aiannh(code):
     else:
         return False
 
-def geocode3(gh):
-    """The revised geocode that takes into account AIANNH. Levels are:
+NE_STATES="ME,NH,VT,MA,CT,RI"
+V2_STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
+V21_STATE_LIST=[STUSAB_TO_STATE[stusab] for stusab in ",".split("MI,MN,NJ,NY,PA,WI" + "," + NEW_ENGLAND_STATES)]
+EXCLUDE_STATE_RECOGNIZED_TRIBES=True
+def geocode3(gh,scheme='v2'):
+    """The revised geocode that takes into account AIANHH. Levels are:
     0 - US or PR
-    1 - Non-AIANNH part-of-state or PR            | AIANNH part-of-State 
-    2 - COUNTY in non-strong MCD states           | ignored in AIANNH
-    3 - PLACE in 38 strong-MCD states, SLDU in DC | AIANNH in AIANNH states
+    1 - Non-AIANHH part-of-state or PR            | AIANHH part-of-State 
+    2 - COUNTY in non-strong MCD states           | ignored in AIANHH
+    3 - PLACE in 38 strong-MCD states, SLDU in DC | AIANHH in AIANHH states
     4 - TRACT or 3-digit TG or 4-digit TG         | TRACT
     5 - BLKGRP first 1 or 2 digits of block       | BLKGRP
     6 - BLOCK                                     | BLOCK
@@ -278,10 +278,13 @@ def geocode3(gh):
     if gh['state']==PR_FIPS:
         # Puerto Rico
         return (f"{PR_FIPS:02}P",    f"{gh['county']:03}{gh['place']:05}",   f"___{gh['tract']:06}",               blkgrp2, block, None )
-    elif include_aiannh(gh['AIANNH']):
-        # AIANNH portion of 38-states with AIANNH
-        return (f"{gh['state']:02}A", f"{gh['aiannh']:05}{gh['county']:03}", f"___{gh['tract']:06}",               blkgrp2, block, None )
-    elif gh['STATE'] in STRONG_MCD_STATES:
+    elif include_aianhh(gh['AIANHH']):
+        # AIANHH portion of 38-states with AIANHH
+        return (f"{gh['state']:02}A", f"{gh['aianhh']:05}{gh['county']:03}", f"___{gh['tract']:06}",               blkgrp2, block, None )
+    elif (gh['STATE'] in V21_STATE_LIST and scheme=='v2.1'):
+        # Non-AIAN area in 12 states that have so many strong MCDs that we need to group them by county
+        return (f"{gh['state']:02}X", f"{gh['tabblkst']:05}{gh['tabblkcou']}{gh['cousubfp']:05}",               f"{gh['county']:03}{gh['tract']:06}", blkgrp2, block, None  )
+    elif gh['STATE'] in V2_STRONG_MCD_STATES:
         # Non-AIAN area in 12 state with strong MCD.
         # County is included in tract to make it unique, but cousubs do not cross counties.
         return (f"{gh['state']:02}X", f"___{gh['cousub']:05}",               f"{gh['county']:03}{gh['tract']:06}", blkgrp2, block, None  )
@@ -290,6 +293,15 @@ def geocode3(gh):
         return (f"{gh['state']:02}X", f"{gh['county']:03}{gh['place']:05}",  f"___{gh['tract']:06}",               blkgrp2, block, None  )
     return "".join(code)
 
+
+class MinMax:
+    """Remember an object associated with a min and the object associated with the max."""
+    def __int__(self,func):
+        self.func = func
+        self.the_min  = None
+        self.the_max  = None
+    def add(self,obj):
+        val = func(obj)
 
 class GeoTree:
     def __init__(self,db,name,scheme,xpr):
@@ -435,6 +447,7 @@ class GeoTree:
             print_count = 0
 
             # Crunch through the returned geounits, dividing between each state, and summarizing on each row.
+            all_fanout_populations = []
             while geounits:
                 res = {}
                 fanout_populations = []
@@ -445,6 +458,7 @@ class GeoTree:
                         logging.info(dict(d0))
                         print_count += 1
                     fanout_populations.append(d0['population'])
+                    all_fanout_populations.append(d0['population'])
 
                 if state!=d0['state']:
                     # New state!
@@ -463,7 +477,7 @@ class GeoTree:
                 else:
                     column1_label = constants.STATE_TO_STUSAB[d0['state']]
                     if d0['reporting_prefix'][3:4]=='A':
-                        column1_label += '-AIANNH'
+                        column1_label += '-AIANHH'
                 ws_level.cell(row=row,column=1).value = column1_label
                 ws_level.cell(row=row,column=2).value = "_"+d0['reporting_prefix']
                 if args.names:
@@ -514,8 +528,6 @@ class GeoTree:
                     cell.fill = YELLOW_FILL
                     cell.border = thin_border
 
-            all_fanout_populations = [res['fanout_populations'] for res in level_stats]
-            all_fanout_populations = list(flatmap( lambda a:a, all_fanout_populations))
             fanout_population_deciles = deciles(all_fanout_populations)
             for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row, min_col=16, max_col = 26):
                 for (cell,value) in zip(cellrow,fanout_population_deciles):

@@ -82,7 +82,7 @@ class GeocodeStats:
         They then get re-arregated at a higher level by the caller"""
         grouper  = f"SUBSTR({self.geocode},1,{prefix_len}) "
         c = self.cursor()
-        cmd = f"""SELECT {grouper} AS prefix, state, county, aiannh,
+        cmd = f"""SELECT {grouper} AS prefix, state, county, aianhh,
                   SUM(1) AS block_count,
                   SUM( CASE WHEN pop>0 THEN 1 ELSE 0 END) as populated_block_count,
                   SUM(pop) AS population
@@ -111,8 +111,8 @@ class GeocodeStats:
                 # Strong MCD states
                 query=f"SELECT name FROM GEO WHERE {gc[0:2]}=state AND {gc[6:11]}=cousub AND sumlev=521"
             else:
-                # AIANNH
-                query=f"SELECT name FROM GEO WHERE {gc[0:2]}=state AND {gc[6:11]}=aiannh AND sumlev=280"
+                # AIANHH
+                query=f"SELECT name FROM GEO WHERE {gc[0:2]}=state AND {gc[6:11]}=aianhh AND sumlev=280"
         elif len(gc)>=6:       
             # COUNTY
             if gc[0:6]=='11XXXX':

@@ -13,7 +13,7 @@ v1 geocode (what we used in the 2010 DDP):
 
 v3 geocode:
  WASHINGTON DC(3) | PADDED-SLDU(8)       | PADDED-TRACT(9) | BLKGRP(2) | BLOCK(4)
- STATE-AIANNH (3) | PADDED-AIANNH(8)     | COUNTY-TRACT(9) | BLKGRP(2) | BLOCK(4)
+ STATE-AIANHH (3) | PADDED-AIANHH(8)     | COUNTY-TRACT(9) | BLKGRP(2) | BLOCK(4)
  STATE(3)         | PADDED-COUSUB(8)     | COUNTY-TRACT(9) | BLKGRP(2) | BLOCK(4)
  STATE(3)         | COUNTY(3) | PLACE(5) | PADDED-TRACT(9) | BLKGRP(2) | BLOCK(4)
 """
@@ -22,7 +22,7 @@ STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
 DC_FIPS=11
 
 EXCLUDE_STATE_RECOGNIZED_TRIBES=True
-def include_aiannh(code):
+def include_aianhh(code):
     if 1 <= code <= 4999:
         return "Federally recognized American Indian Reservations and Off-Reservation Trust Lands"
     elif 5000 <= code  <=5999:
@@ -69,7 +69,7 @@ GEO_HEADER = {
     "BLKGRP" : (1,61, nint),       # first digit of block is blockgroup,
     "BLOCK"  :  (4,62, nint),        
     "CONCIT": (5, 68, nint),
-    "AIANNH" : (4,77, nint),
+    "AIANHH" : (4,77, nint),
     "AITSCE" : (3, 89, nint),
     "SLDU"   : (3, 156, str),
     "NAME"   : (90,227, strip_str)       # in Latin1 for 2000 and 2010,
@@ -98,11 +98,11 @@ def geo_geocode(line):
     return "".join( [ extract(gh, line) for gh in ['STATE','COUNTY','TRACT', 'BLOCK']] )
 
 def geo_geocode3(gh):
-    """The revised geocode that takes into account AIANNH. Levels are:
+    """The revised geocode that takes into account AIANHH. Levels are:
     0 - Nation
-    1 - Non-AIANNH part-of-state                  | AIANNH part-of-State 
-    2 - COUNTY in non-strong MCD states           | ignored in AIANNH
-    3 - PLACE in 38 strong-MCD states, SLDU in DC | AIANNH in AIANNH states
+    1 - Non-AIANHH part-of-state                  | AIANHH part-of-State 
+    2 - COUNTY in non-strong MCD states           | ignored in AIANHH
+    3 - PLACE in 38 strong-MCD states, SLDU in DC | AIANHH in AIANHH states
     4 - TRACT or 3-digit TG or 4-digit TG         | TRACT
     5 - BLKGRP first 1 or 2 digits of block       | BLKGRP
     6 - BLOCK                                     | BLOCK
@@ -118,11 +118,11 @@ def geo_geocode3(gh):
         code.append(f"___{gh['TRACT']:06}")  # TRACT  (9)
         code.append( blkgrp2 )               # BLKGRP (2)
         code.append( block   )               # BLOCK  (4)
-    elif include_aiannh(gh['AIANNH']):
-        # AIANNH portion of 38-states with AIANNH
+    elif include_aianhh(gh['AIANHH']):
+        # AIANHH portion of 38-states with AIANHH
         code.append(f"{gh['STATE']:02}A") # STATE; 3 characters
-        code.append(f"IAN")               # COUNTY; 3 characters (ignored in AIANNH regions)
-        code.append(f"{gh['AIANNH']:05}") # PLACE; 5 characters
+        code.append(f"IAN")               # COUNTY; 3 characters (ignored in AIANHH regions)
+        code.append(f"{gh['AIANHH']:05}") # PLACE; 5 characters
         code.append(f"{gh['COUNTY']:03}{gh['TRACT']:06}")  # COUNTY + TRACT; 9 characters (for uniqueness)
         code.append( blkgrp2 ) # BLKGRP 2 character
         code.append( block )  # BLOCK 4 characters

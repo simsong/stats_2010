@@ -30,6 +30,7 @@ import zipfile
 import io
 import logging
 import ctools.dbfile
+import pl94_geofile
 
 import constants
 from constants import *
@@ -42,7 +43,7 @@ SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
 SQL_BLOCKS_SCHEMA="""
 CREATE TABLE IF NOT EXISTS blocks (state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
-                                   cousub INTEGER, aiannh INTEGER, sldu INTEGER, place INTEGER,
+                                   cousub INTEGER, aianhh INTEGER, sldu INTEGER, place INTEGER,
                                    logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx1 ON blocks(state,county,tract,block);
@@ -50,21 +51,10 @@ CREATE INDEX IF NOT EXISTS blocks_tract  ON blocks(tract);
 CREATE INDEX IF NOT EXISTS blocks_pop    ON blocks(pop);
 CREATE INDEX IF NOT EXISTS blocks_houses ON blocks(houses);
 CREATE INDEX IF NOT EXISTS blocks_cousub  ON blocks(cousub);
-CREATE INDEX IF NOT EXISTS blocks_aiannh ON blocks(aiannh);
+CREATE INDEX IF NOT EXISTS blocks_aianhh ON blocks(aianhh);
 """
 
 DEBUG_BLOCK=None
-
-def create_schema(conn,schema):
-    """Create the schema if it doesn't exist."""
-    c = conn.cursor()
-    for line in schema.split(";"):
-        try:
-            c.execute(line)
-        except sqlite3.OperationalError as e:
-            print("line:",line,file=sys.stderr)
-            print(e)
-            exit(1)
 
 from geocode import GEO_HEADER,strip_str,extractall_typed
 
@@ -77,9 +67,9 @@ class Loader:
         self.db.execute(SQL_SET_CACHE)
         self.conn.row_factory = sqlite3.Row
         self.db.create_schema(SQL_BLOCKS_SCHEMA)
-        self.add_geo_schema()
+        self.add_geo_schema_new()
 
-    def add_geo_schema(self):
+    def add_geo_schema_legacy(self):
         c = self.conn.cursor()
         f = io.StringIO()
         f.write("CREATE TABLE IF NOT EXISTS geo (")
@@ -96,12 +86,18 @@ class Loader:
         for gh in GEO_HEADER:
             c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
         
-    def decode_geo_line(self, c, line):
+    def add_geo_schema_new(self):
+        c = self.conn.cursor()
+        c.execute( open("pl94_geofile.sql","r").read())
+        # Add indexes for fields we care about
+        for gh in GEO_HEADER:
+            c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
+        
+    def decode_geo_line_legacy(self, c, line):
         """Decode the hiearchical geography lines and store them in the geo table. 
         These must be done before the other files are read to get the logrecno.
         The blocks table is then created with a select 
         """
-
         gh = extractall_typed(line)
         if gh['LOGRECNO']==self.args.debuglogrecno:
             print("\n",gh)
@@ -115,6 +111,16 @@ class Loader:
         cmd = "INSERT INTO geo (" + ",".join(GEO_HEADER.keys()) + ") values (" + ",".join(["?"]*len(GEO_HEADER)) + ")"
         data = extractall_typed(line)
         args = [data[gh] for gh in GEO_HEADER]
+        c.execute(cmd,args)
+
+    def decode_geo_line_new(self, c, line):
+        """Use the compiled geocode decoder to create a dictionary, then insert it into the database"""
+        gh = pl94_geofile.geo()
+        gh.parse_column_specified(line)
+        if not gh.validate():
+            raise RuntimeError( gh.validate_reason())
+        cmd = "INSERT INTO geo (" + ",".join(gh.__slots__) + ") values (" + ",".join(["?"] * len(gh.__slots__)) + ")"
+        args = [getattr(gh,slot) for slot in gh.__slots__]
         c.execute(cmd,args)
 
     def decode_012010(self, c, line):
@@ -169,12 +175,12 @@ class Loader:
     def process_file_name(self, f, name):
         if name[2:] in ['geo2010.pl','geo2010.sf1']:
             # load the geo table
-            self.load_file(f, self.decode_geo_line)
+            self.load_file(f, self.decode_geo_line_new)
             state = constants.STUSAB_TO_STATE[name[0:2].upper()]
             # copy to the blocks table (really unnecessary; we should just copy over the logrecno, but this makes things easier)
             self.conn.execute("""
-            INSERT INTO blocks (state, county, tract, block, cousub, aiannh, sldu, place, logrecno)
-            SELECT state, county, tract, block, cousub, aiannh, sldu, place, logrecno 
+            INSERT INTO blocks (state, county, tract, block, cousub, aianhh, sldu, place, logrecno)
+            SELECT state, county, tract, block, cousub, aianhh, sldu, place, logrecno 
             FROM geo WHERE state=? AND sumlev IN (101,750)""",(state,)) 
             return
         if name[2:] in ['000012010.pl','000012010.sf1']:
@@ -206,7 +212,7 @@ if __name__ == "__main__":
                         " For best results, use the ZIP file", 
                         nargs="*")
     parser.add_argument("--sumlev", help="Only do this summary level")
-    parser.add_argument("--aiannh", help="Print everything we know about an AIANNH")
+    parser.add_argument("--aianhh", help="Print everything we know about an AIANHH")
     parser.add_argument("--debuglogrecno", help="logrecno for debugging", type=int)
     args = parser.parse_args()
 

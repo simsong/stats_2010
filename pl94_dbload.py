@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS blocks_aianhh ON blocks(aianhh);
 """
 
 DEBUG_BLOCK=None
-INSERT_GROUP_COUNT=1
+INSERT_GROUP_COUNT=10
 
 from geocode import GEO_HEADER,strip_str,extractall_typed
 

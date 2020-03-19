@@ -7,9 +7,7 @@ help:
 	@exit 1
 
 all: cb_spec_decoder.py pl94_geofile.py pl94.sqlite3 
-	make v1_geo_create 
-	make v2_geo_create 
-	make v2_geo_create 
+	make -j1 v1_geo_create v2_geo_create v21_geo_create v3_geo_create 
 
 ### Cleaning targets ##
 
@@ -40,8 +38,14 @@ v1_geo_create: pl94_geofile.py
 v2_geo_create: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v2
 
+v21_geo_create: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v2.1
+
 v3_geo_create: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v3
+
+v31_geo_create: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v3.1
 
 
 ################################################################
@@ -51,21 +55,25 @@ v3_geo_create: pl94_geofile.py
 v123: v1 v2 v3 
 VARGS=--db pl94.sqlite3 --report --xpr
 
-v1: geotree.py
+v1_report: geotree.py
 	@echo a quick report of the v1 geography down to the states
 	python geotree.py $(VARGS) --scheme v1 
 
-v2: geotree.py
+v2_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS)  --scheme v2
 
-v3: geotree.py
+v21_report: geotree.py
+	@echo a quick report of the v2 geography down to the states
+	python geotree.py $(VARGS)  --scheme v2.1
+
+v3_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS) --scheme v3
 
-v3-2: geotree.py
+v31_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
-	python geotree.py $(VARGS)  --scheme v3 
+	python geotree.py $(VARGS)  --scheme v3.1
 
 
 ################################################################

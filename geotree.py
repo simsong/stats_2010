@@ -1,4 +1,3 @@
-__version__ = '0.2.0'
 import datetime
 import json
 import os
@@ -18,16 +17,23 @@ import gc
 import math
 from collections import deque
 
+__version__ = '0.2.0'
+
 #                       P0        P1                  P2                  P3          P4         P5      P6
 GEOTREE={'v1':{'names':['US',    'DC•STATE',          'COUNTY',           'TGROUP',   'TRACT',   'BGROUP','BLOCK'],
                'name':'Geography used for 2010 Demonstration Data Products' },
 
          'v2':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•PLACE','TRACT',    'BLKGRP2', 'BLOCK', None],
-               'name':'Revised MCD and AIAN-aware geography' },
+               'name':'Revised MCD and AIAN-aware geography v2' },
+
+         'v2.1':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•PLACE','TRACT',    'BLKGRP2', 'BLOCK', None],
+               'name':'Revised MCD and AIAN-aware geography v2.1' },
 
          'v3':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•PLACE','LEVEL3',   'BLOCK',  None, None],
-               'name':'Revised MCD and AIAN-aware geography with synthetic LEVEL3' 
-               }
+               'name':'Revised MCD and AIAN-aware geography v3 with synthetic LEVEL3'},
+
+         'v3.1':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•PLACE','LEVEL3',   'BLOCK',  None, None],
+               'name':'Revised MCD and AIAN-aware geography v2.1 with synthetic LEVEL3'},
          }
 
 
@@ -77,6 +83,7 @@ def darker(openpyxl_fill):
     return PatternFill(fill_type='solid', start_color=color)
                
 
+import pl94_geofile
 import pl94_dbload
 import ctools.dbfile
 import ctools.clogging
@@ -256,15 +263,35 @@ def include_aianhh(code):
     else:
         return False
 
-NEW_ENGLAND_STUSAB="ME,NH,VT,MA,CT,RI".split(",")
-V2_STRONG_MCD_STATES=[9,11,23,25,26,27,33,34,36,42,44,50,55]
-V21_STATE_LIST=[STUSAB_TO_STATE[stusab] for stusab in "MI,MN,NJ,NY,PA,WI".split(",") + NEW_ENGLAND_STUSAB]
-EXCLUDE_STATE_RECOGNIZED_TRIBES=True
+# New england states:
+NEW_ENGLAND_STUSAB          = "ME,NH,VT,MA,CT,RI".split(",")
 
+# States with strong MCDs (use them to split at P1 instead of county)
+V20_STRONG_MCD_STUSAB       = "DC,MA,ME,MI,MN,NH,NJ,NY,PA,RI,VT,WI".split(",")
+
+# For V21, ignore strong MCDs for these states:
+V21_STUSAB_OVERRIDE       = NEW_ENGLAND_STUSAB+"MI,MN,NJ,NY,PA,WI".split(",")
+
+# State codes for V20 to use COUSUB
+V20_STRONG_MCD_STATES=set([STUSAB_TO_STATE[stusab] for stusab in V20_STRONG_MCD_STUSAB])
+
+# State codes for V21 to use COUSUB
+V21_STRONG_MCD_STATES=set([STUSAB_TO_STATE[stusab] for stusab in V20_STRONG_MCD_STUSAB if stusab not in V21_STUSAB_OVERRIDE])
+
+EXCLUDE_STATE_RECOGNIZED_TRIBES=True
 DC_STATE = STUSAB_TO_STATE['DC']
 PR_STATE = STUSAB_TO_STATE['PR']
 
-def geocode3(gh,scheme='v2'):
+def info():
+    print(f"""
+NEW ENGLAND STUSAB:    {sorted(NEW_ENGLAND_STUSAB)}
+V20 STRONG MCD STUSAB: {sorted(V20_STRONG_MCD_STUSAB)}
+V20 STRONG MCD STATES: {sorted(V20_STRONG_MCD_STATES)}
+V21 STRONG MCD STATES: {sorted(V21_STRONG_MCD_STATES)}
+""")
+
+
+def geocode3(gh,*,scheme):
     """The revised geocode that takes into account AIANHH. Levels are:
     0 - US or PR
     1 - Non-AIANHH part-of-state or PR            | AIANHH part-of-State 
@@ -276,26 +303,33 @@ def geocode3(gh,scheme='v2'):
     """
     block  = f"{gh['block']:04}"
     blkgrp2 = block[0:2]         # note 2-digit block groups
-    if gh['state']==DC_STATE:
-        # Washington DC
-        return (f"{DC_STATE:02}D",    f"____{int(gh['sldu']):05}",            f"___{gh['tract']:06}",               blkgrp2, block, None )
-    if gh['state']==PR_STATE:
-        # Puerto Rico
-        return (f"{PR_STATE:02}P",    f"{gh['county']:03}{gh['place']:05}",   f"___{gh['tract']:06}",               blkgrp2, block, None )
-    elif include_aianhh(gh['AIANHH']):
-        # AIANHH portion of 38-states with AIANHH
-        return (f"{gh['state']:02}A", f"{gh['aianhh']:05}{gh['county']:03}", f"___{gh['tract']:06}",               blkgrp2, block, None )
-    elif (gh['STATE'] in V21_STATE_LIST and scheme=='v2.1'):
-        # Non-AIAN area in 12 states that have so many strong MCDs that we need to group them by county
-        return (f"{gh['state']:02}X", f"{gh['tabblkst']:05}{gh['tabblkcou']}{gh['cousubfp']:05}",               f"{gh['county']:03}{gh['tract']:06}", blkgrp2, block, None  )
-    elif gh['STATE'] in V2_STRONG_MCD_STATES:
-        # Non-AIAN area in 12 state with strong MCD.
-        # County is included in tract to make it unique, but cousubs do not cross counties.
-        return (f"{gh['state']:02}X", f"___{gh['cousub']:05}",               f"{gh['county']:03}{gh['tract']:06}", blkgrp2, block, None  )
-    else:
-        # Non-AIAN area and 38 states not strong MCD
-        return (f"{gh['state']:02}X", f"{gh['county']:03}{gh['place']:05}",  f"___{gh['tract']:06}",               blkgrp2, block, None  )
-    return "".join(code)
+    try:
+        if gh['state']==DC_STATE:
+            # Washington DC
+            return (f"{DC_STATE:02}D",    f"____{int(gh['sldu']):05}",            f"___{gh['tract']:06}",               blkgrp2, block, None )
+        if gh['state']==PR_STATE:
+            # Puerto Rico
+            return (f"{PR_STATE:02}P",    f"{gh['county']:03}{gh['place']:05}",   f"___{gh['tract']:06}",               blkgrp2, block, None )
+        elif include_aianhh(gh['aianhh']):
+            # AIANHH portion of 38-states with AIANHH
+            return (f"{gh['state']:02}A", f"{gh['aianhh']:05}{gh['county']:03}", f"___{gh['tract']:06}",                blkgrp2, block, None )
+        elif (scheme=='v2.1' and gh['concit'] in (3436,4200,11390,36000,47500,48003,52004)):
+            # Regions with a Consolidated City
+            return (f"{gh['state']:02}A", f"CIT{gh['concit']:05}",                f"{gh['county']:03}{gh['tract']:06}",  blkgrp2, block, None  )
+        elif (gh['state'] in V21_STATE_LIST and scheme=='v2.1'):
+            # Non-AIAN area in 12 states that have so many strong MCDs that we need to group them by county
+            return (f"{gh['state']:02}X", f"{gh['county']:03}{gh['place']:05}",   f"{gh['county']:03}{gh['tract']:06}", blkgrp2, block, None  )
+        elif gh['state'] in V2_STRONG_MCD_STATES:
+            # Non-AIAN area in 12 state with strong MCD.
+            # County is included in tract to make it unique, but cousubs do not cross counties.
+            return (f"{gh['state']:02}X", f"___{gh['cousub']:05}",               f"{gh['county']:03}{gh['tract']:06}", blkgrp2, block, None  )
+        else:
+            # Non-AIAN area and 38 states not strong MCD
+            return (f"{gh['state']:02}X", f"{gh['county']:03}{gh['place']:05}",  f"___{gh['tract']:06}",               blkgrp2, block, None  )
+        return "".join(code)
+    except IndexError as e:
+        print(f"gh: {dict(gh)}\n{e}",file=sys.stderr)
+        raise e
 
 
 class MinMax:
@@ -308,16 +342,17 @@ class MinMax:
         val = func(obj)
 
 class GeoTree:
-    def __init__(self,db,name,scheme,xpr):
+    def __init__(self,db,scheme,name,xpr):
         self.db   = db
         self.name = name        # which table we are using
         self.scheme = scheme
         self.gt     = GEOTREE[scheme]
-        self.xpr    = xpr
+        self.xpr    = xpr       # do not include PR
 
     def create(self):
+        logging.info("create %s started",self.scheme)
         if self.scheme=='v1':
-            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
+            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name))
             cmd = f"""INSERT INTO {self.name} 
             SELECT state AS state,
             logrecno AS logrecno,
@@ -328,35 +363,44 @@ class GeoTree:
             substr(printf("%04d",block),1,1) as p5,
             printf("%04d",block) as p6
             FROM blocks"""
-            self.db.execute(cmd,debug=True)
+            self.db.execute(cmd)
             self.db.commit()
-        elif self.scheme=='v2':
+        elif self.scheme=='v2' or self.scheme=='v2.1':
             # This could be made a LOT faster. Right now we just go row-by-row
             # It takes about 5 minutes.
-            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
-            c = self.db.execute("SELECT * from blocks")
+            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name))
+            if self.scheme=='v2':
+                c = self.db.execute("SELECT * from blocks")
+            elif self.scheme=='v2.1':
+                c = self.db.execute("SELECT * from geo where sumlev=750")
+            else:
+                raise RuntimeError()
             for block in c:
                 try:
-                    p = geocode3(block)
+                    if self.scheme=='v2.1':
+                        block = {field.lower():pl94_geofile.safe_int(block[field]) for field in block.keys()}
+                    p = geocode3(block,scheme=self.scheme)
                 except KeyError as e:
                     print("block:",block,file=sys.stderr)
                     print(e,file=sys.stderr)
-                    exit(1)
+                    raise(e)
                 self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
-                                (block['STATE'],block['LOGRECNO'],p[0],p[1],p[2],p[3],p[4],p[5]))
+                                (block['state'],block['logrecno'],p[0],p[1],p[2],p[3],p[4],p[5]))
             self.db.commit()
-        elif self.scheme=='v3':
+        elif self.scheme=='v3' or self.scheme=='v3.1':
             # V2 is the v2 geography for p1 and P2, but an adaptive algorithm for P3 and P4. There is no P5.
             # 
-            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name),debug=True)
-            c = self.db.execute(f"SELECT state,p1,p2,count(*) as count from table2 group by state,p1,p2")
+            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name))
+            v2tablename = {"v3":"table2","v3.1":"table21"}[self.scheme]
+            c = self.db.execute(f"SELECT state,p1,p2,count(*) as count from {v2tablename} group by state,p1,p2")
+
             for row in c:
                 state   = row['state']
                 fanout1 = int(math.sqrt(row['count']))
                 p1 = row['p1']
                 p2 = row['p2']
                 p3 = p4 = 1
-                d = self.db.execute(f"SELECT logrecno from table2 where state=? and p1=? and p2=?",
+                d = self.db.execute(f"SELECT logrecno from {v2tablename} where state=? and p1=? and p2=?",
                                     (row['state'],p1,p2))
                 for row2 in d:
                     self.db.execute(f"INSERT into {self.name} (state,logrecno,p1,p2,p3,p4) values (?,?,?,?,?,?)",
@@ -367,10 +411,9 @@ class GeoTree:
                         p4 = 1
                 logging.info("Completed %s %s %s",state,p1,p2)
             self.db.commit()
-                    
-
         else:
             raise RuntimeError(f"Unknown scheme: {self.scheme}")
+        logging.info("create %s finished",self.scheme)
 
     def dump(self):
         cmd = f"""select a.state,a.logrecno,a.p1,a.p2,a.p3,a.p4,a.p5,a.p6,b.geocode,b.pop 
@@ -565,7 +608,8 @@ if __name__ == "__main__":
     parser.add_argument("--db", help="Specify database location", default=pl94_dbload.DBFILE)
     parser.add_argument("--create", action='store_true', help='create the schema')
     parser.add_argument("--drop", action='store_true', help='drop the schema')
-    parser.add_argument("--dump",   action='store_true', help='print the blocks')
+    parser.add_argument("--dumpblocks",   action='store_true', help='print the blocksblocks')
+    parser.add_argument("--info",    help="print info", action='store_true')
     parser.add_argument("--scheme" , help='specify partitioning scheme')
     parser.add_argument("--report", action='store_true', help="Create a report")
     parser.add_argument("--names", action='store_true', help='display names')
@@ -573,21 +617,29 @@ if __name__ == "__main__":
     parser.add_argument("--xpr",     action='store_true', help='remove PR from reports')
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
-    args.name = 'table' + args.scheme[1]
+
+    if args.info:
+        info()
+        exit(0)
+
+    name = 'table' + args.scheme[1:].replace(".","")
 
     ctools.clogging.setup(level=args.loglevel)
+
+
+
     gc.enable()
 
     db   = ctools.dbfile.DBSqlite3(args.db,dicts=True,debug=False)
     db.set_cache_bytes(4*1024*1024*1024)
 
-    gt = GeoTree(db,args.name,args.scheme,args.xpr)
+    gt = GeoTree(db,args.scheme,name,args.xpr)
 
     # open database and give me a big cache
     if args.drop:
-        db.execute(f"DROP TABLE IF EXISTS {args.name}",debug=True)
-        db.execute(f"DROP INDEX IF EXISTS {args.name}_logrecno",debug=True)
-        db.execute(f"DROP INDEX IF EXISTS {args.name}_p",debug=True)
+        db.execute(f"DROP TABLE IF EXISTS {name}",debug=True)
+        db.execute(f"DROP INDEX IF EXISTS {name}_logrecno",debug=True)
+        db.execute(f"DROP INDEX IF EXISTS {name}_p",debug=True)
 
     if args.create:
         gt.create()

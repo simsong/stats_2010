@@ -167,8 +167,9 @@ STATE_DICTS is a list of stat dictionaries, where each dict has the format:
 STATE_DICTS=[dict(zip("state_name,stusab,state".split(","),line.split(","))) for line in STATE_DATA]
 
 # Create some cuts through the data
-STATE_NAMES             = [state['state_name'] for state in STATE_DICTS]
-
+STATE_NAMES       = [state['state_name'] for state in STATE_DICTS] # the state names
+STATE_STATES      = [int(sd['state']) for sd in STATE_DICTS] # the state codes
+STATE_STUSAB      = [sd['stusab'] for sd in STATE_DICTS] # the state US postal codes
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
 """
 Naming convention for SF2 data files is ssiiiyy_uf2.zip. 

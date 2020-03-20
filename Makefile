@@ -32,20 +32,20 @@ pl94.sqlite3: pl94_dbload.py
 
 # Create the geographies. These can't be parallelized because v3 depends on v2
 
-v1_geo_create: pl94_geofile.py
+v1_geo: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v1
 
-v2_geo_create: pl94_geofile.py
+v2_geo: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v2
 
-v21_geo_create: pl94_geofile.py
+v21_geo: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v2.1
 
-v3_geo_create: pl94_geofile.py
+v3_geo: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v3
 
-v31_geo_create: pl94_geofile.py
-	python3 geotree.py --drop --create --scheme v3.1
+v4_geo: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v4
 
 
 ################################################################
@@ -71,9 +71,9 @@ v3_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS) --scheme v3
 
-v31_report: geotree.py
+v4_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
-	python geotree.py $(VARGS)  --scheme v3.1
+	python geotree.py $(VARGS)  --scheme v4
 
 
 ################################################################

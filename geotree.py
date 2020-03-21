@@ -30,7 +30,7 @@ GEOTREE={'v1':{'names':['US',    'DC•STATE',          'COUNTY',           'TGR
                'name':'Revised MCD and AIAN-aware geography v3 with synthetic LEVEL3'},
 
          'v4':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT2', 'TRACT', 'BLKGRP2', 'BLOCK', None],
-               'name':'Corrected v2 Revised MCD and AIAN-aware geography' },
+               'name':'Corrected v2.1 Revised MCD and AIAN-aware geography' },
          }
 
 
@@ -219,12 +219,14 @@ Q - States that lack "strong" municipal civil divisions but have many places; th
 """
 
 class GeoTree:
-    def __init__(self,db,scheme,name,xpr):
+    def __init__(self,db,name,args):
         self.db   = db
         self.name = name        # which table we are using
-        self.scheme = scheme
-        self.gt     = GEOTREE[scheme]
-        self.xpr    = xpr       # do not include PR
+        self.scheme = args.scheme
+        self.gt     = GEOTREE[args.scheme]
+        self.xpr    = args.xpr       # do not include PR
+        self.xempty = args.xempty    # do not include blocks with 0 population and 0 housing units
+        self.args   = args
 
     def geocode_v2(self,gh):
         """The revised geocode that takes into account AIANHH. Levels are:
@@ -274,7 +276,7 @@ class GeoTree:
 
         if include_aianhh(gh['aianhh']):
             # AIANHH portion of 38-states with AIANHH
-            return ("A"+gh['state'], gh['aianhh']+"_"+gh['county'], tract[0:2], tract,  blkgrp2,  block, None )
+            return ("A"+gh['state'], gh['aianhh'],                   gh['county']+"_"+tract[0:2], tract,  blkgrp2,  block, None )
 
         if ss == SS_NEW_ENGLAND:
             return ("N"+gh['state'], gh['county']+"_"+gh['cousub'], tract[0:2],  tract,  blkgrp2,  block, None  )
@@ -368,12 +370,18 @@ class GeoTree:
         plevel4 = ",".join([f"p{n}" for n in range(1,ct+4)])  # if ct=0, this is P1,P2,P3,P4
         logging.info(f"ct:{ct} plevel1:{plevel1}")
 
+        where = ''
         if self.xpr:
-            where = f'WHERE a.state!={PR_STATE} and b.state!={PR_STATE}'
-        else:
-            where = ''
-        cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*) as count,SUM(pop) as population FROM 
-        {self.name} a LEFT JOIN blocks b ON a.state=b.state AND a.logrecno=b.logrecno {where} GROUP BY {plevel2}"""
+            where += f'a.state!={PR_STATE} and b.state!={PR_STATE} '
+        if self.args.xempty:
+            if where:
+                where += " AND "
+            where += f' ( b.pop > 0 OR b.houses > 0 )'
+        if where:
+            where = "WHERE "+where
+        cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*) as blocks,SUM(pop) as population 
+        FROM {self.name} a LEFT JOIN blocks b ON (a.state=b.state AND a.logrecno=b.logrecno) {where} 
+        GROUP BY {plevel2}"""
         c = self.db.execute(cmd)
         t0 = time.time()
         res = c.fetchall()
@@ -409,13 +417,26 @@ class GeoTree:
             next_level_name = self.gt['names'][ct+1]
             if next_level_name is None:
                 break
+
+            # Check for no PR
             if self.xpr:
                 fanout_name     = fanout_name.replace("•PR","")
                 next_level_name = next_level_name.replace("•PR","")
 
+            # Check for only a given state
+            sheet_name = f"P{ct} {fanout_name}".replace("/"," ")
             assert len(fanout_name) < 31
-            ws_level = wb.create_sheet(fanout_name.replace("/"," "))
-            sheet_title = f"{self.gt['name']}: fanout from {self.gt['names'][ct]} to {self.gt['names'][ct+1]}"
+            ws_level = wb.create_sheet(sheet_name)
+
+            exp = ''
+            if self.args.xpr:
+                exp += "(Peutro Rico omitted) "
+            if self.args.state:
+                exp += f"(only {args.state}) "
+            if self.args.xempty:
+                exp += "(Blocks with P0010001=0 or H0010001=0 omitted)"
+
+            sheet_title = f"{self.gt['name']}: fanout from {self.gt['names'][ct]} to {self.gt['names'][ct+1]} {exp}"
             ws_setup_level(ws_level,sheet_title)
             geounits = self.get_geounits(ct)
             logging.info(f"ct: {ct} len(geounits)={len(geounits)} t={time.time()-t0}")
@@ -433,12 +454,14 @@ class GeoTree:
             while geounits:
                 res = {}
                 fanout_populations = []
+                fanout_block_counts      = []
                 reporting_prefix = geounits[0]['reporting_prefix']
                 while geounits and (reporting_prefix == geounits[0]['reporting_prefix']):
                     d0 = geounits.popleft()
                     if print_count < 10:
                         logging.info(dict(d0))
                         print_count += 1
+                    fanout_block_counts.append(d0['blocks'])
                     fanout_populations.append(d0['population'])
                     all_fanout_populations.append(d0['population'])
 
@@ -460,28 +483,30 @@ class GeoTree:
                     column1_label = constants.STATE_TO_STUSAB[d0['state']]
                     if d0['reporting_prefix'][3:4]=='A':
                         column1_label += '-AIANHH'
-                ws_level.cell(row=row,column=1).value = column1_label
-                ws_level.cell(row=row,column=2).value = d0['reporting_prefix']
+                ws_level.cell(row=row,column = COL_STUSAB).value = column1_label
+                ws_level.cell(row=row,column = COL_PREFIX).value = d0['reporting_prefix']
                 if args.names:
-                    ws_level.cell(row=row,column=3).value = gs.county_name(state, county)
-                ws_level.cell( row=row,column=4).value = len(fanout_populations)
-                ws_level.cell( row=row,column=5).value = sum(fanout_populations)
-                ws_level.cell( row=row,column=6).value = int(statistics.mean(fanout_populations))
-                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=3,max_col=6):
+                    ws_level.cell(row=row,column = COL_NAME).value = gs.county_name(state, county)
+                ws_level.cell( row=row,column = COL_FANOUT).value = len(fanout_populations)
+                ws_level.cell( row=row,column = COL_POP_TOT).value = sum(fanout_populations)
+                ws_level.cell( row=row,column = COL_BLK_TOT).value = sum(fanout_block_counts)
+
+                ws_level.cell( row=row,column = COL_POP_AVG).value = int(statistics.mean(fanout_populations))
+                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col = COL_NAME,max_col = COL_POP_AVG):
                     for cell in cellrow:
                         cell.border = right_border
                 ws_level.cell( row=row,column=6).border = right_thick_border
 
                 # add commas to pop_tot and pop_avg
-                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=5,max_col=6):
+                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=COL_POP_TOT,max_col=COL_POP_AVG):
                     for cell in cellrow:
                         cell.number_format = '#,##0'
                 # layout and format deciles
-                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=7,max_col=17):
+                for cellrow in ws_level.iter_rows(min_row=row, max_row=row,min_col=COL_POP_MIN,max_col=COL_POP_MIN+10):
                     for(cell,value) in zip(cellrow, deciles(fanout_populations)):
                         cell.value = value
                         cell.number_format = '#,##0'
-                ws_level.cell( row=row,column=17).border = right_thick_border
+                ws_level.cell( row=row,column = COL_POP_MIN+10).border = right_thick_border
                 row += 1
 
                 if row % 10_000==0:
@@ -491,43 +516,51 @@ class GeoTree:
             # Finalize the Sheet
             ws_level.freeze_panes    = 'A3'
             ws_level.auto_filter.ref = f'A2:Q{row-1}'
-            wb.format_rows(ws_level, min_row=3, max_row=row-1, min_col=1, max_col=17, column=1,
+            wb.format_rows(ws_level, min_row=3, max_row=row-1, min_col=1, max_col=COL_POP_MIN+10, column=1,
                            stripe = (ct>1),
                            fills=[STATE1_FILL, STATE2_FILL], value_fills = {'PR':PR_FILL})
 
             # Now fill out the Overview Sheet
-            ws_overview.cell(row=overview_row, column=1).value = fanout_name
-            ws_overview.cell(row=overview_row, column=2).value = len(level_stats)
-            ws_overview.cell(row=overview_row, column=3).value = next_level_name
-            ws_overview.cell(row=overview_row, column=4).value = sum([res['fanout_count'] for res in level_stats])
+            ws_overview.cell(row=overview_row, column=COL_PLEVEL).value = f"P{ct}"
+            ws_overview.cell(row=overview_row, column=COL_LEVEL_NAME).value = fanout_name
+            ws_overview.cell(row=overview_row, column=COL_NUM_LEVELS).value = len(level_stats)
+            ws_overview.cell(row=overview_row, column=COL_SUBLEVEL_NAME).value = next_level_name
+            ws_overview.cell(row=overview_row, column=COL_NUM_SUBLEVELS).value = sum([res['fanout_count'] for res in level_stats])
             logging.info("fanout_name=%s next_level_name=%s",fanout_name,next_level_name)
 
             fanouts = [res['fanout_count'] for res in level_stats]
             fanout_deciles = deciles(fanouts)
-            for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row, min_col=5, max_col = 15):
+            for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row,
+                                                 min_col = COL_MIN_FANOUT, max_col = COL_MIN_FANOUT+10):
                 for (cell,value) in zip(cellrow,fanout_deciles):
                     cell.value = value
                     cell.fill = YELLOW_FILL
                     cell.border = thin_border
 
             fanout_population_deciles = deciles(all_fanout_populations)
-            for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row, min_col=16, max_col = 26):
+            for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row,
+                                                 min_col = COL_MIN_POPULATIONS, max_col = COL_MIN_POPULATIONS+10):
                 for (cell,value) in zip(cellrow,fanout_population_deciles):
                     cell.value = value
                     cell.number_format = "#,##0"
                     cell.fill = PINK_FILL
                     cell.border = thin_border
             overview_row += 1
-            # Save this level
 
+            # See if this is the last time through.
+            # If so, don't bother saving a checkpoint, because the last save takes several minutes
+            next_next_level_name = self.gt['names'][ct+2]
+            if ct+1==args.levels or next_next_level_name is None:
+                break
+
+            # Save this level
             fname = f"{fnamebase} {ct}.xlsx"
-            logging.info("Saving %s",fname)
+            logging.info(f"Saving level {ct} checkpoint to {fname}")
             with ctools.timer.Timer(notifier=logging.info):
                 wb.save(fname)
-            if ct+1==args.levels:
-                break
-        ws_add_notes(ws_overview,          row=overview_row+2, column=2, data=open("geotree_notes.md"))
-        ws_add_notes(wb[wb.sheetnames[2]], row=4,              column=2, data=io.StringIO(V4_PREFIXES_EXPLAINED))
+
+        ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,  data=open("geotree_notes.md"))
+        ws_add_notes(wb[wb.sheetnames[2]], row=4,              column=COL_POP_MIN+10+1, data=io.StringIO(V4_PREFIXES_EXPLAINED))
         ws_add_metadata(wb)
         fname = f"{fnamebase}.xlsx"
         logging.info("Saving %s",fname)
@@ -558,8 +591,6 @@ def mean_report(db):
         elif ss == SS_COUNTY_COUSUB_PLACE:
             print(f"{stusab}: Not strong MCD with P2=COUNTY,COUSUB ({dcc})  P3=PLACE({dcp}) P4=TRACT ({dct}) P5=BLOCK --avoided COUNTY ({dc})")
     exit(0)
-        
-
 
 if __name__ == "__main__":
     import argparse
@@ -577,6 +608,7 @@ if __name__ == "__main__":
     parser.add_argument("--xpr",     action='store_true', help='remove PR from reports')
     parser.add_argument("--state",  help='Only process state STATE (specified by name or number)')
     parser.add_argument("--mean_report", help="Print geometric mean report", action='store_true')
+    parser.add_argument("--xempty",  action='store_true', help='remove blocks with 0 population and 0 housing')
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
 
@@ -610,7 +642,7 @@ if __name__ == "__main__":
     if args.stusab:
         name += "_" + args.stusab
 
-    gt = GeoTree(db,args.scheme,name,args.xpr)
+    gt = GeoTree(db,name,args)
 
     # open database and give me a big cache
     if args.drop:

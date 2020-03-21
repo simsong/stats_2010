@@ -53,7 +53,7 @@ v4_geo: pl94_geofile.py
 # Create the reports
 # These can be made at the same time
 v123: v1 v2 v3 
-VARGS=--db pl94.sqlite3 --report --xpr
+VARGS=--db pl94.sqlite3 --report --xpr --xempty
 
 v1_report: geotree.py
 	@echo a quick report of the v1 geography down to the states
@@ -75,6 +75,13 @@ v4_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS)  --scheme v4
 
+################################################################
+##
+## Combined
+
+v4:
+	make v4_geo
+	make v4_report
 
 ################################################################
 ##

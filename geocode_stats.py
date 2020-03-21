@@ -263,8 +263,8 @@ class GeocodeStats:
         ws.auto_filter.ref = f'A2:Q{row-1}'
         row += 1
 
-        ws.cell( row=row,column=3).value = "Total population:"
-        ws.cell( row=row,column=5).value = total_population
+        ws.cell( row=row, column=3 ).value = "Total population:"
+        ws.cell( row=row, column=5 ).value = total_population
         row += 2
 
         if args.details:

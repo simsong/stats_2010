@@ -94,6 +94,7 @@ class EasyWorkbook(Workbook):
         if fills:
             fills = RingBuffer(fills)
             fill  = fills.next()
+        prev_fill  = None
         prev_value = None
         make_darker = False
         for cellrow in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
@@ -108,10 +109,11 @@ class EasyWorkbook(Workbook):
             elif value_fills is not None and column_value in value_fills:
                 fill = value_fills[column_value]
             elif column_value == prev_value:
+                fill = prev_fill
                 continue        #  don't change
             else:
-                fill = fills.next()
-                prev_value = column_value
+                prev_fill   = fill       = fills.next()
+                prev_value  = column_value
                 make_darker = False
 
             #if make_darker and stripe:
@@ -127,65 +129,86 @@ class EasyWorkbook(Workbook):
             setattr(cell, key, value)
 
 # 
+COL_PLEVEL = 1
+COL_LEVEL_NAME  = 2
+COL_NUM_LEVELS = 3
+COL_SUBLEVEL_NAME = 4
+COL_NUM_SUBLEVELS = 5
+COL_MIN_FANOUT    = 6
+COL_MIN_POPULATIONS = 17
+
 def wb_setup_overview(ws):
     """Set up the root of the spreadsheet, adding notes and other information"""
-    ws.column_dimensions['A'].width=20
-    ws.column_dimensions['C'].width=20
-    ws.cell(row=2, column=1).value = 'Level'
-    ws.cell(row=2, column=2).value = '# Levels'
-    ws.cell(row=2, column=3).value = 'Sublevel'
-    ws.cell(row=2, column=4).value = '# Sublevels'
+    ws.column_dimensions[ws.get_column_letter(COL_LEVEL_NAME)].width=20
+    ws.column_dimensions[ws.get_column_letter(COL_SUBLEVEL_NAME)].width=20
+    ws.cell(row=2, column=COL_PLEVEL).value = 'Partition'
+    ws.cell(row=2, column=COL_PLEVEL_NAME).value = 'Level'
+    ws.cell(row=2, column=COL_NUM_LEVELS).value = '# Levels'
+    ws.cell(row=2, column=COL_SUBLEVEL_NAME).value = 'Sublevel'
+    ws.cell(row=2, column=COL_NUM_SUBLEVELS).value = '# Sublevels'
 
-    ws.cell(row=1, column=5).value     = 'sublevel fanouts (interpolation=min)'
-    ws.cell(row=1, column=5).alignment = CENTERED
-    ws.cell(row=1, column=5).fill      = YELLOW_FILL
-    ws.merge_cells(start_row=1, end_row=1, start_column=5, end_column=15)
-    ws.cell(row=2, column=5).value = 'min'
+    ws.cell(row=1, column=COL_MIN_FANOUT).value     = 'sublevel fanouts (interpolation=min)'
+    ws.cell(row=1, column=COL_MIN_FANOUT).alignment = CENTERED
+    ws.cell(row=1, column=COL_MIN_FANOUT).fill      = YELLOW_FILL
+    ws.merge_cells(start_row=1, end_row=1, start_column=COL_MIN_FANOUT, end_column=COL_MIN_FANOUT+10)
+    ws.cell(row=2, column=COL_MIN_FANOUT).value = 'min'
     for n in range(1,10):
-        ws.cell(row=2, column=5+n).value = f"{n*10}th pct."
-    ws.cell(row=2, column=15).value = 'max'
-    for col in range(5,16):
+        ws.cell(row=2, column=COL_MIN_FANOUT+n).value = f"{n*10}th pct."
+    ws.cell(row=2, column=COL_MIN_FANOUT+10).value = 'max'
+    for col in range(COL_MIN_FANOUT,COL_MIN_FANOUT+10+1):
         ws.cell(row=2, column=col).alignment = CENTERED
         ws.cell(row=2, column=col).fill = YELLOW_FILL
 
-    ws.cell(row=1, column=16).value     = 'sublevel populations (interpolation=min)'
-    ws.cell(row=1, column=16).alignment = CENTERED
-    ws.cell(row=1, column=16).fill      = PINK_FILL
-    ws.merge_cells(start_row=1, end_row=1, start_column=16, end_column=26)
-    ws.cell(row=2, column=16).value = 'min'
+    ws.cell(row=1, column=COL_MIN_POPULATIONS).value     = 'sublevel populations (interpolation=min)'
+    ws.cell(row=1, column=COL_MIN_POPULATIONS).alignment = CENTERED
+    ws.cell(row=1, column=COL_MIN_POPULATIONS).fill      = PINK_FILL
+    ws.merge_cells(start_row=1, end_row=1, start_column=COL_MIN_POPULATIONS, end_column=COL_MIN_POPULATIONS+10)
+    ws.cell(row=2, column=COL_MIN_POPULATIONS).value = 'min'
     for n in range(1,10):
-        ws.cell(row=2, column=16+n).value = f"{n*10}th pct."
-    ws.cell(row=2, column=26).value = 'max'
-    for col in range(16,27):
+        ws.cell(row=2, column=COL_MIN_POPULATIONS+n).value = f"{n*10}th pct."
+    ws.cell(row=2, column=COL_MIN_POPULATIONS+10).value = 'max'
+    for col in range(COL_MIN_POPULATIONS,COL_MIN_POPULATIONS+10+1):
         ws.cell(row=2, column=col).alignment = CENTERED
         ws.cell(row=2, column=col).fill = PINK_FILL
     return 3                    # next row
 
 WIDTH_9_DIGITS_COMMAS=12
+COL_STUSAB    = 1
+COL_PREFIX    = 2
+COL_NAME      = 3
+COL_FANOUT    = 4
+COL_BLK_TOT   = 5
+COL_POP_TOT   = 6
+COL_POP_AVG   = 7
+COL_POP_MIN   = 8
+
 def ws_setup_level(ws,sheet_title):
     ws.cell(row=2, column=1).value = 'STUSAB' # A2
     ws.cell(row=2, column=2).value = 'Prefix' # B2
+    ws.column_dimensions['B'].width=25
     ws.cell(row=2, column=3).value = 'Name'   # C2
     ws.column_dimensions['C'].width=20
     for ch in 'DEFGHIJKLMNOPQ':
         ws.column_dimensions[ch].width=WIDTH_9_DIGITS_COMMAS
 
-    ws.cell(row=1,column=4).value = sheet_title
-    ws.cell(row=1,column=4).alignment = CENTERED
-    ws.merge_cells(start_row=1,end_row=1,start_column=4,end_column=7+10)
-    ws.cell(row=1,column=6+9).border = right_border
-    ws.cell(row=2,column=4).value='fanout'
-    ws.cell(row=2,column=5).value='pop_tot'
-    ws.cell(row=2,column=6).value='pop_avg'
-    ws.cell(row=2,column=7).value='min pop'
+    ws.cell(row=1,column=COL_FANOUT).value = sheet_title
+    ws.cell(row=1,column=COL_FANOUT).alignment = CENTERED
+    ws.merge_cells(start_row=1,end_row=1,start_column=COL_FANOUT,end_column=COL_POP_MIN+10)
+    ws.cell(row=1,column=COL_POP_AVG+9).border = right_border
+    ws.cell(row=2,column=COL_FANOUT).value='fanout'
+
+    ws.cell(row=2,column=COL_BLK_TOT).value='# blocks'
+    ws.cell(row=2,column=COL_POP_TOT).value='pop_tot'
+    ws.cell(row=2,column=COL_POP_AVG).value='pop_avg'
+    ws.cell(row=2,column=COL_POP_MIN).value='min pop'
     for n in range(1,10):
-        ws.cell(row=2,column=7+n).value = f"{n*10}th pct."
+        ws.cell(row=2,column=COL_POP_MIN+n).value = f"{n*10}th pct."
     ws.cell(row=2,column=17).value='max pop'
-    for col in range(4,7+10+1):
+    for col in range(COL_FANOUT,COL_POP_MIN+10+1):
         ws.cell(row=2,column=col).alignment = CENTERED
-    ws.cell(row=2,column=4).border = right_border
-    ws.cell(row=2,column=6).border = right_thick_border
-    ws.cell(row=2,column=7+10).border = right_border
+    ws.cell(row=2,column=COL_FANOUT).border = right_border
+    ws.cell(row=2,column=COL_POP_AVG).border = right_thick_border
+    ws.cell(row=2,column=COL_POP_MIN+10).border = right_border
 
 def ws_add_notes(ws,*,row,column,data):
     for line in data:

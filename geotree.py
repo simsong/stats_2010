@@ -59,12 +59,12 @@ def flatmap(func, *iterable):
 CREATE_GEOTREE_SQL="""
 CREATE TABLE %TABLE% (state INTEGER,
                       logrecno INTEGER,
-                      p1 VARCHAR(16),
-                      p2 VARCHAR(16),
-                      p3 VARCHAR(16),
-                      p4 VARCHAR(16),
-                      p5 VARCHAR(16),
-                      p6 VARCHAR(16));
+                      p1 VARCHAR(64),
+                      p2 VARCHAR(64),
+                      p3 VARCHAR(64),
+                      p4 VARCHAR(64),
+                      p5 VARCHAR(64),
+                      p6 VARCHAR(64));
 CREATE UNIQUE INDEX %TABLE%_logrecno ON %TABLE%(state,logrecno);
 CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 """
@@ -357,6 +357,10 @@ class GeoTree:
             # 
             if create:
                 self.db.execute("""INSERT INTO table5 SELECT * FROM table4""")
+            count = self.db.execselect("SELECT COUNT(*) from table5")[0]
+            logging.info("Blocks in table 5: %s",count)
+            assert(count>0)
+
             self.db.execute("DROP TABLE IF EXISTS table5_log")
             self.db.execute("CREATE TABLE table5_log (level INTEGER,desc VARCHAR(96),block_count INTEGER,group_pop INTEGER)""")
             self.db.execute("DROP INDEX IF EXISTS table5_log1")
@@ -374,6 +378,7 @@ class GeoTree:
                 GROUP BY {group_by} having group_pop<1000 
                 ORDER BY b.state,b.county
                 """)
+                logging.info("group by %s",group_by)
 
                 changed=[]
                 for row in c:
@@ -387,15 +392,15 @@ class GeoTree:
                     block_count = row['block_count']
                     if G==2:
                         d = self.db.execute(
-                            f"""UPDATE table5 set p6=?,p3='BY',p4='BY',p5='BY' where p1=? and p2=?""",                  (' '.join([p3,p4,p5,p6]),p1,p2))
+                            f"UPDATE table5 set p6=p3||' '||p4||' '||p5||' '||p6,p3='BYPASS',p4='',p5='' where p1=? and p2=?",    (p1,p2))
                         log = (G,f'P1={p1} P2={p2}',block_count,group_pop)
                     elif G==3:
                         d = self.db.execute(
-                            f"""UPDATE table5 set p5=?,p3='BY',p4='BY'         where p1=? and p2=? and p3=?""",         (' '.join([p3,p4,p5]),p1,p2,p3))
+                            f"UPDATE table5 set p6=p4||' '||p5||' '||p6,p4='BYPASS',p5='' where p1=? and p2=? and p3=?", (p1,p2,p3))
                         log = (G,f'P1={p1} P2={p2} P3={p3}',block_count,group_pop)
                     elif G==4:
                         d = self.db.execute(
-                            f"""UPDATE table5 set p4=?,p3='BY'                 where p1=? and p2=? and p3=? and p4=?""", (' '.join([p3,p4]),p1,p2,p3,p4))
+                            f"UPDATE table5 set p6=p5||' '||p6,p5='BYPASS' where p1=? and p2=? and p3=? and p4=?", (p1,p2,p3,p4))
                         log = (G,f'P1={p1} P2={p2} P3={p3} P4={p4}',block_count,group_pop)
                     changed.append(block_count)
                     self.db.execute("INSERT INTO table5_log (level,desc,block_count,group_pop) values (?,?,?,?)", log)
@@ -415,7 +420,7 @@ class GeoTree:
         for row in c:
             print(",".join([str(x) for x in row]))
 
-    def get_geounits(self,ct):
+    def get_geounits(self,ct, debug=False):
         """ 
         When ct=0, nation page is constructed, single nation row goes to subpops.
         When ct=1, state page is being constructed, state rows need to be counties"""
@@ -438,7 +443,7 @@ class GeoTree:
         cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*) as blocks,SUM(pop) as population 
         FROM {self.name} a LEFT JOIN blocks b ON (a.state=b.state AND a.logrecno=b.logrecno) {where} 
         GROUP BY {plevel2}"""
-        c = self.db.execute(cmd)
+        c = self.db.execute(cmd, debug=debug)
         t0 = time.time()
         res = c.fetchall()
         t1 = time.time()
@@ -494,8 +499,9 @@ class GeoTree:
 
             sheet_title = f"{self.gt['name']}: fanout from {self.gt['names'][ct]} to {self.gt['names'][ct+1]} {exp}"
             ws_setup_level(ws_level,sheet_title)
-            geounits = self.get_geounits(ct)
+            geounits = self.get_geounits(ct, debug=True)
             logging.info(f"ct: {ct} len(geounits)={len(geounits)} t={time.time()-t0}")
+            assert len(geounits)>0
 
             # Turn the geounits into a queue for rapid access
             geounits = deque(geounits)
@@ -585,6 +591,7 @@ class GeoTree:
             logging.info("fanout_name=%s next_level_name=%s",fanout_name,next_level_name)
 
             fanouts = [res['fanout_count'] for res in level_stats]
+            assert sum(fanouts)>0
             fanout_deciles = deciles(fanouts)
             for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row,
                                                  min_col = COL_MIN_FANOUT, max_col = COL_MIN_FANOUT+10):
@@ -615,7 +622,36 @@ class GeoTree:
             with ctools.timer.Timer(notifier=logging.info):
                 wb.save(fname)
 
-        ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,  data=open("geotree_notes.md"))
+        # If this was the v5 report, include information about the 
+        if self.args.scheme=='v5':
+            for G in [2,3,4]:
+                vals = []
+                ws = wb.create_sheet(f"P{G} bypass stats")
+                desc = "Grouping blocks by P1,P2,P3"
+                if G>2:
+                    desc += ",P4"
+                if G>3:
+                    desc += ",P5"
+                ws.cell(row=1,column=2).value=desc
+                row = 2
+                ws.cell(row=row,column=1).value='Partition'
+                ws.cell(row=row,column=2).value='# Blocks'
+                ws.cell(row=row,column=3).value='Pop'
+                
+                c = self.db.execute("select * from table5_log where level=? order by block_count desc",(G,))
+                for res in c:
+                    row += 1
+                    ws.cell(row=row, column=1).value=res['desc']
+                    ws.cell(row=row, column=2).value=res['block_count']
+                    ws.cell(row=row, column=3).value=res['group_pop']
+                ws.freeze_panes = 'A3'
+                ws_level.auto_filter.ref = f'A3:C{3+row}'
+                ws.column_dimensions['A'].width=20
+                ws.column_dimensions['B'].width=10
+                ws.column_dimensions['C'].width=10
+            
+        # Add summary info to spreadsheet's root.
+        ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,   data=open("geotree_notes.md"))
         ws_add_notes(wb[wb.sheetnames[2]], row=4,              column=COL_POP_MIN+10+2, data=io.StringIO(V4_PREFIXES_EXPLAINED))
         ws_add_metadata(wb)
         fname = f"{fnamebase}.xlsx"

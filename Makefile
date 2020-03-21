@@ -48,7 +48,7 @@ v4_geo: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v4
 
 v5_geo: pl94_geofile.py
-	python3 geotree.py --fill --scheme v5
+	python3 geotree.py --drop --create --scheme v5
 
 
 ################################################################
@@ -77,6 +77,10 @@ v3_report: geotree.py
 v4_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS)  --scheme v4
+
+v5_report: geotree.py
+	@echo a quick report of the v2 geography down to the states
+	python geotree.py $(VARGS)  --scheme v5
 
 ################################################################
 ##

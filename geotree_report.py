@@ -139,10 +139,11 @@ COL_MIN_POPULATIONS = 17
 
 def wb_setup_overview(ws):
     """Set up the root of the spreadsheet, adding notes and other information"""
-    ws.column_dimensions[ws.get_column_letter(COL_LEVEL_NAME)].width=20
-    ws.column_dimensions[ws.get_column_letter(COL_SUBLEVEL_NAME)].width=20
+    from openpyxl.utils import get_column_letter
+    ws.column_dimensions[get_column_letter(COL_LEVEL_NAME)].width=20
+    ws.column_dimensions[get_column_letter(COL_SUBLEVEL_NAME)].width=20
     ws.cell(row=2, column=COL_PLEVEL).value = 'Partition'
-    ws.cell(row=2, column=COL_PLEVEL_NAME).value = 'Level'
+    ws.cell(row=2, column=COL_LEVEL_NAME).value = 'Level'
     ws.cell(row=2, column=COL_NUM_LEVELS).value = '# Levels'
     ws.cell(row=2, column=COL_SUBLEVEL_NAME).value = 'Sublevel'
     ws.cell(row=2, column=COL_NUM_SUBLEVELS).value = '# Sublevels'

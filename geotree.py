@@ -31,6 +31,9 @@ GEOTREE={'v1':{'names':['US',    'DC•STATE',          'COUNTY',           'TGR
 
          'v4':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT2', 'TRACT', 'BLKGRP2', 'BLOCK', None],
                'name':'Corrected v2.1 Revised MCD and AIAN-aware geography' },
+
+         'v5':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT2', 'TRACT', 'BLKGRP2', 'BLOCK', None],
+               'name':'Corrected v2.1 AIAN and MCD-aware geography with bypass-to-block for populations < 1000' },
          }
 
 
@@ -292,9 +295,12 @@ class GeoTree:
 
         raise ValueError(f"Unknown ss:{ss}")
 
-    def create(self):
-        logging.info("create %s started",self.scheme)
-        self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name))
+    def create_or_fill(self,create):
+        if create:
+            logging.info("create %s started",self.scheme)
+            self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name))
+        else:
+            logging.info("fill %s started",self.scheme)
         if self.scheme=='v1':
             cmd = f"""INSERT INTO {self.name} 
             SELECT state AS state,
@@ -320,8 +326,7 @@ class GeoTree:
         elif self.scheme=='v3':
             # V2 is the v2 geography for p1 and P2, but an adaptive algorithm for P3 and P4. There is no P5.
             # 
-            v2tablename = "table2"
-            c = self.db.execute(f"SELECT state,p1,p2,count(*) as count from {v2tablename} group by state,p1,p2")
+            c = self.db.execute(f"SELECT state,p1,p2,count(*) as count from table2 group by state,p1,p2")
 
             for row in c:
                 state   = row['state']
@@ -329,7 +334,7 @@ class GeoTree:
                 p1 = row['p1']
                 p2 = row['p2']
                 p3 = p4 = 1
-                d = self.db.execute(f"SELECT logrecno from {v2tablename} where state=? and p1=? and p2=?",
+                d = self.db.execute(f"SELECT logrecno from table2 where state=? and p1=? and p2=?",
                                     (row['state'],p1,p2))
                 for row2 in d:
                     self.db.execute(f"INSERT into {self.name} (state,logrecno,p1,p2,p3,p4) values (?,?,?,?,?,?)",
@@ -347,6 +352,57 @@ class GeoTree:
                 p = self.geocode_v4(gh)
                 self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
                                 (int(gh['state']),int(gh['logrecno']),p[0],p[1],p[2],p[3],p[4],p[5]))
+        elif self.scheme=='v5':
+            # v5 is the v4 geography with bypass-to-block for populations<1000.
+            # 
+            if create:
+                self.db.execute("""INSERT INTO table5 SELECT * FROM table4""")
+            self.db.execute("DROP TABLE IF EXISTS table5_log")
+            self.db.execute("CREATE TABLE table5_log (level INTEGER,desc VARCHAR(96),block_count INTEGER,group_pop INTEGER)""")
+            self.db.execute("DROP INDEX IF EXISTS table5_log1")
+            self.db.execute("DROP INDEX IF EXISTS table5_log2")
+            self.db.execute("DROP INDEX IF EXISTS table5_log3")
+            self.db.execute("CREATE INDEX table5_log2 ON table5_log(level,block_count)")
+            self.db.execute("CREATE INDEX table5_log3 ON table5_log(level,group_pop)")
+
+            for G in [2,3,4]:
+                group_by = ",".join([f"p{i+1}" for i in range(G)])
+                c = self.db.execute(f"""
+                SELECT p1,p2,p3,p4,p5,p6, sum(b.pop) as group_pop, count(*) as block_count 
+                FROM blocks b 
+                LEFT JOIN table4 T on b.state=t.state AND b.logrecno=t.logrecno 
+                GROUP BY {group_by} having group_pop<1000 
+                ORDER BY b.state,b.county
+                """)
+
+                changed=[]
+                for row in c:
+                    p1 = row['p1']
+                    p2 = row['p2']
+                    p3 = row['p3']
+                    p4 = row['p4']
+                    p5 = row['p5']
+                    p6 = row['p6']
+                    group_pop   = row['group_pop']
+                    block_count = row['block_count']
+                    if G==2:
+                        d = self.db.execute(
+                            f"""UPDATE table5 set p6=?,p3='BY',p4='BY',p5='BY' where p1=? and p2=?""",                  (' '.join([p3,p4,p5,p6]),p1,p2))
+                        log = (G,f'P1={p1} P2={p2}',block_count,group_pop)
+                    elif G==3:
+                        d = self.db.execute(
+                            f"""UPDATE table5 set p5=?,p3='BY',p4='BY'         where p1=? and p2=? and p3=?""",         (' '.join([p3,p4,p5]),p1,p2,p3))
+                        log = (G,f'P1={p1} P2={p2} P3={p3}',block_count,group_pop)
+                    elif G==4:
+                        d = self.db.execute(
+                            f"""UPDATE table5 set p4=?,p3='BY'                 where p1=? and p2=? and p3=? and p4=?""", (' '.join([p3,p4]),p1,p2,p3,p4))
+                        log = (G,f'P1={p1} P2={p2} P3={p3} P4={p4}',block_count,group_pop)
+                    changed.append(block_count)
+                    self.db.execute("INSERT INTO table5_log (level,desc,block_count,group_pop) values (?,?,?,?)", log)
+                    gc.collect()
+                logging.info("P%s Completed. Total groups created: %s.   min: %s   max: %s  median: %s",
+                             G,len(changed),min(changed),max(changed),statistics.median(changed))
+                self.db.commit()
         else:
             raise RuntimeError(f"Unknown scheme: {self.scheme}")
         self.db.commit()
@@ -560,7 +616,7 @@ class GeoTree:
                 wb.save(fname)
 
         ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,  data=open("geotree_notes.md"))
-        ws_add_notes(wb[wb.sheetnames[2]], row=4,              column=COL_POP_MIN+10+1, data=io.StringIO(V4_PREFIXES_EXPLAINED))
+        ws_add_notes(wb[wb.sheetnames[2]], row=4,              column=COL_POP_MIN+10+2, data=io.StringIO(V4_PREFIXES_EXPLAINED))
         ws_add_metadata(wb)
         fname = f"{fnamebase}.xlsx"
         logging.info("Saving %s",fname)
@@ -568,7 +624,6 @@ class GeoTree:
             wb.save(fname)
         subprocess.call(['open',fname])
 
-MAGIC=225
 def mean_report(db):
     """This doesn't have very clever SQL"""
     for state in STATE_STATES:
@@ -598,6 +653,7 @@ if __name__ == "__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--db", help="Specify database location", default=pl94_dbload.DBFILE)
     parser.add_argument("--create", action='store_true', help='create the schema')
+    parser.add_argument("--fill", action='store_true', help='like create, but just inserts')
     parser.add_argument("--drop", action='store_true', help='drop the schema')
     parser.add_argument("--dumpblocks",   action='store_true', help='print the blocksblocks')
     parser.add_argument("--info",    help="print info", action='store_true')
@@ -650,8 +706,8 @@ if __name__ == "__main__":
         db.execute(f"DROP INDEX IF EXISTS {name}_logrecno",debug=True)
         db.execute(f"DROP INDEX IF EXISTS {name}_p",debug=True)
 
-    if args.create:
-        gt.create()
+    if args.create or args.fill:
+        gt.create_or_fill(args.create)
                          
     if args.dumpblocks:
         gt.dumpblocks()

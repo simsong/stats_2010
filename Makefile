@@ -47,6 +47,9 @@ v3_geo: pl94_geofile.py
 v4_geo: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v4
 
+v5_geo: pl94_geofile.py
+	python3 geotree.py --fill --scheme v5
+
 
 ################################################################
 ##

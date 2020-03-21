@@ -184,12 +184,13 @@ def wb_setup_overview(ws):
 WIDTH_9_DIGITS_COMMAS=12
 COL_STUSAB    = 1
 COL_PREFIX    = 2
-COL_NAME      = 3
-COL_FANOUT    = 4
-COL_BLK_TOT   = 5
-COL_POP_TOT   = 6
-COL_POP_AVG   = 7
-COL_POP_MIN   = 8
+COL_BYPASSED  = 3
+COL_NAME      = 4
+COL_FANOUT    = 5
+COL_BLK_TOT   = 6
+COL_POP_TOT   = 7
+COL_POP_AVG   = 8
+COL_POP_MIN   = 9
 
 def ws_bold_region(ws,*,min_row,max_row,min_col,max_col):
     for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
@@ -198,12 +199,13 @@ def ws_bold_region(ws,*,min_row,max_row,min_col,max_col):
     
 
 def ws_setup_level(ws,sheet_title):
-    ws.cell(row=2, column=1).value = 'STUSAB' # A2
-    ws.cell(row=2, column=2).value = 'Prefix' # B2
-    ws.column_dimensions['B'].width=25
-    ws.cell(row=2, column=3).value = 'Name'   # C2
-    ws.column_dimensions['C'].width=20
-    for col in range(4,19):
+    ws.cell(row=2, column=COL_STUSAB).value = 'STUSAB' # A2
+    ws.cell(row=2, column=COL_PREFIX).value = 'Prefix' # B2
+    ws.column_dimensions[get_column_letter(COL_PREFIX)].width=25
+    ws.cell(row=2, column=COL_BYPASSED).value = 'Bypassed'
+    ws.cell(row=2, column=COL_NAME).value = 'Name'   # C2
+    ws.column_dimensions[get_column_letter(COL_NAME)].width=20
+    for col in range(COL_FANOUT,COL_POP_MIN+11+1):
         ws.column_dimensions[get_column_letter(col)].width=WIDTH_9_DIGITS_COMMAS
 
     ws.cell(row=1,column=COL_FANOUT).value = sheet_title

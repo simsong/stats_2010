@@ -549,7 +549,15 @@ class GeoTree:
                     if d0['reporting_prefix'][3:4]=='A':
                         column1_label += '-AIANHH'
                 ws_level.cell(row=row,column = COL_STUSAB).value = column1_label
-                ws_level.cell(row=row,column = COL_PREFIX).value = d0['reporting_prefix']
+
+                prefix = d0['reporting_prefix']
+                bypass = ''
+                if 'BYPASS' in prefix:
+                    prefix = prefix.replace('BYPASS','')
+                    bypass = 'BYPASS'
+                ws_level.cell(row=row,column = COL_PREFIX).value = prefix
+                ws_level.cell(row=row,column = COL_BYPASSED).value = bypass
+
                 if args.names:
                     ws_level.cell(row=row,column = COL_NAME).value = gs.county_name(state, county)
                 ws_level.cell( row=row,column = COL_FANOUT).value = len(fanout_populations)
@@ -652,11 +660,12 @@ class GeoTree:
                     ws.cell(row=row, column=3).value=int(res['block_count'])
                     ws.cell(row=row, column=4).value=int(res['group_pop'])
                 ws.freeze_panes = 'A3'
-                ws.auto_filter.ref = f'A2:C{row}'
+                ws.auto_filter.ref = f'A2:D{row}'
                 ws.column_dimensions['A'].width=10
                 ws.column_dimensions['B'].width=20
                 ws.column_dimensions['C'].width=10
                 ws.column_dimensions['D'].width=10
+                ws_bold_region(ws, min_row=1, max_row=2, min_col=1, max_col=4)
 
         # Add summary info to spreadsheet's root.
         ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,   data=open("geotree_notes.md"))

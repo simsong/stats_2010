@@ -1,5 +1,5 @@
-Nomenclature
-============
+# Nomenclature
+
 US = "resident population of the United States of America"
 PR = "resident population of the territory of Puerto Rico"
 

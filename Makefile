@@ -80,7 +80,7 @@ v4_report: geotree.py
 
 v5_report: geotree.py
 	@echo a quick report of the v2 geography down to the states
-	python geotree.py $(VARGS)  --scheme v5
+	python geotree.py $(VARGS)  --scheme v5 --limit 1000 --levels 2
 
 ################################################################
 ##

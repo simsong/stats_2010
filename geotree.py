@@ -211,7 +211,7 @@ class MinMax:
         val = func(obj)
 
 V4_PREFIXES_EXPLAINED="""
-Prefixes for state names:
+Prefixes for P1:
 
 A - AIANHH/tribal area of a state
 N - New England State (non-tribal area)
@@ -443,6 +443,9 @@ class GeoTree:
         cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*) as blocks,SUM(pop) as population 
         FROM {self.name} a LEFT JOIN blocks b ON (a.state=b.state AND a.logrecno=b.logrecno) {where} 
         GROUP BY {plevel2}"""
+        if self.args.limit:
+            cmd += f" LIMIT {self.args.limit}"
+
         c = self.db.execute(cmd, debug=debug)
         t0 = time.time()
         res = c.fetchall()
@@ -450,14 +453,14 @@ class GeoTree:
         logging.info(f"Query Time: {t1-t0}")
         return res
 
-    def end_state(self,ws,start_row,end_row):
-        if start_row + 1 > end_row:
+    def end_state(self,ws,min_row,max_row):
+        if min_row + 1 > max_row:
             return
-        for cellrow in ws.iter_rows(min_row=start_row, max_row=start_row, min_col=1, max_col=17):
+        for cellrow in ws.iter_rows(min_row=min_row, max_row=min_row, min_col=1, max_col=17):
             for cell in cellrow:
                 cell.border = top_thick_border
         #  don't do grouping; it is confusing
-        #ws.row_dimensions.group(start_row,end_row-1,hidden=True)
+        #ws.row_dimensions.group(min_row,max_row-1,hidden=True)
 
     def report(self):
         """Generate a geotree report into a spreadsheet. 
@@ -575,12 +578,14 @@ class GeoTree:
                     logging.info(f"written [{fanout_name}] {row:,}")
 
             logging.info("total rows=%s t=%s",row,time.time()-t0)
+
             # Finalize the Sheet
             ws_level.freeze_panes    = 'A3'
-            ws_level.auto_filter.ref = f'A2:Q{row-1}'
+            ws_level.auto_filter.ref = f'A2:R{row-1}'
             wb.format_rows(ws_level, min_row=3, max_row=row-1, min_col=1, max_col=COL_POP_MIN+10, column=1,
                            stripe = (ct>1),
                            fills=[STATE1_FILL, STATE2_FILL], value_fills = {'PR':PR_FILL})
+            ws_add_notes(ws_level, row=4, column=COL_POP_MIN+10+2, data=io.StringIO(V4_PREFIXES_EXPLAINED))
 
             # Now fill out the Overview Sheet
             ws_overview.cell(row=overview_row, column=COL_PLEVEL).value = f"P{ct}"
@@ -589,7 +594,7 @@ class GeoTree:
             ws_overview.cell(row=overview_row, column=COL_SUBLEVEL_NAME).value = next_level_name
             ws_overview.cell(row=overview_row, column=COL_NUM_SUBLEVELS).value = sum([res['fanout_count'] for res in level_stats])
             logging.info("fanout_name=%s next_level_name=%s",fanout_name,next_level_name)
-
+            #
             fanouts = [res['fanout_count'] for res in level_stats]
             assert sum(fanouts)>0
             fanout_deciles = deciles(fanouts)
@@ -599,7 +604,7 @@ class GeoTree:
                     cell.value = value
                     cell.fill = YELLOW_FILL
                     cell.border = thin_border
-
+            
             fanout_population_deciles = deciles(all_fanout_populations)
             for cellrow in ws_overview.iter_rows(min_row = overview_row, max_row=overview_row,
                                                  min_col = COL_MIN_POPULATIONS, max_col = COL_MIN_POPULATIONS+10):
@@ -634,25 +639,27 @@ class GeoTree:
                     desc += ",P5"
                 ws.cell(row=1,column=2).value=desc
                 row = 2
-                ws.cell(row=row,column=1).value='Partition'
-                ws.cell(row=row,column=2).value='# Blocks'
-                ws.cell(row=row,column=3).value='Pop'
+                ws.cell(row=row,column=1).value='STUSAB'
+                ws.cell(row=row,column=2).value='Partition'
+                ws.cell(row=row,column=3).value='# Blocks'
+                ws.cell(row=row,column=4).value='Pop'
                 
                 c = self.db.execute("select * from table5_log where level=? order by block_count desc",(G,))
                 for res in c:
                     row += 1
-                    ws.cell(row=row, column=1).value=res['desc']
-                    ws.cell(row=row, column=2).value=res['block_count']
-                    ws.cell(row=row, column=3).value=res['group_pop']
+                    ws.cell(row=row, column=1).value=str(res['desc'])[3:5]
+                    ws.cell(row=row, column=2).value=str(res['desc'])
+                    ws.cell(row=row, column=3).value=int(res['block_count'])
+                    ws.cell(row=row, column=4).value=int(res['group_pop'])
                 ws.freeze_panes = 'A3'
-                ws_level.auto_filter.ref = f'A3:C{3+row}'
-                ws.column_dimensions['A'].width=20
-                ws.column_dimensions['B'].width=10
+                ws.auto_filter.ref = f'A2:C{row}'
+                ws.column_dimensions['A'].width=10
+                ws.column_dimensions['B'].width=20
                 ws.column_dimensions['C'].width=10
-            
+                ws.column_dimensions['D'].width=10
+
         # Add summary info to spreadsheet's root.
         ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,   data=open("geotree_notes.md"))
-        ws_add_notes(wb[wb.sheetnames[2]], row=4,              column=COL_POP_MIN+10+2, data=io.StringIO(V4_PREFIXES_EXPLAINED))
         ws_add_metadata(wb)
         fname = f"{fnamebase}.xlsx"
         logging.info("Saving %s",fname)
@@ -701,6 +708,7 @@ if __name__ == "__main__":
     parser.add_argument("--state",  help='Only process state STATE (specified by name or number)')
     parser.add_argument("--mean_report", help="Print geometric mean report", action='store_true')
     parser.add_argument("--xempty",  action='store_true', help='remove blocks with 0 population and 0 housing')
+    parser.add_argument("--limit",   help='limit expensive queries to speed debugging',  type=int)
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
 

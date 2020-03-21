@@ -155,8 +155,10 @@ def wb_setup_overview(ws):
     ws.cell(row=2, column=COL_MIN_FANOUT).value = 'min'
     for n in range(1,10):
         ws.cell(row=2, column=COL_MIN_FANOUT+n).value = f"{n*10}th pct."
+
     ws.cell(row=2, column=COL_MIN_FANOUT+10).value = 'max'
     for col in range(COL_MIN_FANOUT,COL_MIN_FANOUT+10+1):
+        ws.column_dimensions[get_column_letter(col)].width=10
         ws.cell(row=2, column=col).alignment = CENTERED
         ws.cell(row=2, column=col).fill = YELLOW_FILL
 
@@ -167,10 +169,16 @@ def wb_setup_overview(ws):
     ws.cell(row=2, column=COL_MIN_POPULATIONS).value = 'min'
     for n in range(1,10):
         ws.cell(row=2, column=COL_MIN_POPULATIONS+n).value = f"{n*10}th pct."
+
     ws.cell(row=2, column=COL_MIN_POPULATIONS+10).value = 'max'
     for col in range(COL_MIN_POPULATIONS,COL_MIN_POPULATIONS+10+1):
+        ws.column_dimensions[get_column_letter(col)].width=10
         ws.cell(row=2, column=col).alignment = CENTERED
         ws.cell(row=2, column=col).fill = PINK_FILL
+
+    ws_bold_region(ws, min_row=1, max_row=2, min_col=1, max_col=COL_MIN_POPULATIONS+10)
+
+
     return 3                    # next row
 
 WIDTH_9_DIGITS_COMMAS=12
@@ -183,18 +191,24 @@ COL_POP_TOT   = 6
 COL_POP_AVG   = 7
 COL_POP_MIN   = 8
 
+def ws_bold_region(ws,*,min_row,max_row,min_col,max_col):
+    for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
+        for cell in row:
+            cell.font = BOLD
+    
+
 def ws_setup_level(ws,sheet_title):
     ws.cell(row=2, column=1).value = 'STUSAB' # A2
     ws.cell(row=2, column=2).value = 'Prefix' # B2
     ws.column_dimensions['B'].width=25
     ws.cell(row=2, column=3).value = 'Name'   # C2
     ws.column_dimensions['C'].width=20
-    for ch in 'DEFGHIJKLMNOPQ':
-        ws.column_dimensions[ch].width=WIDTH_9_DIGITS_COMMAS
+    for col in range(4,19):
+        ws.column_dimensions[get_column_letter(col)].width=WIDTH_9_DIGITS_COMMAS
 
     ws.cell(row=1,column=COL_FANOUT).value = sheet_title
     ws.cell(row=1,column=COL_FANOUT).alignment = CENTERED
-    ws.merge_cells(start_row=1,end_row=1,start_column=COL_FANOUT,end_column=COL_POP_MIN+10)
+    ws.merge_cells(start_row=1, end_row=1, start_column=COL_FANOUT, end_column=COL_POP_MIN+10)
     ws.cell(row=1,column=COL_POP_AVG+9).border = right_border
     ws.cell(row=2,column=COL_FANOUT).value='fanout'
 
@@ -204,12 +218,14 @@ def ws_setup_level(ws,sheet_title):
     ws.cell(row=2,column=COL_POP_MIN).value='min pop'
     for n in range(1,10):
         ws.cell(row=2,column=COL_POP_MIN+n).value = f"{n*10}th pct."
-    ws.cell(row=2,column=17).value='max pop'
+    ws.cell(row=2,column=18).value='max pop'
     for col in range(COL_FANOUT,COL_POP_MIN+10+1):
         ws.cell(row=2,column=col).alignment = CENTERED
     ws.cell(row=2,column=COL_FANOUT).border = right_border
     ws.cell(row=2,column=COL_POP_AVG).border = right_thick_border
     ws.cell(row=2,column=COL_POP_MIN+10).border = right_border
+
+    ws_bold_region(ws, min_row=2, max_row=2, min_col=1, max_col=COL_POP_MIN+10)
 
 def ws_add_notes(ws,*,row,column,data):
     for line in data:

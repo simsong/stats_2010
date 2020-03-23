@@ -72,23 +72,6 @@ CREATE UNIQUE INDEX %TABLE%_logrecno ON %TABLE%(state,logrecno);
 CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 """
 
-def include_aianhh(code):
-    code = int(code)
-    #logging.info("include_aianhh(%s)",code)
-    if 1 <= code <= 4999:
-        return (True,"Federally recognized American Indian Reservations and Off-Reservation Trust Lands")
-    elif 5000 <= code  <=5999:
-        return (True,"Hawaiian Home Lands")
-    elif 6000 <= code <= 7999:
-        return (True,"Alaska Native Village Statistical Areas")
-    elif 9000 <= code <= 9499:
-        if EXCLUDE_STATE_RECOGNIZED_TRIBES:
-            return (False,"State recognized American Indian Reservations are excluded")
-        else:
-            return (True,"State recognized American Indian Reservations")
-    else:
-        return (False,"")
-
 """
 MCD (Minor Civil Divisions) are a type of COUNTY subdivision. They are the legal type.
 We typically have legal types and their statistical counterpart. They exist in 1/2 the states.
@@ -171,42 +154,6 @@ SS_COUNTY_COUSUB_PLACE='COUNTY_COUSUB_PLACE'
 
 SS_ALL=set([SS_AIANHH,SS_DC,SS_PR,SS_NEW_ENGLAND,SS_STRONG_MCD,SS_COUNTY_PLACE,SS_COUNTY_COUSUB_PLACE])
 
-from memoize import Memoize
-@Memoize
-def state_scheme(state):
-    """Given a state, return which scheme we are going to use"""
-    if state == DC_STATE:
-        return SS_DC
-
-    if state in NEW_ENGLAND_STATES:
-        return SS_NEW_ENGLAND
-
-    if state in STRONG_MCD_STATES:
-        return SS_STRONG_MCD
-
-    if state in STRONG_MCD_STATES:
-        print(f"{stusab}:   Strong MCD State (high-fanout). Will use P2=COUNTY ({dc}); P3=COUSUB ({dcc}); P4=TRACT ({dct}); P5=BLOCK")
-
-    dc  = db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county FROM blocks where state=?)",(state,))[0]
-    dcp = db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT COUNTY,PLACE FROM blocks where state=?)",(state,))[0]
-    dcc = db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county,cousub FROM blocks where state=?)",(state,))[0]
-
-    # too many cousubs; go with county
-    if dcc > dcp:
-        return SS_COUNTY_PLACE  
-
-    # case 1: p2=county, p3=place
-    # dc  = number of distinct (county)
-    # dcc = number of distinct (county,cousub)
-    # dp  = number of distinct (county,place)
-    d1 = math.sqrt(dc**2 + (math.sqrt(dcp) - dc)**2)
-    # case 2: p2=(county,cousub) p3=place
-    d2 = math.sqrt(dc**2 + (math.sqrt(dcc) - dc)**2)
-    if d1<d2:
-        return SS_COUNTY_PLACE
-    else:
-        return SS_COUNTY_COUSUB_PLACE
-
 class MinMax:
     """Remember an object associated with a min and the object associated with the max."""
     def __int__(self,func):
@@ -270,8 +217,68 @@ class GeoTree:
             # Non-AIAN area in states without strong MCD (or too many MCDs)
             return (f"{gh['state']:02}X", f"{gh['county']:03}{gh['place']:05}",  f"___{gh['tract']:06}",               blkgrp2, block, None  )
 
+    memoized_state_schemes = dict()
+    def state_scheme(self,state):
+        """Given a state, return which scheme we are going to use"""
+        state = int(state)
+        if state == DC_STATE:
+            return SS_DC
+
+        if state in NEW_ENGLAND_STATES:
+            return SS_NEW_ENGLAND
+
+        if state in STRONG_MCD_STATES:
+            return SS_STRONG_MCD
+
+        if state in self.memoized_state_schemes:
+            return self.memoized_state_schemes[state]
+
+        dc  = self.db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county FROM blocks where state=?)",(state,))[0]
+        dcp = self.db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT COUNTY,PLACE FROM blocks where state=?)",(state,))[0]
+        dcc = self.db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county,cousub FROM blocks where state=?)",(state,))[0]
+
+        # too many cousubs; go with county
+        if dcc > dcp:
+            self.memoized_state_schemes[state] = SS_COUNTY_PLACE
+            return SS_COUNTY_PLACE  
+
+        # case 1: p2=county, p3=place
+        # dc  = number of distinct (county)
+        # dcc = number of distinct (county,cousub)
+        # dp  = number of distinct (county,place)
+        d1 = math.sqrt(dc**2 + (math.sqrt(dcp) - dc)**2)
+        # case 2: p2=(county,cousub) p3=place
+        d2 = math.sqrt(dc**2 + (math.sqrt(dcc) - dc)**2)
+        if d1<d2:
+            self.memoized_state_schemes[state] = SS_COUNTY_PLACE
+            return SS_COUNTY_PLACE
+        else:
+            self.memoized_state_schemes[state] = SS_COUNTY_COUSUB_PLACE
+            return SS_COUNTY_COUSUB_PLACE
+
+
+    def include_aianhh(self,code):
+        code = int(code)
+        #logging.info("include_aianhh(%s)",code)
+        if 1 <= code <= 4999:
+            return (True,"Federally recognized American Indian Reservations and Off-Reservation Trust Lands")
+        elif 5000 <= code  <=5999:
+            return (True,"Hawaiian Home Lands")
+        elif 6000 <= code <= 7999:
+            return (True,"Alaska Native Village Statistical Areas")
+        elif 9000 <= code <= 9499:
+            if EXCLUDE_STATE_RECOGNIZED_TRIBES:
+                return (False,"State recognized American Indian Reservations are excluded")
+            else:
+                return (True,"State recognized American Indian Reservations")
+        else:
+            return (False,"")
+
     def geocode_v4(self,gh):
-        """The revised geocode that takes into account AIANHH and MCD and fanout issues."""
+        """The revised geocode that takes into account AIANHH and MCD and fanout issues..
+        Remember - gh fields are next, not integers
+        """
+        
         state   = gh['state']
         county  = gh['county']
         cousub  = gh['cousub']
@@ -279,18 +286,19 @@ class GeoTree:
         tract   = gh['tract']
         block   = gh['block']
         blkgrp2 = block[0:2]         # note 2-digit block groups
-        (is_aianhh,reason) = include_aianhh(gh['aianhh'])
-        #logging.info("   %s %s",is_aianhh,reason)
+        (is_aianhh,reason) = self.include_aianhh(gh['aianhh'])
 
         if is_aianhh:
             # AIANHH portion of 38-states with AIANHH
-            ss_states[ SS_AIANHH ].add(state)
             return ("A"+state, gh['aianhh'],                  county+"_"+tract[0:2], tract,  blkgrp2,  block, None )
 
-        ss      = state_scheme(state)
+        ss      = self.state_scheme(state)
+        print("ss=",ss,"ss_DC=",SS_DC,ss==SS_DC)
         if ss == SS_DC:
             # Washington DC
             return ("D"+state,  gh['sldu'],                    tract[0:2], tract,     blkgrp2,  block )
+
+        assert state!=11
 
         if state==PR_STATE:
             # Puerto Rico
@@ -361,12 +369,17 @@ class GeoTree:
                 logging.info("Completed %s %s %s",state,p1,p2)
         elif self.scheme=='v4':
             c = self.db.execute("SELECT * from geo where sumlev=750")
+            old_state = None
             for (ct,gh) in enumerate(c):
+                state = int(gh['state'])
+                logrecno = int(gh['logrecno'])
+                if state!=old_state:
+                    logging.info(f"Now on state {state} {STATE_TO_STUSAB[state]}")
                 if ct % 100_000==0:
                     logging.info(f"block {ct:,}")
                 p = self.geocode_v4(gh)
                 self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
-                                (int(gh['state']),int(gh['logrecno']),p[0],p[1],p[2],p[3],p[4],p[5]))
+                                (state,logrecno,p[0],p[1],p[2],p[3],p[4],p[5]))
         elif self.scheme=='v5':
             # v5 is the v4 geography with bypass-to-block for populations<1000.
             # 
@@ -506,8 +519,6 @@ class GeoTree:
             to_replace = "%" + prefix_char + "%"
             logging.info("replace %s with %s",to_replace,stusabs)
             notes = notes.replace( to_replace, stusabs)
-            assert notes!=notes_ # make sure a substitution took place
-            notes = notes_
 
         ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,   text=notes)
         ws_add_metadata(self.wb)

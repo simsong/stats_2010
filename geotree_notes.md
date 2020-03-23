@@ -96,3 +96,11 @@ Approach 2 - Build the Directed Acyclic Graph (DAG) from the geotree.
 
 
 
+===
+
+To generate the v4 and v5 reports using the stats_2010 repo:
+1. Checkout the repo
+2. 'make download_s3' or 'make pl94_download' to copy the data to the data/ directory
+3. 'make v4_geo v5_geo'
+4. 'make v4_report v5_report'
+

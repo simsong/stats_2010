@@ -28,7 +28,7 @@ pl94_load: pl94.sqlite3
 pl94.sqlite3: pl94_dbload.py
 	python3 pl94_dbload.py --wipe data/2010_pl94/dist/*.zip
 	rm -f pl94_ro.sqlite3
-	cp -c pl94.sqlite3 pl94_ro.sqlite3
+	if test `uname` == Darwin ; then cp -c pl94.sqlite3 pl94_ro.sqlite3 ; else cp --reflink=auto pl94.sqlite3 pl94_ro.sqlite3 ; fi
 	chmod 444 pl94_ro.sqlite3
 
 # Create the geographies. These can't be parallelized because v3 depends on v2

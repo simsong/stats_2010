@@ -18,6 +18,8 @@ import math
 from collections import deque,defaultdict
 
 __version__ = '0.2.0'
+BYPASS_MAX_POP = 1000
+BYPASS_MAX_BLOCK_COUNT = 250
 
 #                       P0        P1                  P2                   P3          P4         P5      P6
 GEOTREE={'v1':{'names':['US',    'DC•STATE',          'COUNTY',           'TGROUP',   'TRACT',   'BGROUP','BLOCK'],
@@ -30,17 +32,18 @@ GEOTREE={'v1':{'names':['US',    'DC•STATE',          'COUNTY',           'TGR
                'name':'Revised MCD and AIAN-aware geography v3 with synthetic LEVEL3'},
 
          'v4':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT2', 'TRACT', 'BLKGRP2', 'BLOCK', None],
-               'name':'Corrected v2.1 Revised MCD and AIAN-aware geography' },
+               'name':f'AIAN and MCD-aware geography with 2-digit tract groups' },
 
          'v5':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT2', 'TRACT', 'BLKGRP2', 'BLOCK', None],
-               'name':'Corrected v2.1 AIAN and MCD-aware geography with bypass-to-block for populations < 1000' },
+               'name':f'AIAN and MCD-aware geography with 2-digit tract groups and bypass-to-block for populations < {BYPASS_MAX_POP} and block_count < {BYPASS_MAX_BLOCK_COUNT}' },
 
          'v6':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT3', 'TRACT', 'BLKGRP2', 'BLOCK', None],
-               'name':'Corrected v2.1 Revised MCD and AIAN-aware geography' },
+               'name':f'AIAN and MCD-aware geography with 3-digit tract groups' },
 
          'v7':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT3', 'TRACT', 'BLKGRP2', 'BLOCK', None],
-               'name':'Corrected v2.1 AIAN and MCD-aware geography with bypass-to-block for populations < 1000' },
+               'name':f'AIAN and MCD-aware geography with 3-digit tract groups and bypass-to-block for populations < {BYPASS_MAX_POP} and block_count < {BYPASS_MAX_BLOCK_COUNT}' },
          }
+
 
 
 import pl94_geofile
@@ -333,6 +336,7 @@ class GeoTree:
         raise ValueError(f"Unknown ss:{ss}")
 
     def create_or_fill(self,create):
+        t0 = time.time()
         if create:
             logging.info("create %s started",self.scheme)
             self.db.create_schema(CREATE_GEOTREE_SQL.replace("%TABLE%",self.name))
@@ -396,22 +400,22 @@ class GeoTree:
                 self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
                                 (state,logrecno,p[0],p[1],p[2],p[3],p[4],p[5]))
         elif self.scheme in ('v5','v7'):
-            # v5 is the v4 geography with bypass-to-block for populations<1000.
+            # v5 is the v4 geography with bypass-to-block for populations < BYPASS_MAX_POP and blocks < BYPASS_MAX_BLOCK_COUNT.
             # 
             source = {'v5':'table4','v7':'table6'}[self.scheme]
             if create:
-                self.db.execute(f"INSERT INTO table5 SELECT * FROM {source}")
+                self.db.execute(f"INSERT INTO {self.name} SELECT * FROM {source}")
             count = self.db.execselect("SELECT COUNT(*) from table5")[0]
             logging.info("Blocks in table 5: %s",count)
             assert(count>0)
 
-            self.db.execute("DROP TABLE IF EXISTS table5_log")
-            self.db.execute("CREATE TABLE table5_log (level INTEGER,desc VARCHAR(96),block_count INTEGER,group_pop INTEGER)""")
-            self.db.execute("DROP INDEX IF EXISTS table5_log1")
-            self.db.execute("DROP INDEX IF EXISTS table5_log2")
-            self.db.execute("DROP INDEX IF EXISTS table5_log3")
-            self.db.execute("CREATE INDEX table5_log2 ON table5_log(level,block_count)")
-            self.db.execute("CREATE INDEX table5_log3 ON table5_log(level,group_pop)")
+            self.db.execute(f"DROP TABLE IF EXISTS {self.name}_log")
+            self.db.execute(f"CREATE TABLE {self.name}_log (level INTEGER,desc VARCHAR(96),block_count INTEGER,group_pop INTEGER)""")
+            self.db.execute(f"DROP INDEX IF EXISTS {self.name}_log1")
+            self.db.execute(f"DROP INDEX IF EXISTS {self.name}_log2")
+            self.db.execute(f"DROP INDEX IF EXISTS {self.name}_log3")
+            self.db.execute(f"CREATE INDEX {self.name}_log2 ON {self.name}_log(level,block_count)")
+            self.db.execute(f"CREATE INDEX {self.name}_log3 ON {self.name}_log(level,group_pop)")
 
             for G in [2,3,4]:
                 group_by = ",".join([f"p{i+1}" for i in range(G)])
@@ -419,7 +423,7 @@ class GeoTree:
                 SELECT p1,p2,p3,p4,p5,p6, sum(b.pop) as group_pop, count(*) as block_count 
                 FROM blocks b 
                 LEFT JOIN {source} T on b.state=t.state AND b.logrecno=t.logrecno 
-                GROUP BY {group_by} having group_pop<1000 
+                GROUP BY {group_by} having group_pop < {BYPASS_MAX_POP} and block_count < {BYPASS_MAX_BLOCK_COUNT}
                 ORDER BY b.state,b.county
                 """)
                 logging.info("group by %s",group_by)
@@ -436,18 +440,18 @@ class GeoTree:
                     block_count = row['block_count']
                     if G==2:
                         d = self.db.execute(
-                            f"UPDATE table5 set p6=p3||' '||p4||' '||p5||' '||p6,p3='BYPASS',p4='',p5='' where p1=? and p2=?",    (p1,p2))
+                            f"UPDATE {self.name} set p6=p3||' '||p4||' '||p5||' '||p6,p3='BYPASS',p4='',p5='' where p1=? and p2=?",    (p1,p2))
                         log = (G,f'P1={p1} P2={p2}',block_count,group_pop)
                     elif G==3:
                         d = self.db.execute(
-                            f"UPDATE table5 set p6=p4||' '||p5||' '||p6,p4='BYPASS',p5='' where p1=? and p2=? and p3=?", (p1,p2,p3))
+                            f"UPDATE {self.name} set p6=p4||' '||p5||' '||p6,p4='BYPASS',p5='' where p1=? and p2=? and p3=?", (p1,p2,p3))
                         log = (G,f'P1={p1} P2={p2} P3={p3}',block_count,group_pop)
                     elif G==4:
                         d = self.db.execute(
-                            f"UPDATE table5 set p6=p5||' '||p6,p5='BYPASS' where p1=? and p2=? and p3=? and p4=?", (p1,p2,p3,p4))
+                            f"UPDATE {self.name} set p6=p5||' '||p6,p5='BYPASS' where p1=? and p2=? and p3=? and p4=?", (p1,p2,p3,p4))
                         log = (G,f'P1={p1} P2={p2} P3={p3} P4={p4}',block_count,group_pop)
                     changed.append(block_count)
-                    self.db.execute("INSERT INTO table5_log (level,desc,block_count,group_pop) values (?,?,?,?)", log)
+                    self.db.execute("INSERT INTO {self.name}_log (level,desc,block_count,group_pop) values (?,?,?,?)", log)
                     gc.collect()
                 logging.info("P%s Completed. Total groups created: %s.   min: %s   max: %s  median: %s",
                              G,len(changed),min(changed),max(changed),statistics.median(changed))
@@ -455,7 +459,7 @@ class GeoTree:
         else:
             raise RuntimeError(f"Unknown scheme: {self.scheme}")
         self.db.commit()
-        logging.info("create %s finished",self.scheme)
+        logging.info("create %s finished in %s seconds",self.scheme,time.time()-t0)
 
     def dump(self):
         cmd = f"""select a.state,a.logrecno,a.p1,a.p2,a.p3,a.p4,a.p5,a.p6,b.geocode,b.pop 
@@ -715,8 +719,8 @@ class GeoTree:
             with ctools.timer.Timer(notifier=logging.info):
                 wb.save(fname)
 
-        # If this was the v5 report, include information about the 
-        if self.args.scheme=='v5':
+        # If this was the v5 or v7 report, include information about the 
+        if self.args.scheme in ('v5','v7'):
             for G in [2,3,4]:
                 vals = []
                 ws = wb.create_sheet(f"P{G} bypass stats")
@@ -732,7 +736,7 @@ class GeoTree:
                 ws.cell(row=row,column=3).value='# Blocks'
                 ws.cell(row=row,column=4).value='Pop'
                 
-                c = self.db.execute("select * from table5_log where level=? order by block_count desc",(G,))
+                c = self.db.execute("select * from {self.name}_log where level=? order by block_count desc",(G,))
                 for res in c:
                     row += 1
                     ws.cell(row=row, column=1).value=str(res['desc'])[3:5]

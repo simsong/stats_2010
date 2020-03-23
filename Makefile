@@ -140,6 +140,16 @@ pr_load:
 	python3 pl94_dbload.py --db pr.sqlite3 --wipe data/2010_pl94/dist/pr2010.pl.zip --debuglogrecno=11735
 
 ################################################################
+## Checking out inside ITE
+checkout_ite:
+	@echo run after git clone git@github.ti.census.gov:CB-DAS/stats_2010.git
+	@echo edit .gitmodules and change all of the URL bases to be https://github.ti.census.gov/CB-DAS
+	@echo git submodule init
+	@echo git submodule update
+
+
+
+################################################################
 ## Targets for downloading data
 
 pl94_download:

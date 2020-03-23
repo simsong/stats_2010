@@ -20,7 +20,9 @@ v1 - Six levels: Geographical hiearchy used for the 2010 Demonstration Data prod
 v2 - Five levels: Initial proposal incorporating AIANHH and Minor Civil Divisions.
 v3 - Four levels: v2 proposal with a synthetic LEVEL3 connecting COUNTY/MCD to BLOCK.
 v4 - Corrected v2.1 Revised MCD and AIAN-aware geography
-v5 - v4 geography with bypass-to-block for populations < 1000
+v5 - v4 geography with bypass-to-block for populations < 1000 and blocks < 250
+v6 - v4 geography with 3-digit tract groups (TGROUP3)
+v7 - v6 geography with bypass-to-block for populations < 1000 and blocks < 250
 
 Partition - At each geolevel, each geounit is partitioned,
 and these partitions are used to create the next level down.
@@ -35,11 +37,11 @@ P0 - The root of the tree.
 
 P1 - The first partition.
    v1 - This is the states and the District of Columbia.
-   v2-v5 - This is the state AIANNH areas, the balance of state not in AIANHH areas, and the District of Columbia.
+   v2-v7 - This is the state AIANNH areas, the balance of state not in AIANHH areas, and the District of Columbia.
 
 P2 - The first sub-state partition.
    v1-v3 - this is the counties.
-   v4-v5 - The partitioning depends upon the state type, and is reflected in the first letter of the P2
+   v4-v7 - The partitioning depends upon the state type, and is reflected in the first letter of the P2
       A - AIANHH/tribal area of a state         ( %A% )
 
       D - District of Columbia                  ( %D% )
@@ -120,15 +122,11 @@ Approach 2 - Build the Directed Acyclic Graph (DAG) from the geotree.
   would result in nearly 500,000 RDDs, which can be handled by our
   current version of Spark.
 
-
-
-
-
 ===
 
-To generate the v4 and v5 reports using the stats_2010 repo:
+To generate the v4,v5,v6 and v7 reports using the stats_2010 repo:
 1. Checkout the repo
 2. 'make download_s3' or 'make pl94_download' to copy the data to the data/ directory
-3. 'make v4_geo v5_geo'
-4. 'make v4_report v5_report'
+3. 'make pl94_dbload'
+4. 'make v4567'
 

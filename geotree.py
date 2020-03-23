@@ -451,7 +451,7 @@ class GeoTree:
                             f"UPDATE {self.name} set p6=p5||' '||p6,p5='BYPASS' where p1=? and p2=? and p3=? and p4=?", (p1,p2,p3,p4))
                         log = (G,f'P1={p1} P2={p2} P3={p3} P4={p4}',block_count,group_pop)
                     changed.append(block_count)
-                    self.db.execute("INSERT INTO {self.name}_log (level,desc,block_count,group_pop) values (?,?,?,?)", log)
+                    self.db.execute(f"INSERT INTO {self.name}_log (level,desc,block_count,group_pop) values (?,?,?,?)", log)
                     gc.collect()
                 logging.info("P%s Completed. Total groups created: %s.   min: %s   max: %s  median: %s",
                              G,len(changed),min(changed),max(changed),statistics.median(changed))
@@ -459,7 +459,7 @@ class GeoTree:
         else:
             raise RuntimeError(f"Unknown scheme: {self.scheme}")
         self.db.commit()
-        logging.info("create %s finished in %s seconds",self.scheme,time.time()-t0)
+        logging.info("create %s finished in %s seconds ",self.scheme,time.time()-t0)
 
     def dump(self):
         cmd = f"""select a.state,a.logrecno,a.p1,a.p2,a.p3,a.p4,a.p5,a.p6,b.geocode,b.pop 
@@ -525,7 +525,7 @@ class GeoTree:
         for (state,prefix_char) in c:
             prefixes_to_states[prefix_char].add(state)
 
-        if len(prefixes_to_state)==0:
+        if len(prefixes_to_states)==0:
             raise RuntimeError("Overview notes require table4")
 
         notes = open(GEOTREE_NOTES_FNAME,"r").read()
@@ -736,7 +736,7 @@ class GeoTree:
                 ws.cell(row=row,column=3).value='# Blocks'
                 ws.cell(row=row,column=4).value='Pop'
                 
-                c = self.db.execute("select * from {self.name}_log where level=? order by block_count desc",(G,))
+                c = self.db.execute(f"select * from {self.name}_log where level=? order by block_count desc",(G,))
                 for res in c:
                     row += 1
                     ws.cell(row=row, column=1).value=str(res['desc'])[3:5]

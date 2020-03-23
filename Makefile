@@ -35,6 +35,9 @@ v4567:
 	make v4_geo v5_geo v6_geo v7_geo
 	make v4_report v5_report v6_report v7_report
 
+r4567:
+	make v4_report v5_report v6_report v7_report
+
 # Create the geographies. These can't be parallelized because v3 depends on v2
 
 v1_geo: pl94_geofile.py

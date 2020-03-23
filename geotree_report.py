@@ -198,9 +198,11 @@ def ws_bold_region(ws,*,min_row,max_row,min_col,max_col):
             cell.font = BOLD
     
 
-def ws_setup_level(ws,sheet_title):
-    ws.cell(row=2, column=COL_STUSAB).value = 'STUSAB' # A2
-    ws.cell(row=2, column=COL_PREFIX).value = 'Prefix' # B2
+def ws_setup_level(ws, sheet_title, level):
+    prefix = "Prefix (" + ",".join([f"P{p}" for p in range(1,level+1)]) + ")"
+
+    ws.cell(row=2, column=COL_STUSAB).value = 'STUSAB'             # A2
+    ws.cell(row=2, column=COL_PREFIX).value = prefix               # B2
     ws.column_dimensions[get_column_letter(COL_PREFIX)].width=25
     ws.cell(row=2, column=COL_BYPASSED).value = 'Bypassed'
     ws.cell(row=2, column=COL_NAME).value = 'Name'   # C2
@@ -229,14 +231,14 @@ def ws_setup_level(ws,sheet_title):
 
     ws_bold_region(ws, min_row=2, max_row=2, min_col=1, max_col=COL_POP_MIN+10)
 
-def ws_add_notes(ws,*,row,column,data):
-    for line in data:
-        ws.cell(row=row, column=column).value = line.strip()
-        row += 1
-            
 def ws_add_metadata(wb):
     ws = wb.create_sheet("Notes")
     ws.cell(row=1, column=1).value = "Command Line"
     ws.cell(row=1, column=2).value = " ".join([sys.executable] + sys.argv)
 
+def ws_add_notes(ws,*,row,column,text):
+    for line in text.split("\n"):
+        ws.cell(row=row, column=column).value = line.rstrip()
+        row += 1
+            
 

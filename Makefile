@@ -59,27 +59,22 @@ v123: v1 v2 v3
 VARGS=--db pl94.sqlite3 --report --xpr --xempty
 
 v1_report: geotree.py
-	@echo a quick report of the v1 geography down to the states
 	python geotree.py $(VARGS) --scheme v1 
 
 v2_report: geotree.py
-	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS)  --scheme v2
 
-v21_report: geotree.py
-	@echo a quick report of the v2 geography down to the states
-	python geotree.py $(VARGS)  --scheme v2.1
-
 v3_report: geotree.py
-	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS) --scheme v3
 
 v4_report: geotree.py
-	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS)  --scheme v4
 
+v4_report_ak: geotree.py
+	@echo a quick report of the v4 geography for just AK
+	python geotree.py $(VARGS)  --scheme v4 --report_stusab ak
+
 v5_report: geotree.py
-	@echo a quick report of the v2 geography down to the states
 	python geotree.py $(VARGS)  --scheme v5 
 
 ################################################################

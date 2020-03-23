@@ -34,6 +34,12 @@ GEOTREE={'v1':{'names':['US',    'DC•STATE',          'COUNTY',           'TGR
 
          'v5':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT2', 'TRACT', 'BLKGRP2', 'BLOCK', None],
                'name':'Corrected v2.1 AIAN and MCD-aware geography with bypass-to-block for populations < 1000' },
+
+         'v6':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT3', 'TRACT', 'BLKGRP2', 'BLOCK', None],
+               'name':'Corrected v2.1 Revised MCD and AIAN-aware geography' },
+
+         'v7':{'names':['US•PR' ,'DC•STATE•ASTATE•PR','SLDU•COUNTY•COUSUB','PLACE•TRACT3', 'TRACT', 'BLKGRP2', 'BLOCK', None],
+               'name':'Corrected v2.1 AIAN and MCD-aware geography with bypass-to-block for populations < 1000' },
          }
 
 
@@ -286,31 +292,40 @@ class GeoTree:
         tract   = gh['tract']
         block   = gh['block']
         blkgrp2 = block[0:2]         # note 2-digit block groups
+
+        if self.scheme=='v4':
+            tgroup = tract[0:2]
+        elif self.scheme=='v6':
+            tgroup = tract[0:3]
+        else:
+            raise ValueError(f"self.scheme is {self.scheme}")
+        
+
         (is_aianhh,reason) = self.include_aianhh(gh['aianhh'])
 
         if is_aianhh:
             # AIANHH portion of 38-states with AIANHH
-            return ("A"+state, gh['aianhh'],                  county+"_"+tract[0:2], tract,  blkgrp2,  block, None )
+            return ("A"+state, gh['aianhh'],       county+"_"+tgroup, tract,  blkgrp2,  block, None )
 
         ss      = self.state_scheme(state)
         if ss == SS_DC:
             # Washington DC
-            return ("D"+state,  gh['sldu'],                    tract[0:2], tract,     blkgrp2,  block )
+            return ("D"+state,  gh['sldu'],        tract[0:2], tract, blkgrp2,  block )
 
         assert state!=11
 
         if state==PR_STATE:
             # Puerto Rico
-            return ("R"+state, county+place,       tract[0:2], tract,    blkgrp2,  block )
+            return ("R"+state, county+place,       tgroup, tract,    blkgrp2,  block )
 
         if ss == SS_NEW_ENGLAND:
-            return ("N"+state, county+"_"+cousub, tract[0:2],  tract,  blkgrp2,  block, None  )
+            return ("N"+state, county+"_"+cousub,  tgroup,  tract,  blkgrp2,  block, None  )
 
         if ss == SS_STRONG_MCD:
-            return ("M"+state, county,                  tract[0:2],  tract,  blkgrp2,  block, None  )
+            return ("M"+state, county,             tgroup,  tract,  blkgrp2,  block, None  )
 
         if ss == SS_COUNTY_PLACE:
-            return ("P"+state, county,                  place, tract,  blkgrp2, block, None  )
+            return ("P"+state, county,              place, tract,  blkgrp2, block, None  )
 
         if ss == SS_COUNTY_COUSUB_PLACE:
             return ("Q"+state, county+"_"+cousub, place, tract, blkgrp2, block, None  )
@@ -366,7 +381,7 @@ class GeoTree:
                         p3 += 1
                         p4 = 1
                 logging.info("Completed %s %s %s",state,p1,p2)
-        elif self.scheme=='v4':
+        elif self.scheme in ('v4','v6'):
             c = self.db.execute("SELECT * from geo where sumlev=750")
             old_state = None
             for (ct,gh) in enumerate(c):
@@ -380,11 +395,12 @@ class GeoTree:
                 p = self.geocode_v4(gh)
                 self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
                                 (state,logrecno,p[0],p[1],p[2],p[3],p[4],p[5]))
-        elif self.scheme=='v5':
+        elif self.scheme in ('v5','v7'):
             # v5 is the v4 geography with bypass-to-block for populations<1000.
             # 
+            source = {'v5':'table4','v7':'table6'}[self.scheme]
             if create:
-                self.db.execute("""INSERT INTO table5 SELECT * FROM table4""")
+                self.db.execute(f"INSERT INTO table5 SELECT * FROM {source}")
             count = self.db.execselect("SELECT COUNT(*) from table5")[0]
             logging.info("Blocks in table 5: %s",count)
             assert(count>0)
@@ -402,7 +418,7 @@ class GeoTree:
                 c = self.db.execute(f"""
                 SELECT p1,p2,p3,p4,p5,p6, sum(b.pop) as group_pop, count(*) as block_count 
                 FROM blocks b 
-                LEFT JOIN table4 T on b.state=t.state AND b.logrecno=t.logrecno 
+                LEFT JOIN {source} T on b.state=t.state AND b.logrecno=t.logrecno 
                 GROUP BY {group_by} having group_pop<1000 
                 ORDER BY b.state,b.county
                 """)
@@ -499,11 +515,14 @@ class GeoTree:
         #ws.row_dimensions.group(min_row,max_row-1,hidden=True)
 
     def add_overview_notes(self,ws_overview, overview_row):
-        # Get the list of states for each P1 prefix
+        # Get the list of states for each P1 prefix. Needs table4 
         prefixes_to_states = defaultdict(set)
         c = self.db.execute("SELECT DISTINCT state,SUBSTR(p1,1,1) FROM table4")
         for (state,prefix_char) in c:
             prefixes_to_states[prefix_char].add(state)
+
+        if len(prefixes_to_state)==0:
+            raise RuntimeError("Overview notes require table4")
 
         notes = open(GEOTREE_NOTES_FNAME,"r").read()
 
@@ -827,5 +846,5 @@ if __name__ == "__main__":
         if args.open:
             subprocess.call(['open',fname])
         if args.upload:
-            subprocess.call(['ssh',fname,args.upload])
+            subprocess.call(['scp',fname,args.upload])
             

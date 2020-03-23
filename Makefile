@@ -31,6 +31,10 @@ pl94.sqlite3: pl94_dbload.py
 	cp -c pl94.sqlite3 pl94_ro.sqlite3
 	chmod 444 pl94_ro.sqlite3
 
+v4567:
+	make v4_geo v5_geo v6_geo v7_geo
+	make v4_report v5_report v6_report v7_report
+
 # Create the geographies. These can't be parallelized because v3 depends on v2
 
 v1_geo: pl94_geofile.py
@@ -51,6 +55,12 @@ v4_geo: pl94_geofile.py
 v5_geo: pl94_geofile.py
 	python3 geotree.py --drop --create --scheme v5
 
+v6_geo: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v6
+
+v7_geo: pl94_geofile.py
+	python3 geotree.py --drop --create --scheme v7
+
 
 ################################################################
 ##
@@ -68,15 +78,21 @@ v2_report: geotree.py
 v3_report: geotree.py
 	python geotree.py $(VARGS) --scheme v3
 
-v4_report: geotree.py
-	python geotree.py $(VARGS)  --scheme v4 --open --upload $(UPLOAD)
-
 v4_report_ak: geotree.py
 	@echo "a quick report of the v4 geography for just AK. Fast enough that we don't need to suppress any rows"
 	python geotree.py $(VARGS)  --scheme v4 --report_stusab ak
 
+v4_report: geotree.py
+	python geotree.py $(VARGS)  --scheme v4 --open --upload $(UPLOAD)
+
 v5_report: geotree.py
 	python geotree.py $(VARGS)  --scheme v5 --open --upload $(UPLOAD)
+
+v6_report: geotree.py
+	python geotree.py $(VARGS)  --scheme v6 --open --upload $(UPLOAD)
+
+v7_report: geotree.py
+	python geotree.py $(VARGS)  --scheme v7 --open --upload $(UPLOAD)
 
 ################################################################
 ##

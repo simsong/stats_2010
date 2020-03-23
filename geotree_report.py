@@ -177,8 +177,6 @@ def wb_setup_overview(ws):
         ws.cell(row=2, column=col).fill = PINK_FILL
 
     ws_bold_region(ws, min_row=1, max_row=2, min_col=1, max_col=COL_MIN_POPULATIONS+10)
-
-
     return 3                    # next row
 
 WIDTH_9_DIGITS_COMMAS=12
@@ -199,7 +197,7 @@ def ws_bold_region(ws,*,min_row,max_row,min_col,max_col):
     
 
 def ws_setup_level(ws, sheet_title, level):
-    prefix = "Prefix (" + ",".join([f"P{p}" for p in range(1,level+1)]) + ")"
+    prefix = "Prefix " + ",".join([f"P{p}" for p in range(1,level+1)]) 
 
     ws.cell(row=2, column=COL_STUSAB).value = 'STUSAB'             # A2
     ws.cell(row=2, column=COL_PREFIX).value = prefix               # B2
@@ -238,6 +236,8 @@ def ws_add_metadata(wb):
 
 def ws_add_notes(ws,*,row,column,text):
     for line in text.split("\n"):
+        if line[0:1]=='=':
+            line = ' ' + line
         ws.cell(row=row, column=column).value = line.rstrip()
         row += 1
             

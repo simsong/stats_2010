@@ -293,7 +293,6 @@ class GeoTree:
             return ("A"+state, gh['aianhh'],                  county+"_"+tract[0:2], tract,  blkgrp2,  block, None )
 
         ss      = self.state_scheme(state)
-        print("ss=",ss,"ss_DC=",SS_DC,ss==SS_DC)
         if ss == SS_DC:
             # Washington DC
             return ("D"+state,  gh['sldu'],                    tract[0:2], tract,     blkgrp2,  block )
@@ -375,6 +374,7 @@ class GeoTree:
                 logrecno = int(gh['logrecno'])
                 if state!=old_state:
                     logging.info(f"Now on state {state} {STATE_TO_STUSAB[state]}")
+                    old_state=state
                 if ct % 100_000==0:
                     logging.info(f"block {ct:,}")
                 p = self.geocode_v4(gh)
@@ -531,7 +531,7 @@ class GeoTree:
         """
 
         vintage   = time.strftime("%Y-%m-%d %H%M%S")
-        fnamebase = f"reports/{args.scheme}{args.report_stusab} report-{vintage}"
+        fnamebase = f"reports/{args.scheme}{args.report_stusab if args.report_stusab else ''} report-{vintage}"
         self.wb   = wb = EasyWorkbook()
         ws_overview = wb.create_sheet("Overview")
         wb.clean()
@@ -734,7 +734,7 @@ class GeoTree:
         logging.info("Saving %s",fname)
         with ctools.timer.Timer(notifier=logging.info):
             wb.save(fname)
-        subprocess.call(['open',fname])
+        return fname
 
 def mean_report(db):
     """This doesn't have very clever SQL"""
@@ -780,6 +780,7 @@ if __name__ == "__main__":
     parser.add_argument("--xempty",  action='store_true', help='remove blocks with 0 population and 0 housing')
     parser.add_argument("--limit",   help='limit expensive queries to speed debugging',  type=int)
     parser.add_argument("--upload",  help='upload via ssh to the specified URL')
+    parser.add_argument("--open",    help='open the resulting file with open command', action='store_true')
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
 
@@ -822,4 +823,9 @@ if __name__ == "__main__":
         gt.dumpblocks()
 
     if args.report:
-        gt.report()
+        fname = gt.report()
+        if args.open:
+            subprocess.call(['open',fname])
+        if args.upload:
+            subprocess.call(['ssh',fname,args.upload])
+            

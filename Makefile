@@ -20,7 +20,8 @@ clean_data:
 	@echo /bin/rm -rf data
 
 ################################################################
-## Load data into databases
+## Load data into databases. Data must be downloaded first with
+## 'make pl94_download'
 
 pl94_load: pl94.sqlite3 
 
@@ -105,10 +106,6 @@ test:
 tags:
 	etags *.py */*py
 
-pl94_download:
-	python3 download_all.py pl94
-
-
 ak_s3:
 	python3 geocode_stats.py --db ak.sqlite3   --geocode3 --geolevel_report --prefixset "nation:state/aianh:0:3,state/aianh:place:3:8,place:tract:8:20,tract:blkgrp:20:22,blkgrp:block:22:26" --loglevel INFO  --open
 
@@ -137,7 +134,20 @@ pr_load:
 	@echo Just loading ak in pr.sqlite3
 	python3 pl94_dbload.py --db pr.sqlite3 --wipe data/2010_pl94/dist/pr2010.pl.zip --debuglogrecno=11735
 
+################################################################
+## Targets for downloading data
+
+pl94_download:
+	@echo Downloading pl94 from the public internet
+	python3 download_all.py pl94
+
+
 download_ak:
 	@echo Downloading all of the data associated with AK.
 	python3 download_all.py --state ak pl94 sf1 sf2
+
+download_s3:
+	@echo Copying data from AWS bucket
+	mkdir -p data/2010_pl94/dist
+	aws s3 cp --recursive $(DAS_S3ROOT)/2010/pl94/zips/ data/2010_pl94/dist
 

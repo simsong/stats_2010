@@ -1,5 +1,9 @@
 # Nomenclature
 
+All geographic reference terms conform to the standard geography names and acronyms located here:
+https://www.census.gov/programs-surveys/popest/guidance-geographies/terms-and-definitions.html
+
+
 US = "resident population of the United States of America"
 PR = "resident population of the territory of Puerto Rico"
 
@@ -13,7 +17,7 @@ Geography Schemas
  This project has created five geography schemas; this numbering is used for reports:
 
 v1 - Six levels: Geographical hiearchy used for the 2010 Demonstration Data products.
-v2 - Five levels: Initial proposal incorporating AIANNH and Minor Civil Divisions.
+v2 - Five levels: Initial proposal incorporating AIANHH and Minor Civil Divisions.
 v3 - Four levels: v2 proposal with a synthetic LEVEL3 connecting COUNTY/MCD to BLOCK.
 v4 - Corrected v2.1 Revised MCD and AIAN-aware geography
 v5 - v4 geography with bypass-to-block for populations < 1000
@@ -29,22 +33,46 @@ We name the levels as:
 
 P0 - The root of the tree.
 
-P1 - The first partition, includes the states (v1) and the state AIANNH areas (v2+)
+P1 - The first partition.
+   v1 - This is the states and the District of Columbia.
+   v2-v5 - This is the state AIANNH areas, the balance of state not in AIANHH areas, and the District of Columbia.
 
 P2 - The first sub-state partition.
-   v1 - this is the counties.
-   v4 - For tribal areas of a state, this is the AIANHH code.
-      - For non-tribal areas, the partitioning depends upon the state type, and is reflected in the first letter of the P2
-  A - AIANHH/tribal area of a state
-  N - New England State (non-tribal area)
-  P - Puerto Rico
-  M - States with "strong" municipal civil divisions (MCDs) at the county level other than New England States. (non-tribal areas)
-  P - States that lack "strong" municipal civil divisions; the tree for these states is organized County->Place
-  Q - States that lack "strong" municipal civil divisions but have many places;
-      these states are organized (COUNTY,COUSUB)->PLACE (non-tribal areas)
+   v1-v3 - this is the counties.
+   v4-v5 - The partitioning depends upon the state type, and is reflected in the first letter of the P2
+      A - AIANHH/tribal area of a state         ( %A% )
+
+      D - District of Columbia                  ( %D% )
+
+      N - Strong-Minor Civil Division (MCD) New England State (non-tribal areas).
+          The tree for the non-tribal areas of these states is organized: State->County Subdivision (type = MCD)
+          ( %N% )
+
+      M - Strong-MCD State Outside New England (non-tribal areas).
+          The tree for these states is organized: State->County->Place (non-tribal areas)
+          ( %M% )
+
+      P - States in which counties and incorporated places are primary units of local government,
+          but have many places (non-tribal areas).
+          The tree for these states is organized: State->County Subdivision->Place (non-tribal areas)
+
+          The definition of "many places" is states that satisfy the expression:
+             sqrt(dc**2 + (sqrt(dcp) - dc)**2) < sqrt(dc**2 + (sqrt(dcc) - dc)**2)   OR  dcc > dcp
+             where:
+                  dc = number of counties;
+                  dcc = number of county subdivisions (COUSUB)
+                  dp = number of places
+          ( %P% )
+    
+      Q - States in which counties and incorporated places are primary units of local government,
+          but have many places; the tree for these states is organized: State->County Subdivision->Place (non-tribal areas)
+          ( %Q% )
+    
+      R - Puerto Rico ( %R% )
 
 P3 -
-   v1 - This is the tract groups
+   v1-v2 - This is the tract groups
+   v3    - Synthetic V3
 
 P4 -
    v1 - This is the tracts

@@ -15,7 +15,7 @@ import statistics
 import subprocess
 import gc
 import math
-from collections import deque
+from collections import deque,defaultdict
 
 __version__ = '0.2.0'
 
@@ -53,6 +53,9 @@ def deciles(ary):
 def flatmap(func, *iterable):
     return itertools.chain.from_iterable(map(func, *iterable))
 
+GEOTREE_NOTES_FNAME = "geotree_notes.md"
+
+
 ###
 ### Create geotree schema
 ###
@@ -68,22 +71,6 @@ CREATE TABLE %TABLE% (state INTEGER,
 CREATE UNIQUE INDEX %TABLE%_logrecno ON %TABLE%(state,logrecno);
 CREATE UNIQUE INDEX %TABLE%_p ON %TABLE%(p1,p2,p3,p4,p5,p6);
 """
-
-def include_aianhh(code):
-    code = int(code)
-    if 1 <= code <= 4999:
-        return "Federally recognized American Indian Reservations and Off-Reservation Trust Lands"
-    elif 5000 <= code  <=5999:
-        return "Hawaiian Home Lands"
-    elif 6000 <= code <= 7999:
-        return "Alaska Native Village Statistical Areas"
-    elif 9000 <= code <= 9499:
-        if EXCLUDE_STATE_RECOGNIZED_TRIBES:
-            return False
-        else:
-            return "State recognized American Indian Reservations"
-    else:
-        return False
 
 """
 MCD (Minor Civil Divisions) are a type of COUNTY subdivision. They are the legal type.
@@ -157,49 +144,15 @@ V2 STRONG MCD STATES: {sorted(V2_STRONG_MCD_STATES)}
 """)
 
 
+SS_AIANHH='AIANHH'
 SS_DC='DC'
-SS_NEW_ENGLAND='New England STATE'
-SS_STRONG_MCD='STRONG MCD (not NE)'
-SS_COUNTY_PLACE='COUNTY->PLACE'
-SS_COUNTY_COUSUB_PLACE='(COUNTY,COUSUB)->PLACE'
+SS_PR='PR'
+SS_NEW_ENGLAND='NEW_ENGLAND'
+SS_STRONG_MCD='STRONG_MCD'
+SS_COUNTY_PLACE='COUNTY_PLACE'
+SS_COUNTY_COUSUB_PLACE='COUNTY_COUSUB_PLACE'
 
-from memoize import Memoize
-
-@Memoize
-def state_scheme(state):
-    """Given a state, return which scheme we are going to use"""
-    if state == DC_STATE:
-        return SS_DC
-
-    if state in NEW_ENGLAND_STATES:
-        return SS_NEW_ENGLAND
-
-    if state in STRONG_MCD_STATES:
-        return SS_STRONG_MCD
-        print(f"{stusab}:   New England State. Will use P2=COUNTY,COUSUB ({dcc}); P3=TRACT ({dct}); P4=BLKGRP2; P5=BLOCK")
-
-    if state in STRONG_MCD_STATES:
-        print(f"{stusab}:   Strong MCD State (high-fanout). Will use P2=COUNTY ({dc}); P3=COUSUB ({dcc}); P4=TRACT ({dct}); P5=BLOCK")
-
-    dc  = db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county FROM blocks where state=?)",(state,))[0]
-    dcp = db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT COUNTY,PLACE FROM blocks where state=?)",(state,))[0]
-    dcc = db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county,cousub FROM blocks where state=?)",(state,))[0]
-
-    # too many cousubs; go with county
-    if dcc > dcp:
-        return SS_COUNTY_PLACE  
-
-    # case 1: p2=county, p3=place
-    # dc  = number of distinct (county)
-    # dcc = number of distinct (county,cousub)
-    # dp  = number of distinct (county,place)
-    d1 = math.sqrt(dc**2 + (math.sqrt(dcp) - dc)**2)
-    # case 2: p2=(county,cousub) p3=place
-    d2 = math.sqrt(dc**2 + (math.sqrt(dcc) - dc)**2)
-    if d1<d2:
-        return SS_COUNTY_PLACE
-    else:
-        return SS_COUNTY_COUSUB_PLACE
+SS_ALL=set([SS_AIANHH,SS_DC,SS_PR,SS_NEW_ENGLAND,SS_STRONG_MCD,SS_COUNTY_PLACE,SS_COUNTY_COUSUB_PLACE])
 
 class MinMax:
     """Remember an object associated with a min and the object associated with the max."""
@@ -241,6 +194,7 @@ class GeoTree:
         5 - BLKGRP first 1 or 2 digits of block       | BLKGRP
         6 - BLOCK                                     | BLOCK
         """
+        (is_aianhh,reason) = include_aianhh(gh['aianhh'])
         block  = f"{gh['block']:04}"
         blkgrp2 = block[0:2]         # note 2-digit block groups
         if gh['state']==DC_STATE:
@@ -249,7 +203,7 @@ class GeoTree:
         elif gh['state']==PR_STATE:
             # Puerto Rico
             return (f"{PR_STATE:02}P",    f"{gh['county']:03}{gh['place']:05}",   f"___{gh['tract']:06}",               blkgrp2, block, None )
-        elif include_aianhh(gh['aianhh']):
+        elif is_aianhh:
             # AIANHH portion of 38-states with AIANHH
             return (f"{gh['state']:02}A", f"{gh['aianhh']:05}{gh['county']:03}", f"___{gh['tract']:06}",                blkgrp2, block, None )
         elif gh['concit'] in (3436,4200,11390,36000,47500,48003,52004):
@@ -263,35 +217,104 @@ class GeoTree:
             # Non-AIAN area in states without strong MCD (or too many MCDs)
             return (f"{gh['state']:02}X", f"{gh['county']:03}{gh['place']:05}",  f"___{gh['tract']:06}",               blkgrp2, block, None  )
 
+    memoized_state_schemes = dict()
+    def state_scheme(self,state):
+        """Given a state, return which scheme we are going to use"""
+        state = int(state)
+        if state == DC_STATE:
+            return SS_DC
+
+        if state in NEW_ENGLAND_STATES:
+            return SS_NEW_ENGLAND
+
+        if state in STRONG_MCD_STATES:
+            return SS_STRONG_MCD
+
+        if state in self.memoized_state_schemes:
+            return self.memoized_state_schemes[state]
+
+        dc  = self.db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county FROM blocks where state=?)",(state,))[0]
+        dcp = self.db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT COUNTY,PLACE FROM blocks where state=?)",(state,))[0]
+        dcc = self.db.execselect("SELECT COUNT(*) FROM (SELECT DISTINCT county,cousub FROM blocks where state=?)",(state,))[0]
+
+        # too many cousubs; go with county
+        if dcc > dcp:
+            self.memoized_state_schemes[state] = SS_COUNTY_PLACE
+            return SS_COUNTY_PLACE  
+
+        # case 1: p2=county, p3=place
+        # dc  = number of distinct (county)
+        # dcc = number of distinct (county,cousub)
+        # dp  = number of distinct (county,place)
+        d1 = math.sqrt(dc**2 + (math.sqrt(dcp) - dc)**2)
+        # case 2: p2=(county,cousub) p3=place
+        d2 = math.sqrt(dc**2 + (math.sqrt(dcc) - dc)**2)
+        if d1<d2:
+            self.memoized_state_schemes[state] = SS_COUNTY_PLACE
+            return SS_COUNTY_PLACE
+        else:
+            self.memoized_state_schemes[state] = SS_COUNTY_COUSUB_PLACE
+            return SS_COUNTY_COUSUB_PLACE
+
+
+    def include_aianhh(self,code):
+        code = int(code)
+        #logging.info("include_aianhh(%s)",code)
+        if 1 <= code <= 4999:
+            return (True,"Federally recognized American Indian Reservations and Off-Reservation Trust Lands")
+        elif 5000 <= code  <=5999:
+            return (True,"Hawaiian Home Lands")
+        elif 6000 <= code <= 7999:
+            return (True,"Alaska Native Village Statistical Areas")
+        elif 9000 <= code <= 9499:
+            if EXCLUDE_STATE_RECOGNIZED_TRIBES:
+                return (False,"State recognized American Indian Reservations are excluded")
+            else:
+                return (True,"State recognized American Indian Reservations")
+        else:
+            return (False,"")
+
     def geocode_v4(self,gh):
-        """The revised geocode that takes into account AIANHH and fanout issues."""
+        """The revised geocode that takes into account AIANHH and MCD and fanout issues..
+        Remember - gh fields are next, not integers
+        """
+        
+        state   = gh['state']
+        county  = gh['county']
+        cousub  = gh['cousub']
+        place   = gh['place']
         tract   = gh['tract']
         block   = gh['block']
         blkgrp2 = block[0:2]         # note 2-digit block groups
-        ss      = state_scheme(gh['state'])
+        (is_aianhh,reason) = self.include_aianhh(gh['aianhh'])
+
+        if is_aianhh:
+            # AIANHH portion of 38-states with AIANHH
+            return ("A"+state, gh['aianhh'],                  county+"_"+tract[0:2], tract,  blkgrp2,  block, None )
+
+        ss      = self.state_scheme(state)
+        print("ss=",ss,"ss_DC=",SS_DC,ss==SS_DC)
         if ss == SS_DC:
             # Washington DC
-            return (gh['state']+"D",  gh['sldu'],                    tract[0:2], tract,     blkgrp2,  block )
+            return ("D"+state,  gh['sldu'],                    tract[0:2], tract,     blkgrp2,  block )
 
-        if gh['state']==PR_STATE:
+        assert state!=11
+
+        if state==PR_STATE:
             # Puerto Rico
-            return ("P"+gh['state'], gh['county']+gh['place'],       tract[0:2], tract,    blkgrp2,  block )
-
-        if include_aianhh(gh['aianhh']):
-            # AIANHH portion of 38-states with AIANHH
-            return ("A"+gh['state'], gh['aianhh'],                   gh['county']+"_"+tract[0:2], tract,  blkgrp2,  block, None )
+            return ("R"+state, county+place,       tract[0:2], tract,    blkgrp2,  block )
 
         if ss == SS_NEW_ENGLAND:
-            return ("N"+gh['state'], gh['county']+"_"+gh['cousub'], tract[0:2],  tract,  blkgrp2,  block, None  )
+            return ("N"+state, county+"_"+cousub, tract[0:2],  tract,  blkgrp2,  block, None  )
 
         if ss == SS_STRONG_MCD:
-            return ("M"+gh['state'], gh['county'],                  tract[0:2],  tract,  blkgrp2,  block, None  )
+            return ("M"+state, county,                  tract[0:2],  tract,  blkgrp2,  block, None  )
 
         if ss == SS_COUNTY_PLACE:
-            return ("P"+gh['state'], gh['county'],                  gh['place'], tract,  blkgrp2, block, None  )
+            return ("P"+state, county,                  place, tract,  blkgrp2, block, None  )
 
         if ss == SS_COUNTY_COUSUB_PLACE:
-            return ("Q"+gh['state'], gh['county']+"_"+gh['cousub'], gh['place'], tract, blkgrp2, block, None  )
+            return ("Q"+state, county+"_"+cousub, place, tract, blkgrp2, block, None  )
 
         raise ValueError(f"Unknown ss:{ss}")
 
@@ -346,12 +369,17 @@ class GeoTree:
                 logging.info("Completed %s %s %s",state,p1,p2)
         elif self.scheme=='v4':
             c = self.db.execute("SELECT * from geo where sumlev=750")
+            old_state = None
             for (ct,gh) in enumerate(c):
+                state = int(gh['state'])
+                logrecno = int(gh['logrecno'])
+                if state!=old_state:
+                    logging.info(f"Now on state {state} {STATE_TO_STUSAB[state]}")
                 if ct % 100_000==0:
                     logging.info(f"block {ct:,}")
                 p = self.geocode_v4(gh)
                 self.db.execute(f"INSERT INTO {self.name} (state,logrecno,p1,p2,p3,p4,p5,p6) values (?,?,?,?,?,?,?,?)",
-                                (int(gh['state']),int(gh['logrecno']),p[0],p[1],p[2],p[3],p[4],p[5]))
+                                (state,logrecno,p[0],p[1],p[2],p[3],p[4],p[5]))
         elif self.scheme=='v5':
             # v5 is the v4 geography with bypass-to-block for populations<1000.
             # 
@@ -431,15 +459,23 @@ class GeoTree:
         plevel4 = ",".join([f"p{n}" for n in range(1,ct+4)])  # if ct=0, this is P1,P2,P3,P4
         logging.info(f"ct:{ct} plevel1:{plevel1}")
 
+        ## Check to see if blocks should be restricted
         where = ''
         if self.xpr:
-            where += f'a.state!={PR_STATE} and b.state!={PR_STATE} '
+            where += f'a.state!={PR_STATE} '
         if self.args.xempty:
             if where:
                 where += " AND "
             where += f' ( b.pop > 0 OR b.houses > 0 )'
+        if self.args.report_stusab:
+            if where:
+                where += " AND "
+            where += f' ( a.state = {STUSAB_TO_STATE[self.args.report_stusab]} ) '
         if where:
             where = "WHERE "+where
+        ##
+
+        ## Construct the command
         cmd = f"""SELECT a.state,{reporting_prefix} as reporting_prefix,{plevel2},COUNT(*) as blocks,SUM(pop) as population 
         FROM {self.name} a LEFT JOIN blocks b ON (a.state=b.state AND a.logrecno=b.logrecno) {where} 
         GROUP BY {plevel2}"""
@@ -462,6 +498,31 @@ class GeoTree:
         #  don't do grouping; it is confusing
         #ws.row_dimensions.group(min_row,max_row-1,hidden=True)
 
+    def add_overview_notes(self,ws_overview, overview_row):
+        # Get the list of states for each P1 prefix
+        prefixes_to_states = defaultdict(set)
+        c = self.db.execute("SELECT DISTINCT state,SUBSTR(p1,1,1) FROM table4")
+        for (state,prefix_char) in c:
+            prefixes_to_states[prefix_char].add(state)
+
+        notes = open(GEOTREE_NOTES_FNAME,"r").read()
+
+        # Read the template and replace %P% with the list of states
+        
+        for prefix_char in prefixes_to_states:
+            state_list = prefixes_to_states[prefix_char]
+            stusab_list = [STATE_TO_STUSAB[state] for state in state_list]
+            stusabs = ",".join(sorted(stusab_list))
+            logging.info("state_list: %s stusab_list: %s %s",state_list,stusab_list,stusabs)
+            if stusabs=='':
+                stusabs=["n/a"]
+            to_replace = "%" + prefix_char + "%"
+            logging.info("replace %s with %s",to_replace,stusabs)
+            notes = notes.replace( to_replace, stusabs)
+
+        ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,   text=notes)
+        ws_add_metadata(self.wb)
+
     def report(self):
         """Generate a geotree report into a spreadsheet. 
         Sheet overview      - report of all summary levels
@@ -470,8 +531,8 @@ class GeoTree:
         """
 
         vintage   = time.strftime("%Y-%m-%d %H%M%S")
-        fnamebase = f"reports/{args.scheme}{args.stusab} report-{vintage}"
-        wb = EasyWorkbook()
+        fnamebase = f"reports/{args.scheme}{args.report_stusab} report-{vintage}"
+        self.wb   = wb = EasyWorkbook()
         ws_overview = wb.create_sheet("Overview")
         wb.clean()
         overview_row = wb_setup_overview(ws_overview)
@@ -495,13 +556,13 @@ class GeoTree:
             exp = ''
             if self.args.xpr:
                 exp += "(Peutro Rico omitted) "
-            if self.args.state:
-                exp += f"(only {args.state}) "
+            if self.args.report_stusab:
+                exp += f"(only {self.args.report_stusab}) "
             if self.args.xempty:
                 exp += "(Blocks with P0010001=0 or H0010001=0 omitted)"
 
             sheet_title = f"{self.gt['name']}: fanout from {self.gt['names'][ct]} to {self.gt['names'][ct+1]} {exp}"
-            ws_setup_level(ws_level,sheet_title)
+            ws_setup_level(ws_level, sheet_title, ct)
             geounits = self.get_geounits(ct, debug=True)
             logging.info(f"ct: {ct} len(geounits)={len(geounits)} t={time.time()-t0}")
             assert len(geounits)>0
@@ -593,7 +654,7 @@ class GeoTree:
             wb.format_rows(ws_level, min_row=3, max_row=row-1, min_col=1, max_col=COL_POP_MIN+10, column=1,
                            stripe = (ct>1),
                            fills=[STATE1_FILL, STATE2_FILL], value_fills = {'PR':PR_FILL})
-            ws_add_notes(ws_level, row=4, column=COL_POP_MIN+10+2, data=io.StringIO(V4_PREFIXES_EXPLAINED))
+            ws_add_notes(ws_level, row=4, column=COL_POP_MIN+10+2, text=V4_PREFIXES_EXPLAINED)
 
             # Now fill out the Overview Sheet
             ws_overview.cell(row=overview_row, column=COL_PLEVEL).value = f"P{ct}"
@@ -668,8 +729,7 @@ class GeoTree:
                 ws_bold_region(ws, min_row=1, max_row=2, min_col=1, max_col=4)
 
         # Add summary info to spreadsheet's root.
-        ws_add_notes(ws_overview,          row=overview_row+2, column=COL_LEVEL_NAME,   data=open("geotree_notes.md"))
-        ws_add_metadata(wb)
+        self.add_overview_notes(ws_overview, overview_row)
         fname = f"{fnamebase}.xlsx"
         logging.info("Saving %s",fname)
         with ctools.timer.Timer(notifier=logging.info):
@@ -714,10 +774,12 @@ if __name__ == "__main__":
     parser.add_argument("--names", action='store_true', help='display names')
     parser.add_argument("--levels", type=int, help="how many levels")
     parser.add_argument("--xpr",     action='store_true', help='remove PR from reports')
-    parser.add_argument("--state",  help='Only process state STATE (specified by name or number)')
+    parser.add_argument("--geo_stusab",  help='Use geography table for STATE')
+    parser.add_argument("--report_stusab",  help='Only report for for STATE')
     parser.add_argument("--mean_report", help="Print geometric mean report", action='store_true')
     parser.add_argument("--xempty",  action='store_true', help='remove blocks with 0 population and 0 housing')
     parser.add_argument("--limit",   help='limit expensive queries to speed debugging',  type=int)
+    parser.add_argument("--upload",  help='upload via ssh to the specified URL')
     ctools.clogging.add_argument(parser)
     args = parser.parse_args()
 
@@ -725,16 +787,6 @@ if __name__ == "__main__":
     gc.enable()
     db   = ctools.dbfile.DBSqlite3(args.db,dicts=True,debug=False)
     db.set_cache_bytes(4*1024*1024*1024)
-
-    if args.state:
-        try:
-            args.state  = int(args.state)
-            args.stusab = STATE_TO_STUSAB[args.state]
-        except ValueError:
-            args.stusab = args.state.upper()
-            args.state = STUSAB_TO_STATE[args.stusab]
-    else:
-        args.stusab = ""
 
     if args.mean_report:
         mean_report(db)
@@ -748,8 +800,12 @@ if __name__ == "__main__":
         exit(1)
 
     name = 'table' + args.scheme[1:].replace(".","")
-    if args.stusab:
-        name += "_" + args.stusab
+    if args.geo_stusab:
+        args.geo_stusab = args.geo_stusab.upper()
+        name += "_" + args.geo_stusab
+
+    if args.report_stusab:
+        args.report_stusab = args.report_stusab.upper()
 
     gt = GeoTree(db,name,args)
 

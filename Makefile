@@ -28,7 +28,7 @@ pl94_load: pl94.sqlite3
 pl94.sqlite3: pl94_dbload.py
 	python3 pl94_dbload.py --wipe data/2010_pl94/dist/*.zip
 	rm -f pl94_ro.sqlite3
-	cp -c pl94.sqlite3 pl94_ro.sqlite3
+	if test `uname` == Darwin ; then cp -c pl94.sqlite3 pl94_ro.sqlite3 ; else cp --reflink=auto pl94.sqlite3 pl94_ro.sqlite3 ; fi
 	chmod 444 pl94_ro.sqlite3
 
 v4567:
@@ -141,6 +141,16 @@ az_load:
 pr_load:
 	@echo Just loading ak in pr.sqlite3
 	python3 pl94_dbload.py --db pr.sqlite3 --wipe data/2010_pl94/dist/pr2010.pl.zip --debuglogrecno=11735
+
+################################################################
+## Checking out inside ITE
+checkout_ite:
+	@echo run after git clone git@github.ti.census.gov:CB-DAS/stats_2010.git
+	@echo edit .gitmodules and change all of the URL bases to be https://github.ti.census.gov/CB-DAS
+	@echo git submodule init
+	@echo git submodule update
+
+
 
 ################################################################
 ## Targets for downloading data

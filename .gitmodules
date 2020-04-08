@@ -1,9 +1,9 @@
 [submodule "ctools"]
 	path = ctools
-	url = https://github.ti.census.gov/CB-DAS/ctools.git
+	url = git@github.ti.census.gov:CB-DAS/ctools.git
 [submodule "dfxml"]
 	path = dfxml
-	url = https://github.com/simsong/dfxml.git
+	url = git@github.ti.census.gov:CB-DAS/dfxml.git
 [submodule "census_etl"]
 	path = census_etl
-	url = git@github.com:simsong/census_etl.git
+	url = git@github.ti.census.gov:CB-DAS/census_etl.git

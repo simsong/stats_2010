@@ -1,7 +1,5 @@
 import ctools.cspark as cspark
-import pprint
 import cb_spec_decoder
-import os
 from collections import defaultdict
 from ctools.s3 import list_objects
 from constants import *
@@ -10,24 +8,108 @@ import sf1_info as info
 import re
 import shutil
 from geocode import GeoCode
-from copy import deepcopy
-import pprint
-
+import uuid
+import time
+import sf1_info_house as info_house
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
 else:
     DATAROOT = os.path.join( os.path.dirname(__file__), 'data')
 
-SUMMARY_LEVEL_MAP = {
-    'STATE' : '040',
-    'COUNTY' : '050',
-    'BLOCK' : '101'
+relationship_dict = {
+    "BLOCK": {
+        "sql_name": "relationship_block",
+        "sql_query": f"SELECT STATE_2000, COUNTY_2000, TRACT_2000, BLK_2000, STATE_2010, COUNTY_2010,"
+                    f" TRACT_2010, BLK_2010, AREALAND_INT, AREALAND_2010, AREALAND_2000"
+                    f" FROM relationship_block",
+        "s3_folder_name": os.path.join(os.getenv('DAS_S3ROOT'), os.getenv("JBID", default=""), "relationship/"),
+        "aggregate_from": "BLOCK",
+        "app_name": "relationship_block_app"
+    },
+    "TRACT": {
+        "sql_name": "relationship_tract",
+        "sql_query": f"SELECT STATE00, COUNTY00, TRACT00, STATE10, COUNTY10, TRACT10, AREAPCT00PT FROM relationship_tract",
+        "s3_folder_name": os.path.join(os.getenv('DAS_S3ROOT'), os.getenv("JBID", default=""), "relationship_tract/"),
+        "aggregate_from": "TRACT",
+        "app_name": "relationship_tract_app"
+    }
 }
 
-SQL_STRINGS ={
-    'BLOCK': "(STATE={state_code} AND COUNTY={county_code} AND TRACT={tract_code} AND BLOCK={block_code})"
-}
+
+def smallcell_structure_housing_sf_2000(summary_level, threshold):
+    tables = [
+        "P15",  # Total Households              [[[Block level tables begin]]]
+        "P18",  # HHSIZE x HHTYPE x PRES_OWN_CHILD
+        "P19",  # PRES_UNDER_18 x HHTYPE
+        "P20",  # HHAGE x HHTYPE x PRES_OWN_CHILD
+        "P21",  # HHTYPE x HHAGE
+        "P22",  # PRES_>60 x HHSIZE x HHTYPE
+        "P23",  # PRES_>65 x HHSIZE x HHTYPE
+        "P24",  # PRES_>75 x HHSIZE x HHTYPE
+        "P26",  # HHSIZE
+        "P31",  # FAMILIES
+        "P34",  # FAM_TYPE x PRES_OWN_CHILD x AGE_OWN_CHILD
+    ]
+    # HHs by Major Race Alone / HISP of Householder
+    tables += [f"P15{letter}" for letter in ascii_uppercase[:9]]  # A-I
+    # HHs by HHSIZE by Major Race Alone / HISP of Householder
+    tables += [f"P26{letter}" for letter in ascii_uppercase[:9]]  # A-I
+    # Families by HHSIZE by Major Race Alone / HISP of Householder
+    tables += [f"P31{letter}" for letter in ascii_uppercase[:9]]  # A-I
+    # Family Type x PRES_OWN_CHILD x AGE_OWN_CHILD by Major Race Alone / HISP of Householder
+    # Very weird error on this table tables +=   [f"P34{letter}" for letter in ascii_uppercase[:9]] # A-I
+    # Family Type x PRES_REL_CHILD x AGE_REL_CHILD by Major Race Alone / HISP of Householder #### Irrelevant to histogram?
+    tables += [
+        "PCT14"  # Unmarried-Partner HHs by Sex of Partners #### Can determine from HHTYPE+HHSEX in our histogram
+    ]
+    # Skipping some tables we eventually want but which current histogram doesn't support: H3, H4, H5
+    tables += [
+        "H6",  # HHRACE
+        "H7",  # HHRACE x HHHISP
+        # "H8", Not sure how to do Tallied   # HHRACEs Tallied (this one is a bit weird but I think works with current histogram)
+        # "H9", Not sure how to do Tallied  # HHRACEs Tallied x HHHISP
+        "H13"  # HHSIZE
+    ]
+    start_time = time.time()
+    print('smallCellStructure_HouseholdsSF2000')
+
+    blocks_to_tract_map = build_old_geo_to_new_geo_map(summary_level, **relationship_dict["BLOCK"])
+    tract_to_tract_map = build_old_geo_to_new_geo_map(summary_level, **relationship_dict["TRACT"])
+
+    sf1_year = 2000
+    current_product = SF1
+    sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
+    print("Geolevels by state and summary level:")
+    sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
+    start_time_multi = time.time()
+    query = "SELECT * FROM GEO_2000 " \
+            "INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND "\
+            "GEO_2000.STUSAB={table}_2000.STUSAB "\
+            "WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}'{filter_state_query}AND " \
+            "GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB"
+
+    for table in tables:
+        sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+        table_info = info_house.get_correct_house_builder(table)
+        rdd = load_data_from_table(table=table, sf1_2000=sf1_2000, summary_level=summary_level,
+                                   threshold=threshold, blocks_to_tract_map=blocks_to_tract_map,
+                                   tract_to_tract_map=tract_to_tract_map, rdd=rdd, table_info=table_info,
+                                   current_table_var_string=None, query=query)
+
+    print(f'TIme to extend list {time.time() - start_time_multi}')
+
+    print(f"Length Before expanded {rdd.count()}")
+    print(f'Time to run tables {time.time() - start_time}')
+    rdd = rdd.map(lambda x: cartesian_iterative(x.histogram))
+    rdd = rdd.flatMap(lambda item: item).cache()
+    print(f"Length After expanded {rdd.count()}")
+    df = rdd.toDF(['geoid', 'hhgq', 'sex', 'age', 'hisp', 'cenrace', 'citizen'])
+    print(f"Length After df_convert {df.count()}")
+
+    start_time = time.time()
+    save_dataframe(df, summary_level, threshold)
+    print(f'Time to save data {time.time() - start_time}')
 
 
 def smallcell_structure_persons_sf_2000(summary_level, threshold):
@@ -75,80 +157,161 @@ def smallcell_structure_persons_sf_2000(summary_level, threshold):
                     "PCT13I"    # Sex by Age (White Alone, Not HISP), Pop in HHs
                     # PCT17A-I; 3-digit GQs not yet in schema
                 ]
+    start_time = time.time()
+    # sf1_year = 2000
+    # current_product = SF1
+    # sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
+
+    blocks_to_tract_map = build_old_geo_to_new_geo_map(summary_level, **relationship_dict["BLOCK"])
+    tract_to_tract_map = build_old_geo_to_new_geo_map(summary_level, **relationship_dict["TRACT"])
+
+    print("Geolevels by state and summary level:")
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
-
-    block_map = build_block_level_map()
-
-    print("Geolevels by state and summary level:")
     sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
-    multi_index_list = []
-    tables = ["P3"]
+
+    print(f"Starting table process")
+    start_time_multi = time.time()
+    query = "SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.COUNTY," \
+        " GEO_2000.TRACT, GEO_2000.BLOCK, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME," \
+        " {current_table_var_string}" \
+        " FROM GEO_2000 INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO" \
+        " AND GEO_2000.STUSAB={table}_2000.STUSAB WHERE" \
+        " GEO_2000.SUMLEV='{sum_level_to_use}' AND GEO_2000.GEOCOMP='00'" \
+        " ORDER BY GEO_2000.STUSAB"
+    rdd = None
     for table in tables:
-        try:
-            # Just wanted to break after first loop to stop for testing.
-            print(f'Loading Table: {table}')
-            sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
-            regex = re.compile(r'^[P]')
-            all_var_names = sf1_2000.get_table(table).varnames()
-            print(f"Length of all vars {len(all_var_names)}")
-            current_table_var_names = list(filter(filter_ids_persons, list(filter(regex.search, list(all_var_names)))))
-            print(f"Length of filtered vars {len(current_table_var_names)}")
-            current_table_var_string = ",".join(current_table_var_names)
-            table_info = info.get_correct_builder(table, current_table_var_names)
-            result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.COUNTY,"
-                                          f" GEO_2000.TRACT, GEO_2000.BLOCK, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME,"
-                                          f" {current_table_var_string}"
-                                          f" FROM GEO_2000 INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO"
-                                          f" AND GEO_2000.STUSAB={table}_2000.STUSAB WHERE"
-                                          f" GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}'{filter_state_query}AND GEO_2000.GEOCOMP='00'"
-                                          f" ORDER BY GEO_2000.STUSAB")
-            result_temp_table.registerTempTable("temp_table")
-            print(f"Size of Dict {len(block_map.keys())}")
-            percentage_map = {key: {str(k): v for k, v in value.items()} for key, value in block_map.items()}
-            table_results = {row['STATE'] + row['COUNTY'] + row['TRACT'] + row['BLOCK']: row for row in result_temp_table.collect()}
+        print(f'Loading Table: {table}')
+        sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
+        regex = re.compile(r'^[P]')
+        all_var_names = sf1_2000.get_table(table).varnames()
+        current_table_var_names = list(filter(filter_ids_persons, list(filter(regex.search, list(all_var_names)))))
+        current_table_var_string = ",".join(current_table_var_names)
+        table_info = info.get_correct_builder(table, current_table_var_names)
 
-        except Exception as e:
-            print("Error", e)
-        print(f"Length {len(multi_index_list)}")
-        # print(multi_index_list)
-        # pp = pprint.PrettyPrinter(indent=4)
-        # pp.pprint(multi_index_list)
+        rdd = load_data_from_table(table=table, sf1_2000=sf1_2000, summary_level=summary_level,
+                                   threshold=threshold, blocks_to_tract_map=blocks_to_tract_map,
+                                   tract_to_tract_map=tract_to_tract_map, rdd=rdd,
+                                   current_table_var_string=current_table_var_string, table_info=table_info,
+                                   query=query)
+    print(f'TIme to extend list {time.time() - start_time_multi}')
+
+    print(f"Length Before expanded {rdd.count()}")
+    print(f'Time to run tables {time.time() - start_time}')
+    rdd = rdd.map(lambda x: cartesian_iterative(x.histogram))
+    rdd = rdd.flatMap(lambda item: item).cache()
+    print(f"Length After expanded {rdd.count()}")
+    df = rdd.toDF(['geoid', 'hhgq', 'sex', 'age', 'hisp', 'cenrace', 'citizen'])
+    print(f"Length After df_convert {df.count()}")
+
+    start_time = time.time()
+    save_dataframe(df, summary_level, threshold)
+    print(f'Time to save data {time.time() - start_time}')
 
 
-def build_block_level_map():
-    block_map = defaultdict(dict)
+def cartesian_iterative(pools):
+    result = [()]
+    for pool in pools:
+        result = [x + (y,) for x in result for y in pool]
+    return result
+
+
+def save_dataframe(df, summary_level, threshold):
+    uuid_str = str(uuid.uuid4())[:5]
+    print(f"UUID of Run {uuid_str}")
+    location = os.path.join(os.getenv('DAS_S3ROOT'), "users", os.getenv("JBID", default=""), "smallcell", args.type,
+                            summary_level, uuid_str + "_threshold_" + str(threshold))
+
+    df.write.format("csv").save(location)
+
+
+def load_data_from_table(table, sf1_2000, summary_level, threshold, blocks_to_tract_map, tract_to_tract_map, rdd,
+                         current_table_var_string, table_info, query):
+    try:
+        map_to_send = blocks_to_tract_map if table[:3] != "PCT" else tract_to_tract_map
+        sum_level_to_use = '101' if table[:3] != "PCT" else '080'
+        query = eval(f'f"""{query}"""')
+        print(query)
+        result_temp_table = spark.sql(query)
+        result_temp_table.registerTempTable("temp_table")
+        print(f"Size of Dict {len(map_to_send.keys())}")
+        table_results = {row['STATE'] + row['COUNTY'] + row['TRACT'] + row['BLOCK']: row for row in
+                         result_temp_table.collect()}
+        # to_return.extend(table_info.rdd_approach(map_to_send, table_results, summary_level, threshold, table))
+        rdd_to_return = table_info.rdd_approach(map_to_send, table_results, summary_level, threshold, table, rdd)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+    return rdd_to_return
+
+
+def build_old_geo_to_new_geo_map(summary_level, sql_name, sql_query, s3_folder_name, app_name, aggregate_from=None):
+    geo_id_info = {
+        'STATE': 2,
+        'COUNTY': 5,
+        'TRACT': 11,
+        'BLOCK': 15
+    }
+
     s3_file_list = []
-    file_location = os.path.join(os.getenv('DAS_S3ROOT'), os.getenv("JBID", default=""), "relationship/")
-    print(f"Loading file at {file_location}")
+    print(f"Loading file at {s3_folder_name}")
 
     # Grab and create file path to the S3 prefix that has the relationship file in it.
-    for j in list_objects(file_location):
-        s3_file_list.append(os.path.join(os.getenv('DAS_S3ROOT'), j['Key']))
+    print(f"{aggregate_from}")
+    for s3_file_path in list_objects(s3_folder_name):
+        s3_file_list.append(os.path.join(os.getenv('DAS_S3ROOT'), s3_file_path['Key']))
+    print(s3_file_list)
 
     print("Starting to build relationship table")
-    cb_spec_decoder.build_relationship_table(s3_file_list, "relationship")
+    cb_spec_decoder.build_relationship_table(path=s3_file_list, sql_name=sql_name,
+                                             app_name=app_name)
+
     print("Done building relationship table.")
+    relationship_results = spark.sql(sql_query)
 
-    relationship_results = spark.sql(f"SELECT STATE_2000, COUNTY_2000, TRACT_2000, BLK_2000, STATE_2010, COUNTY_2010, "
-                                     f"TRACT_2010, BLK_2010, AREALAND_INT, AREALAND_2010 FROM relationship")
-
+    if args.filterstate:
+        print(f"State: {args.filterstate}")
     print("Start processing results")
-    for result in relationship_results.collect():
-        if int(result['AREALAND_2010']) == 0:
-            continue
-        geocode_2000 = GeoCode(result['STATE_2000'], result['COUNTY_2000'], result['TRACT_2000'], result['BLK_2000'], result['AREALAND_INT'])
-        geocode_2010 = GeoCode(result['STATE_2010'], result['COUNTY_2010'], result['TRACT_2010'], result['BLK_2010'], result['AREALAND_2010'])
-        block_map[geocode_2010][geocode_2000] = int(geocode_2000.area_land) / int(geocode_2010.area_land)
-    print("Result dict built")
+    if aggregate_from == "BLOCK":
+        return handle_block_results(relationship_results, geo_id_info, summary_level)
+    elif aggregate_from == "TRACT":
+        return handle_tract_results(relationship_results, geo_id_info, summary_level)
+    return NotImplemented("Have to provide aggregate_from")
 
+
+def handle_tract_results(relationship_results, geo_id_info, summary_level):
+    print("Handle Tract Results")
+    block_map = defaultdict(dict)
+    for result in relationship_results.collect():
+        if args.filterstate and str(args.filterstate) != str(result['STATE10']):
+            continue
+        geocode_2000 = GeoCode(result['STATE00'], result['COUNTY00'], result['TRACT00'])
+        geocode_2010 = GeoCode(result['STATE10'], result['COUNTY10'], result['TRACT10'])
+        block_map[str(geocode_2010)[:geo_id_info[summary_level]]][str(geocode_2000)] = float(result['AREAPCT00PT'])
+    return block_map
+
+
+def handle_block_results(relationship_results, geo_id_info, summary_level):
+    print("Handle Block Results")
+    block_map = defaultdict(dict)
+    for result in relationship_results.collect():
+        if int(result['AREALAND_2000']) == 0:
+            continue
+        if args.filterstate and str(args.filterstate) != str(result['STATE_2010']):
+            continue
+        geocode_2000 = GeoCode(result['STATE_2000'], result['COUNTY_2000'], result['TRACT_2000'], result['BLK_2000'],
+                               result['AREALAND_INT'])
+        geocode_2010 = GeoCode(result['STATE_2010'], result['COUNTY_2010'], result['TRACT_2010'], result['BLK_2010'],
+                               result['AREALAND_2010'])
+        block_map[str(geocode_2010)[:geo_id_info[summary_level]]][str(geocode_2000)] = \
+            int(geocode_2000.area_land) / int(result['AREALAND_2000'])
     return block_map
 
 
 def filter_ids_persons(ids):
     # This will include all of the none leaf ids of the tables proposed by Philip.
-    # I wish I could not find a automatic way to tell what where totals and what where leafs.
+    # I wish I could find a automatic way to tell what where totals and what where leafs.
     total_table_reference = ["P003001","P003002","P003009","P003010","P003026","P003047",
                              "P003063","P003070","P004001","P004003","P004004","P004011",
                              "P004012","P004028","P004049","P004065","P004072","P005001",
@@ -172,22 +335,6 @@ def filter_based_on_list(ids, total_table_reference):
         return True
 
 
-def test_block_consistency(block_map):
-    count_cons = 0
-    count_incons = 0
-    for k, v in block_map.items():
-        contribution_total_2000 = 0
-        for item in v:
-            contribution_total_2000 += float(item[1])
-        if contribution_total_2000 != float(k[1]):
-            print(f"Found inconsistency for {k[0]}")
-            count_incons += 1
-        else:
-            count_cons += 1
-    print(f"Size of inconsistency {count_incons}")
-    print(f"Size of consistant {count_cons}")
-
-
 if __name__ == "__main__":
     import argparse
 
@@ -195,20 +342,16 @@ if __name__ == "__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--type", help="housing or person")
     parser.add_argument("--sumlevel", help="Valid summary levels include STATE, COUNTY", required=True,
-                        choices=['BLOCK'])
+                        choices=['TRACT', 'COUNTY'])
     parser.add_argument("--threshold", help="Threshold to be include in multi list", required=True, type=float)
-    parser.add_argument("--filterstate", help="The fips state code", type=int)
+    parser.add_argument("--filterstate", help="The fips state code", type=str)
     args = parser.parse_args()
 
     spark = cspark.spark_session(logLevel='ERROR', pydirs=['.', 'ctools', 'ctools/schema'])
-    if args.filterstate:
-        filter_state_query = f" AND GEO_2000.STATE='{args.filterstate}' "
-    else:
-        filter_state_query = ''
     if args.type:
         print(f'Threshold = {float(args.threshold)}')
         if args.type == 'housing':
-            # smallCellStructure_HouseholdsSF2000(args.sumlevel, args.threshold)
+            smallcell_structure_housing_sf_2000(args.sumlevel, args.threshold)
             pass
         elif args.type == 'person':
             smallcell_structure_persons_sf_2000(args.sumlevel, args.threshold)

@@ -724,15 +724,16 @@ class DecennialData:
             print("  ", var.name, var.desc)
         print("")
 
+
 def year_product_iterator():
     for year in C.SEGMENTS_FOR_YEAR_PRODUCT.keys():
         for product in C.SEGMENTS_FOR_YEAR_PRODUCT[year].keys():
             yield (year,product)
 
 
-def build_relationship_table(path, sql_name):
+def build_relationship_table(path, sql_name, app_name):
     from pyspark.sql import SparkSession
-    spark = SparkSession.builder.getOrCreate()
+    spark = SparkSession.builder.appName(app_name).getOrCreate()
     df = spark.read.csv(path, header=True)
     df.registerTempTable(sql_name)
     print(df)

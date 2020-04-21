@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 #
 """
-dbload.py: create an SQLite3 database from PL94 data. Data loaded includes:
-  STATE | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED
+pl94_dbload.py: create an SQLite3 database from PL94 data for blocks and tracts. Data loaded includes:
+Blocks:   STATE  | COUNTY | TRACT | BLOCK | LOGRECNO | POP | HOUSES | OCCUPIED 
+Geo:      (all fields we record from the GeoHeader)
 
-Datasources:
+PL94 Datasources:
   STATE|COUNTY|TRACT|BLOCK => LOGRECNO  -- Geography file
-  POP --- File 12010
-  HOUSES|OCCUPIED --- File 22010
+  POP --- File 012010
+  HOUSES|OCCUPIED --- File 022010
+
+SF1 Datasources:
+
+NOTES: 
+ * LOGRECNO is not consistent between the PL94 and SF1 files
+ * HOUSES and OCCUPIED do not include GROUP QUARTERS
 """
 
-__version__ = '0.0.1'
+__version__ = '0.2.0'
 import datetime
 import json
 import os
@@ -21,151 +28,220 @@ import sys
 import time
 import zipfile
 import io
+import logging
+import ctools.dbfile
+import pl94_geofile
 
-from sql import SLGSQL
+import constants
+from constants import *
 
 DBFILE="pl94.sqlite3"
+DEBUG_AIAN = None
 
-CACHE_SIZE = -1024              # negative nubmer = multiple of 1024. So this is a 1MB cache.
+CACHE_SIZE = -1024*16           # negative nubmer = multiple of 1024. So this is a 16MB cache.
 SQL_SET_CACHE = "PRAGMA cache_size = {};".format(CACHE_SIZE)
 
-SQL_SCHEMA="""
-CREATE TABLE IF NOT EXISTS blocks (state VARCHAR(2), county INTEGER, tract INTEGER, block INTEGER, logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
+SQL_BLOCKS_SCHEMA="""
+CREATE TABLE IF NOT EXISTS blocks (state INTEGER, county INTEGER, tract INTEGER, block INTEGER, 
+                                   cousub INTEGER, aianhh INTEGER, sldu INTEGER, place INTEGER,
+                                   logrecno INTEGER, pop INTEGER, houses INTEGER, occupied INTEGER);
 CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx0 ON blocks(state,logrecno);
-CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx2 ON blocks(state,county,tract,block);
-CREATE INDEX IF NOT EXISTS blocks_idx3 ON blocks(tract);
-CREATE INDEX IF NOT EXISTS blocks_idx4 ON blocks(pop);
-CREATE INDEX IF NOT EXISTS blocks_idx5 ON blocks(houses);
+CREATE UNIQUE INDEX IF NOT EXISTS blocks_idx1 ON blocks(state,county,tract,block);
+CREATE INDEX IF NOT EXISTS blocks_tract  ON blocks(tract);
+CREATE INDEX IF NOT EXISTS blocks_pop    ON blocks(pop);
+CREATE INDEX IF NOT EXISTS blocks_houses ON blocks(houses);
+CREATE INDEX IF NOT EXISTS blocks_cousub  ON blocks(cousub);
+CREATE INDEX IF NOT EXISTS blocks_aianhh ON blocks(aianhh);
 """
 
-# Define the fileds in the GEO Header. See Figure 2-5 of SF1 publication
-#
-GEO_FILEID=(1,6)
-GEO_STUSAB=(7,2)
-GEO_SUMLEV=(9,3)
-GEO_LOGRECNO=(19,7)
-GEO_COUNTY=(30,3)
-GEO_PLACE=(46,5)            
-GEO_TRACT=(55,6)            
-GEO_BLKGRP=(61,1)
-GEO_BLOCK=(62,4)        # first digit of block is blockgroup
-
 DEBUG_BLOCK=None
+INSERT_GROUP_COUNT=10
+
+from geocode import GEO_HEADER,strip_str,extractall_typed
+
+class Loader:
+    """Class to load the blocks and geo tables"""
+    def __init__(self, args):
+        self.args = args
+        self.db   = ctools.dbfile.DBSqlite3(self.args.db)
+        self.conn = self.db.conn
+        self.conn.row_factory = sqlite3.Row
+        self.c    = self.db.conn.cursor()
+        self.db.execute(SQL_SET_CACHE)
+        if args.replace == False:
+            self.db.create_schema(SQL_BLOCKS_SCHEMA)
+            self.add_geo_schema_new()
+        self.insert = None
+        self.value_template = None
+        self.value_count = 0
+        self.values   = []
+
+    def insert_add(self,values):
+        self.value_count += 1
+        self.values.extend(values)
+
+    def insert_execute(self):
+        if self.value_count > 0:
+            cmd = self.insert + " VALUES " + ",".join([self.value_template] * self.value_count)
+            self.c.execute( cmd, self.values )
+            self.value_count = 0
+            self.values = []
+
+    def add_geo_schema_legacy(self):
+        f = io.StringIO()
+        f.write("CREATE TABLE IF NOT EXISTS geo (")
+        for (ct,gh) in enumerate(GEO_HEADER):
+            if ct>0:
+                f.write(",")
+            f.write(gh.lower())
+            if GEO_HEADER[gh][2] in (str,strip_str):
+                f.write(f" VARCHAR({GEO_HEADER[gh][0]}) ")
+            else:
+                f.write(f" INTEGER ")
+        f.write(");")
+        self.c.execute(f.getvalue())
+        for gh in GEO_HEADER:
+            self.c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
+        
+    def add_geo_schema_new(self):
+        self.c.execute( open("pl94_geofile.sql","r").read())
+        # Add indexes for fields we care about
+        for gh in GEO_HEADER:
+            self.c.execute(f"CREATE INDEX IF NOT EXISTS geo_{gh.lower()} ON geo({gh.lower()})")
+        
+    def decode_geo_line_new(self, line):
+        """Use the compiled geocode decoder to create a dictionary, then insert it into the database"""
+        from geocode import nint
+        gh = pl94_geofile.geo()
+        gh.parse_column_specified(line)
+
+        # Linkage variables
+        if not gh.validate():
+            raise RuntimeError( gh.validate_reason())
+
+        if "990000" <= gh.TRACT <= "990099":
+            # Ignore water tracts
+            return
+
+        values = [getattr(gh,slot) for slot in gh.__slots__]
+        self.insert_add(values)
+        if self.value_count > INSERT_GROUP_COUNT:
+            self.insert_execute()
+
+    def decode_012010(self, line):
+        """Update the database for a line in segmetn 1 of the 2010 PL94 or SF1 files. 
+        Note that the logical record number may not be in the DB, because this line may not be for a block or tract.
+        P0010001 = Total Population
+        """
+        fields = line.split(",")
+        (fileid,stusab,chariter,cifsn,logrecno,P0010001) = fields[0:6]
+        state = constants.STUSAB_TO_STATE[stusab]
+        assert fileid in ('PLST','SF1ST')
+        # Update the blocks. If LOGRECNO is not in database, nothing is updated
+        # because of referential integrity, LOGRECNO can only be in the database once
+        self.c.execute("UPDATE blocks SET pop=? WHERE state=? AND logrecno=?", (P0010001,state,logrecno))
+
+    def decode_pl94_022010(self, line):
+        """Update the database for a line. Note that the logical record number may not be in the DB, 
+        because this line may not be for a block
+        H0010001 = Total Housing Units
+        H0010002 = Occupied Housing Units
+        H0010003 = Vacant Housing Units
+        """
+        fields = line.split(",")
+        (fileid,stusab,chariter,cifsn,logrecno) = fields[0:5]
+        state = constants.STUSAB_TO_STATE[stusab]
+        (H0010001,H0010002,H0010003) = fields[-3:]
+
+        assert fileid=='PLST'
+        self.c.execute("UPDATE blocks set houses=?,occupied=? where state=? and logrecno=?",
+                  (H0010001,H0010002,state,logrecno))
+
+    def load_file(self, f, func):
+        t0 = time.time()
+        self.c = self.conn.cursor()
+        for (ll,line) in enumerate(f,1):
+            try:
+                func(line)
+            except ValueError as e:
+                raise ValueError("bad line {}: {}".format(ll,line))
+            if ll%10000==0:
+                print("{}...".format(ll),end='',file=sys.stderr,flush=True)
+        self.insert_execute()   # finish the insert
+        self.conn.commit()
+        t1 = time.time()
+        print(f"\n",file=sys.stderr)
+        print(f"Finished {f.name}; {ll} lines, {ll/(t1-t0):,.0f} lines/sec",file=sys.stderr)
+
+    def process_file_name(self, f, name):
+        state = constants.STUSAB_TO_STATE[name[0:2].upper()]
+        if name[2:] in ['geo2010.pl','geo2010.sf1']:
+            # load the geo table
+            if args.replace:
+                self.conn.execute("DELETE FROM geo where STATE=?",(state,))
+
+            gh = pl94_geofile.geo()
+            self.insert = "INSERT INTO geo (" + ",".join(gh.__slots__) + ")"
+            self.value_template = "(" + ",".join(["?"]*len(gh.__slots__)) + ")"
 
 
-class SLGSQL:
-    def iso_now():
-        """Report current time in ISO-8601 format"""
-        return datetime.datetime.now().isoformat()[0:19]
+            self.load_file(f, self.decode_geo_line_new)
+            # copy to the blocks table (really unnecessary; we should just copy over the logrecno, but this makes things easier)
+            self.conn.execute("""
+            INSERT INTO blocks (state, county, tract, block, cousub, aianhh, sldu, place, logrecno)
+            SELECT cast(state as integer), 
+                   cast(county as integer), 
+                   cast(tract as integer), 
+                   cast(block as integer), 
+                   cast(cousub as integer), 
+                   cast(aianhh as integer), 
+                   cast(sldu as integer), 
+                   cast(place as integer), 
+                   cast(logrecno  as integer)
+            FROM geo WHERE cast(state as integer)=? AND cast(sumlev as integer) IN (101,750)""",(state,)) 
+            return
+        if name[2:] in ['000012010.pl','000012010.sf1']:
+            if args.replace:
+                self.conn.execute("UPDATE blocks set pop=0 where STATE=?",(state,))
+            self.load_file(f, self.decode_012010)
+        elif name[2:]=='000022010.pl':
+            if args.replace:
+                self.conn.execute("UPDATE blocks set houses=0, occupied=0 where STATE=?",(state,))
+            self.load_file(f, self.decode_pl94_022010)
+        else:
+            raise RuntimeError("Unknown file type: {}".format(fname))
 
-    def create_schema(conn,schema):
-        """Create the schema if it doesn't exist."""
-        c = conn.cursor()
-        for line in schema.split(";"):
-            c.execute(line)
+    def process_file_or_zip(self, fname):
+        (path,name) = os.path.split(fname)
+        print(f"process_file {name}")
+        if name.lower().endswith(".zip"):
+            zf = zipfile.ZipFile(fname)
+            for zn in zf.namelist():
+                if zn.endswith(".pl"):
+                    self.process_file_name( io.TextIOWrapper(zf.open(zn), encoding='latin1'), zn)
+            return
+        self.process_file_name(open(fname, encoding='latin1'), name)
 
-    def execselect(conn, sql, vals=()):
-        """Execute a SQL query and return the first line"""
-        c = conn.cursor()
-        c.execute(sql, vals)
-        return c.fetchone()
-
-
-
-def make_database(conn):
-    conn.row_factory = sqlite3.Row
-    conn.cursor().execute(SQL_SET_CACHE)
-    SLGSQL.create_schema(conn,SQL_SCHEMA)
-
-def decode_geo_line(conn,c,line):
-    """Decode the hiearchical geography lines. These must be done before the other files are read
-    to get the logrecno."""
-    def ex(desc):
-        return line[desc[0]-1:desc[0]+desc[1]-1]
-    def exi(desc):
-        return int(ex(desc))
-    if exi(GEO_SUMLEV) in [750]:
-        try:
-            if DEBUG_BLOCK and exi(GEO_BLOCK)==DEBUG_BLOCK:
-                print("INSERT INTO blocks (state,county,tract,block,logrecno) values ({},{},{},{},{})".format(
-                    ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
-            c.execute("INSERT INTO blocks (state,county,tract,block,logrecno) values (?,?,?,?,?)",
-                      (ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
-        except sqlite3.IntegrityError as e:
-            conn.commit()          # save where we are
-            print("INSERT INTO blocks (state,county,tract,block,logrecno) values ({},{},{},{},{})".format(
-                ex(GEO_STUSAB), exi(GEO_COUNTY), exi(GEO_TRACT), exi(GEO_BLOCK), exi(GEO_LOGRECNO)))
-            raise e
-            
-def decode_12010(conn,c,line):
-    """Update the database for a line. Note that the logical record number may not be in the DB, because this line may not be for a block"""
-    fields = line.split(",")
-    (fileid,stusab,chariter,cifsn,logrecno,p0010001) = fields[0:6]
-    assert fileid=='PLST'
-    c.execute("UPDATE blocks set pop=? where state=? and logrecno=?",
-              (p0010001,stusab,logrecno))
-
-def decode_22010(conn,c,line):
-    """Update the database for a line. Note that the logical record number may not be in the DB, because this line may not be for a block"""
-    fields = line.split(",")
-    (fileid,stusab,chariter,cifsn,logrecno) = fields[0:5]
-    (h0010001,h0010002,h0010003) = fields[-3:]
-    assert fileid=='PLST'
-    c.execute("UPDATE blocks set houses=?,occupied=? where state=? and logrecno=?",
-              (h0010001,h0010002,stusab,logrecno))
-
-def load_file(conn,f,func):
-    t0 = time.time()
-    c = conn.cursor()
-    for (ll,line) in enumerate(f,1):
-        try:
-            func(conn,c,line)
-        except ValueError as e:
-            raise ValueError("bad line {}: {}".format(ll,line))
-        if ll%10000==0:
-            print("{}...".format(ll),end='')
-            sys.stdout.flush()
-    conn.commit()
-    t1 = time.time()
-    print("Finished {}; {:,.0f} lines/sec".format(f.name,ll/(t1-t0)))
-
-def process_name(conn,f,name):
-    if name[2:]=='geo2010.pl':
-        load_file(conn,f,decode_geo_line)
-    elif name[2:]=='000012010.pl':
-        load_file(conn,f,decode_12010)
-    elif name[2:]=='000022010.pl':
-        load_file(conn,f,decode_22010)
-    else:
-        raise RuntimeError("Unknown file type: {}".format(fname))
-
-def process_file(conn,fname):
-    (path,name) = os.path.split(fname)
-    print(f"process_file{name}")
-    if name.lower().endswith(".zip"):
-        zf = zipfile.ZipFile(fname)
-        for zn in zf.namelist():
-            if zn.endswith(".pl"):
-                process_name( conn, io.TextIOWrapper(zf.open(zn), encoding='latin1'), zn)
-        return
-    process_name(conn, open(fname, encoding='latin1'), name)
-    
-
-def db_connection(filename=DBFILE):
-    return sqlite3.connect(filename)
 
 if __name__ == "__main__":
     import argparse
-
     parser = argparse.ArgumentParser(description='Ingest the PL94 block-level population counts',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--db", help="Specify database location", default=DBFILE)
-    parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file. For best results, use the ZIP file", 
+    parser.add_argument("--replace", help='replace data for the state', action='store_true')
+    parser.add_argument("--wipe", help="Erase the DB file first", action='store_true')
+    parser.add_argument("files", help="Files to ingest. May be XX000012010.pl XX000022010.pl or a ZIP file."
+                        " For best results, use the ZIP file", 
                         nargs="*")
+    parser.add_argument("--sumlev", help="Only do this summary level")
+    parser.add_argument("--aianhh", help="Print everything we know about an AIANHH")
+    parser.add_argument("--debuglogrecno", help="logrecno for debugging", type=int)
     args = parser.parse_args()
 
+    if args.wipe and os.path.exists(args.db):
+        os.unlink(args.db)
+
     # open database and give me a big cache
-    conn = db_connection(args.db)
-    make_database(conn)
+    ld = Loader(args)
     for fname in args.files:
-        process_file(conn,fname)
+        ld.process_file_or_zip(fname)

@@ -26,8 +26,6 @@ from ctools.schema.schema import Schema
 from ctools.schema.variable import Variable
 from ctools.schema import TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
 
-SUMLEV_DEFAULT='750 for PL94, 101 for SF1, and 100 for UR1'
-
 debug = False
 
 """
@@ -37,7 +35,7 @@ Also consistent were the variable names.
 """
 
 import cb_spec_decoder
-from geolevels import GEOLEVELS
+from summary_levels import SUMLEVS
 
 FIELDS = ['GEOID','LOGRECNO','SUMLEV','STATE','COUNTY','TRACT','BLOCK',
           'ZCTA5', # ZIP Code Tabulation Area (5-digit)
@@ -106,7 +104,7 @@ def make_counts(geotable,geofile,args):
     tt = tydoc.tytable()
     tt.add_head(['Summary Level','Count','Description'])
     for key in sorted(counts.keys()):
-        tt.add_data([key,counts[key],GEOLEVELS.get(key,'???')])
+        tt.add_data([key,counts[key],SUMLEVS.get(key,'???')])
     tt.render(sys.stdout, format=args.format)
 
 def make_distinct(geotable,geofile,args):
@@ -124,13 +122,14 @@ def make_distinct(geotable,geofile,args):
     tt.render(sys.stdout, format=args.format)
 
 if __name__ == "__main__":
+
     import argparse
     parser = argparse.ArgumentParser(description="""Geodump: using the parsed schema, dump information from the geography file for crosswalks.""",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--year",    type=int, help="Use statistics from this year" ,default=2010)
     parser.add_argument("--product", type=str, help="Specify the product", default=C.SF1)
     parser.add_argument("--limit",   help="limit output to this many records. Specify 0 for no limit", type=int, default=10)
-    parser.add_argument("--sumlev",  help="Only print this summary leve. Specify 'any' for all.", default=SUMLEV_DEFAULT)
+    parser.add_argument("--sumlev",  help="Only print this summary level. Default is 750 for PL94, 101 for SF1, and 100 for UR1")
     parser.add_argument("--debug",   action='store_true')
     parser.add_argument("--format",  help="Specify format of output. Can be md,html,latex,csv", default='md')
     parser.add_argument("geofile", help="Specify the geofile to dump")
@@ -141,10 +140,12 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    if args.sumlev==SUMLEV_DEFAULT:
-        args.sumlev = {C.PL94:'750',
+    SUMLEV_DEFAULTS = {C.PL94:'750',
                        C.SF1:'101',
                        C.UR1:'100'}[args.product]
+
+    if args.sumlev==None
+        args.sumlev = SUMLEV_DEFAULTS
 
     specfile = cb_spec_decoder.get_cvsspec(year=args.year,product=args.product)
     schema   = cb_spec_decoder.schema_for_spec(specfile, year=args.year, product=args.product)

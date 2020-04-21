@@ -51,7 +51,7 @@ from ctools.schema.schema import Schema
 from ctools.schema.variable import Variable
 from ctools.schema import TYPE_INTEGER,TYPE_VARCHAR,TYPE_NUMBER,TYPE_DECIMAL
 
-debug = False
+DEBUG = False
 
 """
 These regular expressions are used to parse the structure of Chapter 6 of the data product specification.
@@ -262,8 +262,8 @@ def add_named_table(schema, table_name, table_desc, linkage_vars, cifsn):
     if not schema.has_table(table_name):
         # New table! Create it and add the linkage variables if we have any
 
-        if debug:
-            print(f"Creating table {table_name} in file number {cifsn}")
+        if DEBUG:
+            print(f"Creating table {table_name} in file number {cifsn}",file=sys.stderr)
         table = schema.add_table_named(name=table_name, 
                                        desc=table_desc,
                                        delimiter=',',
@@ -271,8 +271,8 @@ def add_named_table(schema, table_name, table_desc, linkage_vars, cifsn):
 
         # Add any memorized linkage variables. 
         for var in linkage_vars:
-            if debug:
-                print(f"Adding saved linkage variable {var.name} to table {table_name}")
+            if DEBUG:
+                print(f"Adding saved linkage variable {var.name} to table {table_name}",file=sys.stderr)
             table.add_variable(var)
         return table
     else:
@@ -310,9 +310,9 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
     table           = None
     in_data_dictionary = False
     last_line       = ""
-    #debug = True
 
-    print(f"csv filename: {csv_filename}")
+    debug = debug or DEBUG
+
     ### UR1 and SF1 use the same spec
     if product==C.UR1:
         product = C.SF1
@@ -383,7 +383,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             if lnk and lnk[0] in C.LINKAGE_VARIABLE_NAMES:
                 (lnk_name, lnk_desc, lnk_cifsn, lnk_maxsize) = lnk
                 if debug:
-                    print(f"Discovered linkage variable {lnk_name}")
+                    print(f"Discovered linkage variable {lnk_name}",file=sys.stderr)
                 linkage_vars.append( Variable(name  = lnk_name, 
                                               desc  = lnk_desc, 
                                               field = segment_field_number,
@@ -398,7 +398,8 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         #if not new_table_name:
         #    print(f"Not new. Table was: {table}")
         if new_table_name:
-            print(f"Discovered new table {table}")
+            if debug:
+                print(f"Discovered new table {table}",file=sys.stderr)
             ### Patch as necessary for missing segment starts
             for mss in MISSING_SEGMENT_STARTS:
                 if mss[C.YEAR]==year and mss[C.PRODUCT] == product and mss[C.TABLE] == new_table_name:
@@ -545,18 +546,21 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
 
     for table in schema.tables():
         if table in BAD_TABLES:
-            print(f"Ignoring table {table}")
+            logging.error(f"Ignoring table {table}")
             continue
         if len(table.vars()) <= len(linkage_vars):
-            print(f"detected table vars: {table.varnames()}")
-            print(f"and linkage_vars {str(linkage_vars)}")
+            logging.info(f"detected table vars: {table.varnames()}")
+            logging.info(f"and linkage_vars {str(linkage_vars)}")
             raise RuntimeError(f"{year} {product} Table {table.name} does not have enough variables (has {len(table.vars())}, vs # expected links {len(linkage_vars)})")
 
     if debug:
-        print("The following geo columns were not parsed:")
+        first = True
         for i in range(0,max(geo_columns)):
             if i not in geo_columns:
-                print(i,end=' ')
+                if first:
+                    logging.error("The following geo columns were not parsed:")
+                    first = False
+                logging.error(i,end=' ')
         print()
     return schema
 
@@ -744,34 +748,56 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="""Test program:
     Extract the schema from the SF1 Chapter 6 and dump the schema. 
-    Normally this module will be used to generate a Schema object for a specific data dictionary specification.""",
+    Normally this module will be used to generate a Schema object for a specific data dictionary specification.
+
+    Examples:
+
+    Dump the first 50 lines of the alaska geography file:
+      python cb_spec_decoder.py --geofiledump data/2010_pl94/akgeo2010.pl
+    
+    Output Python classes to decode a geography file:
+      python cb_spec_decoder.py --geoclassdump 
+""",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--geodump", help='Using the schema, dump the geo information for the provided file')
+    parser.add_argument("--geofiledump", help='Using the schema, dump the geo information for the provided file')
+    parser.add_argument("--geoclassdump", help='Using the schema, output python file to parse it to the specified file name')
+    parser.add_argument("--geosqldump", help='Using the schema, output python file to parse it to the specified file name')
     parser.add_argument("--year",    type=int, help="Use statistics from this year" ,default=2010)
     parser.add_argument("--product", type=str, default=C.SF1)
     parser.add_argument("--segment", help="dump the tables just this segment",type=int)
     parser.add_argument("--limit", help="limit output to this many records. Specify 0 for no limit", type=int, default=50)
     parser.add_argument("--sumlev", help="Just print this summary level")
     parser.add_argument("--debug",   action='store_true')
+    parser.add_argument("--schemadump",   action='store_true', help='dump the schema')
     args = parser.parse_args()
-
 
     specfile = get_cvsspec(year=args.year,product=args.product)
     schema   = schema_for_spec(specfile, year=args.year, product=args.product, debug=args.debug)
 
-    if args.geodump:
+    if args.geoclassdump:
+        geotable = schema.get_table(C.GEO_TABLE)
+        with open(args.geoclassdump,"w") as f:
+            f.write(geotable.python_class())
+        exit(0)
+
+    if args.geosqldump:
+        geotable = schema.get_table(C.GEO_TABLE)
+        with open(args.geosqldump,"w") as f:
+            f.write(geotable.sql_schema())
+        exit(0)
+
+    if args.geofiledump:
         geotable = schema.get_table(C.GEO_TABLE)
         tt = tydoc.tytable()
         tt.add_head(['LOGRECNO','SUMLEV','STATE','COUNTY','TRACT','BLOCK'])
         rows = 0
-        for line in open(args.geodump,'r',encoding='latin1'):
+        for (ll,line) in enumerate(open(args.geofiledump,'r',encoding='latin1')):
             d = geotable.parse_line_to_dict(line)
             if args.sumlev is not None:
                 if args.sumlev!=d['SUMLEV']:
                     continue
             tt.add_data( [d['LOGRECNO'], d['SUMLEV'], d['STATE'], d['COUNTY'], d['TRACT'], d['BLOCK']] )
-            rows += 1
-            if (rows==args.limit) and args.limit>0:
+            if args.limit and (ll+1) >= args.limit:
                 break
         tt.render(sys.stdout, format='md')
         exit(0)
@@ -781,7 +807,7 @@ if __name__ == "__main__":
         for table in schema.tables():
             if table.attrib[C.CIFSN]==args.segment:
                 table.dump()
-    else:
+    if args.schemadump:
         # If args.segment is not provided, then dump the entire schema
         schema.dump()
     

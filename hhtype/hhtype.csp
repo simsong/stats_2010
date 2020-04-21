@@ -1,0 +1,100 @@
+;; -*- mode: lisp; -*-
+;; Define variables and their domains
+;; Households (either 1 or 2)
+;;
+
+(int SIZE 1 7)                  ;; $PRINT
+
+;; Marriage Rules
+(int MARRIED 0 1)              
+(int MARRIED_SAME_SEX 0 1)      ;; $PRINT
+(int MARRIED_OPPOSITE_SEX 0 1)  ;; $PRINT
+(= MARRIED (+ MARRIED_SAME_SEX MARRIED_OPPOSITE_SEX))
+(imp (= SIZE 1) (= MARRIED_SAME_SEX 0))
+(imp (= SIZE 1) (= MARRIED_OPPOSITE_SEX 0))
+(imp (= MARRIED_SAME_SEX 1) (= MARRIED_OPPOSITE_SEX 0))
+(imp (= MARRIED_OPPOSITE_SEX 1) (= MARRIED_SAME_SEX 0))
+
+;; MULTIG RULES
+(int MULTIG 0 1)                 ;; $PRINT
+(imp (= MULTIG 1) (>= SIZE 2))                    ; multi-generational must have 2 or more people
+(imp (and (= SIZE 2) (= MARRIED 1)) (= MULTIG 0)) ; in a married household, multi-generational must have 3 or more
+
+;; Child variables
+(int CHILD_UNDER_18 0 1)              ;; $PRINT including the householder, spouse, unmarried partner
+
+(int OWN_CHILD_UNDER_18 0 1)          ;; $PRINT biological, adopted or step
+(int OWN_CHILD_UNDER_6_ONLY  0 1)     ;; $PRINT
+(int OWN_CHILD_BETWEEN_6_AND_17 0 1)  ;; $PRINT
+(int OWN_CHILD_IN_BOTH_RANGES 0 1)    ;; $PRINT
+
+(int CXHHSUP_UNDER_18 0 1)            ;; $PRINT child under 18 excluding householder spouse unmarried partner
+(int CXHHSUP_UNDER_6_ONLY 0 1)        ;; $PRINT 
+(int CXHHSUP_BETWEEN_6_AND_17 0 1)    ;; $PRINT 
+(int CXHHSUP_IN_BOTH_RANGES 0 1)      ;; $PRINT
+
+;; Own Child rules
+;; If we have a child 0-6 or 6-17, we have a child under 18, and a child
+(imp (> 0 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
+     (and 
+      (= OWN_CHILD_UNDER_18 1)
+      (= CHILD_UNDER_18 1)))
+
+;; If we have both a child 0-6 and 6-17, we have a child in both ranges
+(imp (> 1 (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 ))
+     (= OWN_CHILD_IN_BOTH_RANGES 1))
+
+;; If we have a child under 18, we have at least two people
+(imp (= OWN_CHILD_UNDER_18 1) (>= SIZE 2))
+
+;; If we have a child in both ranges, we have at least three people
+(imp (= OWN_CHILD_IN_BOTH_RANGES 1) (>= SIZE 3))
+
+;; If we do not have an own child under 18, we do not have an own child
+(imp (= OWN_CHILD_UNDER_18 0)
+     (= (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 OWN_CHILD_IN_BOTH_RANGES) 0))
+
+;; If we do have an own child under 18, at least one of the own child types must be true
+(imp (= OWN_CHILD_UNDER_18 1)
+     (>= (+ OWN_CHILD_UNDER_6_ONLY OWN_CHILD_BETWEEN_6_AND_17 OWN_CHILD_IN_BOTH_RANGES) 1))
+
+
+;; CXXHSUP rules
+;; If we have a CXXHUP 0-6 or 6-17, we have a CXXHUP under 18 and a child
+(imp (> 0 (+ CXHHSUP_UNDER_6_ONLY CXHHSUP_BETWEEN_6_AND_17 ))
+     (and 
+      (= CXHHSUP_UNDER_18 1)
+      (= CHILD_UNDER_18 1)))
+
+;; If we have both a cxxsup 0-6 and 6-17, we have a cxxsup in both ranges
+(imp (> 1 (+ CXHHSUP_UNDER_6_ONLY CXHHSUP_BETWEEN_6_AND_17 ))
+     (= CXHHSUP_IN_BOTH_RANGES 1))
+
+;; If we have a cxxsup under 18, we have at least two people
+(imp (= CXHHSUP_UNDER_18 1) (>= SIZE 2))
+
+;; If we have a cxxsup in both ranges, we have at least three people
+(imp (= CXHHSUP_IN_BOTH_RANGES 1) (>= SIZE 3))
+
+;; If we do not have an own cxxsup under 18, we do not have an own cxxsup
+(imp (= CXHHSUP_UNDER_18 0)
+     (= (+ CXHHSUP_UNDER_6_ONLY CXHHSUP_BETWEEN_6_AND_17 CXHHSUP_IN_BOTH_RANGES) 0))
+
+;; If we do have an own cxxsup under 18, at least one of the own cxxsup types must be true
+(imp (= CXHHSUP_UNDER_18 1)
+     (>= (+ CXHHSUP_UNDER_6_ONLY CXHHSUP_BETWEEN_6_AND_17 CXHHSUP_IN_BOTH_RANGES) 1))
+
+
+;; Interactions.
+;; OWN_CHILD implies CXHHSUP but not vice-versa
+(imp (= OWN_CHILD_UNDER_18 1)
+     (= CXHHSUP_UNDER_18 1))
+
+(imp (= OWN_CHILD_UNDER_6_ONLY 1)
+     (= CXHHSUP_UNDER_6_ONLY 1))
+
+(imp (= OWN_CHILD_BETWEEN_6_AND_17 1)
+     (= CXHHSUP_BETWEEN_6_AND_17 1))
+
+(imp (= OWN_CHILD_IN_BOTH_RANGES 1)
+     (= CXHHSUP_IN_BOTH_RANGES 1))

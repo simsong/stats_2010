@@ -9,15 +9,10 @@ SF1_ROOT = location of SF1.
 
 """
 
-
-
 from constants import *
 from copy import deepcopy
 from string import ascii_uppercase
 from string import ascii_uppercase
-import cb_spec_decoder
-import ctools.cspark as cspark
-import ctools.tydoc  as tydoc
 import json
 import logging
 import os
@@ -25,14 +20,19 @@ import re
 import sf1_info as info
 import sf1_info_house as info_house
 import sys
-from collections import defaultdict
-from ctools.s3 import put_object, get_bucket_key
 import shutil
 import pathlib
 import time
 import pprint
 import glob
 import uuid
+
+import cb_spec_decoder
+import ctools.cspark as cspark
+import ctools.tydoc  as tydoc
+
+from collections import defaultdict
+from ctools.s3 import put_object, get_bucket_key
 
 if 'DAS_S3ROOT' in os.environ:
     DATAROOT = f"{os.environ['DAS_S3ROOT']}/2000/;{os.environ['DAS_S3ROOT']}/2010/"
@@ -90,16 +90,19 @@ def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
     # TENURE x HHSIZE x Major Race Alone / HISP of Householder
     #tables +=   [f"H15{letter}" for letter in ascii_uppercase[:9]] # A-I # Not yet in scope of histogram
     # H16A-I # Not yet in scope
-    print('smallCellStructure_HouseholdsSF2000')
+    if DEBUG:
+        print('smallCellStructure_HouseholdsSF2000',file=sys.stderr)
     sf1_year = 2000
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
-    print("Geolevels by state and summary level:")
+    if DEBUG:
+        print("Geolevels by state and summary level:",file=sys.stderr)
     sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
     multi_index_list = []
     for table in tables:
         try:
-            print(f'Loading Table: {table}')
+            if DEBUG:
+                print(f'Loading Table: {table}',file=sys.stderr)
             sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
             result_temp_table = spark.sql(f"SELECT * FROM GEO_2000 "
                 f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND "
@@ -120,7 +123,8 @@ def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
     for v, k in state_dict.items():
         save_data(summary_level, v, k, threshold, uuid_str)
     end_time = time.time()
-    print(f'Save data in {end_time - start_time}')
+    if DEBUG:
+        print(f'Save data in {end_time - start_time}',file=sys.stderr)
 
 
 def smallCellStructure_PersonsSF2000(summary_level, threshold):
@@ -173,25 +177,30 @@ def smallCellStructure_PersonsSF2000(summary_level, threshold):
     current_product = SF1
     sf1_2000 = cb_spec_decoder.DecennialData(dataroot=DATAROOT, year=sf1_year, product=current_product)
 
-    print("Geolevels by state and summary level:")
+    if DEBUG:
+        print("Geolevels by state and summary level:",file=sys.stderr)
     sf1_2000.get_df(tableName=GEO_TABLE, sqlName='GEO_2000')
     multi_index_list = []
     for table in tables:
         try:
             # Just wanted to break after first loop to stop for testing.
-            print(f'Loading Table: {table}')
+            if DEBUG:
+                print(f'Loading Table: {table}',file=sys.stderr)
             sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
             regex = re.compile(r'^[P]')
             all_var_names = sf1_2000.get_table(table).varnames()
-            print(f"Length of all vars {len(all_var_names)}")
+            if DEBUG:
+                print(f"Length of all vars {len(all_var_names)}",file=sys.stderr)
             current_table_var_names = list(filter(filter_ids_persons, list(filter(regex.search, list(all_var_names)))))
-            print(f"Length of filtered vars {len(current_table_var_names)}")
+            if DEBUG:
+                print(f"Length of filtered vars {len(current_table_var_names)}",file=sys.stderr)
             current_table_var_string = ",".join(current_table_var_names)
             table_info = info.get_correct_builder(table, current_table_var_names)
             # This sql does the join for the GEO_2000 table with the current table and then registers the new dataframe
             # as a temp table.
             # This is so we can use the already joined table to find the zeros. 
-            print(f'Building temp table for {table}')
+            if DEBUG:
+                print(f'Building temp table for {table}',file=sys.stderr)
             result_temp_table = spark.sql(f"SELECT GEO_2000.LOGRECNO, GEO_2000.STUSAB, GEO_2000.STATE, GEO_2000.COUNTY, GEO_2000.SUMLEV, GEO_2000.GEOCOMP, GEO_2000.NAME, {current_table_var_string} FROM GEO_2000 "
                     f"INNER JOIN {table}_2000 ON GEO_2000.LOGRECNO={table}_2000.LOGRECNO AND GEO_2000.STUSAB={table}_2000.STUSAB "
                     f"WHERE GEO_2000.SUMLEV='{SUMMARY_LEVEL_MAP[summary_level]}'{filter_state_query}AND GEO_2000.GEOCOMP='00' ORDER BY GEO_2000.STUSAB")
@@ -379,7 +388,7 @@ if __name__=="__main__":
                 print("Validating states...")
                 #for obj in ypfiles:
                 #    print(obj)
-                for state in STATES:
+                for state in STATE_NAMES:
                     for cifsn in range(SEGMENTS_FOR_YEAR_PRODUCT[year][product]):
                         objs = [obj for obj in ypfiles if obj[STATE]==state and obj[CIFSN]==cifsn]
                         if len(objs)==0:

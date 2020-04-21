@@ -19,3 +19,9 @@ logs/
 shell.out*
 \#*
 recon/logs
+recon.bash
+*.xlsx
+./*.pdf
+*.sqlite3-journal
+x.*
+*.db

@@ -88,7 +88,8 @@ def smallcell_structure_persons_sf_2000(summary_level, threshold):
     for table in tables:
         try:
             # Just wanted to break after first loop to stop for testing.
-            print(f'Loading Table: {table}')
+            if DEBUG:
+                print(f'Loading Table: {table}',file=sys.stderr)
             sf1_2000.get_df(tableName=f"{table}", sqlName=f"{table}_2000")
             regex = re.compile(r'^[P]')
             all_var_names = sf1_2000.get_table(table).varnames()

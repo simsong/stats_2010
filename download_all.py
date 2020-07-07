@@ -92,7 +92,7 @@ if __name__=="__main__":
                     download(url,zipdir)
                     count += 1
         if product.lower() == "relationship":
-            for state_info in STATES_FIPS_DICT:
+            for state_info in STATES_DICTS:
                 try:
                     print(f'Downloading {state_info["state"]}')
                     url = DOWNLOAD_URLS[year][product].format(state_fips=state_info['state'])

@@ -13,15 +13,15 @@ The first 5 columns of each file are linkage variables, for linking the tables t
 
 Unfortunately, naming schemes were not consistent within 2000 and were changed from 2000 to 2010.
 This file attempts to provide a simple interface for downloading, unpacking, and processing all of
-the files. 
+the files.
 
 The documentation is internally inconsitent, in that sometimes the
 multiple files for each state are called "segments" and sometimes they
-are called "files". 
+are called "files".
 
 We try to consistently use the term:
-  - "cifsn" to describe the numbers that go from 1..N. 
-  - segment to describe the name "geo" and the zero-filed representation of the cifsn, 
+  - "cifsn" to describe the numbers that go from 1..N.
+  - segment to describe the name "geo" and the zero-filed representation of the cifsn,
     which seems to be numbers 00000 through {N:05d}
 """
 
@@ -35,7 +35,7 @@ if not os.path.exists(DOC_DIR):
 YEAR = 'year'
 YEARS = [2000,2010]
 
-# products. Note that it is called the PL94 in places and te 
+# products. Note that it is called the PL94 in places and te
 PRODUCT = 'product'
 PL94 = 'pl94'
 SF1  = 'sf1'
@@ -59,12 +59,12 @@ PRODUCT_EXTS = { PL94:'pl',
                  SF3:'sf3',
                  SF4:'sf4',
                  UR1:'ur1' }
-                    
+
 # Number of files per data product
 SEGMENTS_FOR_YEAR_PRODUCT = {2000:
                              {PL94: 2,
                               SF1 : 39,
-                              SF2 : -1, 
+                              SF2 : -1,
                               SF3 : -1,
                               SF4 : -1,
                               AIANSF: -1 },
@@ -72,7 +72,7 @@ SEGMENTS_FOR_YEAR_PRODUCT = {2000:
                              {PL94: 2,
                               SF1 : 47,
                               UR1 : 48,
-                              SF2 : -1, 
+                              SF2 : -1,
                               AIANSF: -1 } }
 
 MAX_CIFSN = 49                # highest anywhere
@@ -102,7 +102,7 @@ SPEC_FILES = [SPEC_CSV_FILE,
 # States. Note that for consistency, we use the phrase 'state' to refer to a 2-letter code
 # and the phrase 'state_name' to refer to the spelled out, capitalized state name.
 # Easy-to-read list at https://en.wikipedia.org/wiki/Federal_Information_Processing_Standard_state_code
-# 
+#
 STATE = 'state'
 
 # newstyle database; we need to transition to this.
@@ -172,11 +172,11 @@ STATE_STATES      = [int(sd['state']) for sd in STATE_DICTS] # the state codes
 STATE_STUSAB      = [sd['stusab'] for sd in STATE_DICTS] # the state US postal codes
 FILENAME_2000_SF2 = "{state}{characteristic_iteration}{cifsn}_uf2.zip"
 """
-Naming convention for SF2 data files is ssiiiyy_uf2.zip. 
-iii is the characteristic iteration (total population, race groups, American Indian and Alaska 
+Naming convention for SF2 data files is ssiiiyy_uf2.zip.
+iii is the characteristic iteration (total population, race groups, American Indian and Alaska
 Native tribes, and Hispanic/Latino groups)
-Characteristic iteration codes are in the Appendix H of the technical documentation, 
-which is available at http://www.census.gov/prod/cen2000/docs/sf2.pdf - page=278.	
+Characteristic iteration codes are in the Appendix H of the technical documentation,
+which is available at http://www.census.gov/prod/cen2000/docs/sf2.pdf - page=278.
 yy is the number of the file
    Valid codes are 01 through 04.  See below for distribution of tables across files.
 """
@@ -229,7 +229,7 @@ URL_2000_SF2    = WWW_SERVER_2000 + "Summary_File_2/{state_name}/{state}{segment
 
 WWW_SERVER_2000_RELATIONSHIP = "https://www2.census.gov/geo/docs/maps-data/data/rel/"
 URL_2000_RELATIONSHIP = WWW_SERVER_2000_RELATIONSHIP + "t00t10/TAB2000_TAB2010_ST_{state_fips}_v2.zip"
-                      
+
 WWW_SERVER_2010='https://www2.census.gov/census_2010'
 URL_2010_PL94 = WWW_SERVER_2010+'/01-Redistricting_File--PL_94-171/{state_name}/{state}2010.pl.zip'
 URL_2010_SF1  = WWW_SERVER_2010+'/04-Summary_File_1/{state_name}/{state}2010.sf1.zip'
@@ -253,8 +253,8 @@ DOWNLOAD_URLS = {2000:{PL94 : URL_2000_PL94,
                  2010:{PL94 : URL_2010_PL94,
                        SF1  : URL_2010_SF1,
                        UR1  : URL_2010_UR1,
-                       SF2  : URL_2010_SF2 } } 
-                 
+                       SF2  : URL_2010_SF2 } }
+
 # Specifies directory where a zip file is downloaded. The filename is kept from the original download URL
 DEST_ZIPFILE_DIR    = {2000:ROOT_DIR+'/data/{year}_{product}/dist/{state}',
                        2010:ROOT_DIR+'/data/{year}_{product}/dist'}
@@ -280,9 +280,9 @@ CIFSN_GEO=0
 
 STUSAB_TO_STATE = {sd['stusab']:int(sd['state']) for sd in STATE_DICTS}
 STATE_TO_STUSAB = {int(sd['state']):sd['stusab'] for sd in STATE_DICTS}
-    
+
 class YPSS:
-    """A Class that defines the Year, Product, State, Segment and Characteristic Iteration, 
+    """A Class that defines the Year, Product, State, Segment and Characteristic Iteration,
        which is the way that each file in the PL94/SF1/SF2 are named."""
     __slots__=('year','product','state','segment','chariter')
     def __init__(self,year,product,state,segment,chariter=0):
@@ -306,7 +306,7 @@ class YPSS:
             raise ValueError("unknown type: {}".format(type(segment)))
     def __repr__(self):
         return f"YPSS<{self.year}:{self.product}:{self.state}:{self.chariter}:{self.segment}>"
-        
+
 def download_url(ypss):
     return DOWNLOAD_URLS[ypss.year][ypss.product].format(year=ypss.year,product=ypss.product,
                                                          state_name = STATE_NAMES[ypss.state],

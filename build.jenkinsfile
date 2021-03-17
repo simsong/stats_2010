@@ -1,6 +1,6 @@
 // This job logs the Jenkins svc account in to the server where the jenkins_pipeline.py is deployed
 // and runs the pipeline directly.
-// This job is activated for all pushes to branches and pull requests for das_decennial.
+// This job is activated for all pushes to branches and pull requests for stats_2010.
 // It performs the following checks:
 // - Syntax Checks
 // - Merge Conflicts
@@ -82,7 +82,7 @@ EOF
                         DAS_S3ROOT=s3://uscb-decennial-ite-das \
                         JBID=jenkins \
                         /usr/bin/python3 /mnt/gits/das-jenkins/jenkins_pipeline.py \
-                          --repository_name das_decennial \
+                          --repository_name stats_2010 \
                           --commit_sha $GIT_COMMIT \
                           --previous_commit_sha $GIT_PREVIOUS_COMMIT \
                           --deploy_path /mnt/gits/jenkins/runs/ \

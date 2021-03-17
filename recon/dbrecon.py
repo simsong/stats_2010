@@ -3,6 +3,7 @@
 """dbrecon.py
 
 Common code and constants for the database reconstruction.
+Note: much of this has been moved to ctools.dbfile.
 """
 
 import argparse
@@ -22,13 +23,15 @@ import re
 import socket
 import sys
 import time
-import urllib.parse 
+import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 import psutil
 from configparser import ConfigParser
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
+
+REIDENT = os.getenv('REIDENT')
 
 try:
     import ctools.s3 as s3
@@ -118,7 +121,7 @@ def filename_mtime(fname):
 ### Database management functions ##############################
 ################################################################
 
-                                                           
+
 db_re = re.compile("export (.*)=(.*)")
 def get_pw():
     import pwd
@@ -232,44 +235,44 @@ def get_final_pop_from_sol(state_abbr,county,tract,delete=True):
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
         if delete:
             dpath_unlink(sol_filenamegz)
-        DB.csfr("UPDATE tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
+        DB.csfr(f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
                 (state_abbr,county,tract))
         return None
     return count
 
 def db_lock(state_abbr, county, tract):
-    DB.csfr("UPDATE tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),os.getpid(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
 
 def db_unlock(state_abbr, county, tract):
-    DB.csfr("UPDATE tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
             (state_abbr,county,tract),
             rowcount = 1 )
 
 def db_start(what,state_abbr, county, tract):
     assert what in [LP, SOL, CSV]
-    DB.csfr(f"UPDATE tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE {REIDENT}tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),hostname(),os.getpid(),state_abbr,county,tract),
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
-    
+
 def db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL, CSV]
-    DB.csfr(f"UPDATE tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+    DB.csfr(f"UPDATE {REIDENT}tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
             (hostname(),state_abbr,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
-    
+
 def is_db_done(what, state_abbr, county, tract):
     assert what in [LP,SOL, CSV]
-    row = DB.csfr(f"SELECT {what}_end FROM tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1", 
+    row = DB.csfr(f"SELECT {what}_end FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1",
                   (state_abbr,county,tract))
     return len(row)==1
 
 def db_clean():
     """Clear hostlock if PID is gone"""
-    rows = DB.csfr("SELECT pid,stusab,county,tract FROM tracts WHERE hostlock=%s",(hostname(),),quiet=True)
+    rows = DB.csfr(f"SELECT pid,stusab,county,tract FROM {REIDENT}tracts WHERE hostlock=%s",(hostname(),),quiet=True)
     for (pid,stusab,country,tract) in rows:
         if not pid:
             db_unlock(stusab,county,tract)
@@ -284,13 +287,13 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
     logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
     lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
-    
-    rows = DB.csfr("SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
-                       "FROM tracts where stusab=%s and county=%s and tract=%s LIMIT 1",
+
+    rows = DB.csfr(f"SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
+                       "FROM {REIDENT}tracts where stusab=%s and county=%s and tract=%s LIMIT 1",
                        (state_abbr,county,tract),quiet=quiet)
     if len(rows)!=1:
         raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
-    
+
     (lp_start,lp_end,sol_start,sol_end,final_pop_db) = rows[0]
     logging.info(f"lp_start={lp_start} lp_end={lp_end} sol_start={sol_start} "
                  f"sol_end={sol_end} final_pop_db={final_pop_db}")
@@ -299,21 +302,23 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             print(f"{lpfilenamegz} exists")
         if lp_end is None:
             logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set lp_end=%s where stusab=%s and county=%s and tract=%s",
+            DB.csfr(f"UPDATE {REIDENT}tracts set lp_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract),quiet=quiet)
     else:
         if not quiet:
             print(f"{lpfilenamegz} does not exist")
         if (lp_start is not None) or (lp_end is not None):
             logging.warning(f"{lpfilenamegz} does not exist, but the database says it does. Deleting")
-            DB.csfr("UPDATE tracts set lp_start=NULL,lp_end=NULL "
-                        "WHERE stusab=%s and county=%s and tract=%s",
-                        (state_abbr,county,tract),quiet=quiet)
-            
+            DB.csfr(f"""
+            UPDATE {REIDENT}tracts set lp_start=NULL,lp_end=NULL
+            WHERE stusab=%s and county=%s and tract=%s
+            """,
+                    (state_abbr,county,tract),quiet=quiet)
+
     if dpath_exists(solfilenamegz):
         if sol_end is None:
             logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
-            DB.csfr("UPDATE tracts set sol_end=%s where stusab=%s and county=%s and tract=%s",
+            DB.csfr(f"UPDATE {REIDENT}tracts set sol_end=%s where stusab=%s and county=%s and tract=%s",
                     (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
 
         if check_final_pop:
@@ -321,12 +326,12 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             if final_pop_db!=final_pop_file:
                 logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
                                 f"for {state_abbr} {county} {tract}. Correcting")
-                DB.csfr("UPDATE tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",
+                DB.csfr(f"UPDATE {REIDENT}tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",
                         (final_pop_file,state_abbr,county,tract))
     else:
         if sol_end is not None:
             logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
-            DB.csfr("UPDATE tracts SET sol_start=NULL,sol_end=NULL,final_pop=NULL "
+            DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL,sol_end=NULL,final_pop=NULL "
                     "WHERE stusab=%s AND county=%s AND tract=%s",
                     (state,county,tract),quiet=quiet)
 
@@ -368,25 +373,25 @@ def LPFILENAMEGZ(*,state_abbr,county,tract):
     geo_id = state_fips(state_abbr)+county+tract
     lpdir  = LPDIR(state_abbr=state_abbr,county=county)
     return dpath_expand(f'{lpdir}/model_{geo_id}.lp.gz')
-    
+
 def ILPFILENAME(*,state_abbr,county,tract):
     geo_id = state_fips(state_abbr)+county+tract
     lpdir = LPDIR(state_abbr=state_abbr,county=county)
     return dpath_expand(f'{lpdir}/model_{geo_id}.ilp')
-    
+
 def SOLFILENAME(*,state_abbr,county,tract):
     soldir = SOLDIR(state_abbr=state_abbr,county=county)
     fips = state_fips(state_abbr)
     return dpath_expand(f'{soldir}/model_{fips}{county}{tract}.sol')
-    
+
 def SOLFILENAMEGZ(*,state_abbr,county,tract):
     return SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)+".gz"
-    
+
 def COUNTY_CSV_FILENAME(*,state_abbr,county):
     csvdir = STATE_COUNTY_DIR(root='$ROOT',state_abbr=state_abbr,county=county)
     geo_id = state_fips(state_abbr) + county
     return dpath_expand(f'{csvdir}/synth_out_{geo_id}.csv')
-    
+
 SET_RE = re.compile(r"[^0-9](?P<state>\d\d)(?P<county>\d\d\d)(?P<tract>\d\d\d\d\d\d)[^0-9]")
 def extract_state_county_tract(fname):
     m = SET_RE.search(fname)
@@ -464,7 +469,7 @@ def config_reload():
     # Add our source directory to the paths
     if SECTION_PATHS not in config_file:
         config_file.add_section(SECTION_PATHS)
-    config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY 
+    config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY
     return config_file
 
 def get_config(*,filename=None):
@@ -507,7 +512,7 @@ def state_abbr(key):
     return state_rec(key)['state_abbr'].lower()
 
 def all_state_abbrs():
-    # Return a list of all the states 
+    # Return a list of all the states
     return [rec['state_abbr'].lower() for rec in STATES]
 
 def parse_state_abbrs(statelist):
@@ -515,15 +520,15 @@ def parse_state_abbrs(statelist):
     # also accepts state numbers
     assert isinstance(statelist,str)
     return [state_rec(key)['state_abbr'].lower() for key in statelist.split(",")]
-    
+
 def counties_for_state(state_abbr):
     """Return a list of the the county codes (as strings) for the counties in state_abbr"""
-    rows = DB.csfr("SELECT county FROM geo WHERE stusab=%s and sumlev='050'",(state_abbr,))
+    rows = DB.csfr(f"SELECT {REIDENT}county FROM geo WHERE stusab=%s and sumlev='050'",(state_abbr,))
     return [row[0] for row in rows]
 
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr("select tract from tracts where stusab=%s and county=%s",(state_abbr,county))
+    rows = DB.csfr(f"SELECT {REIDENT}tract from tracts where stusab=%s and county=%s",(state_abbr,county))
     return [row[0] for row in rows]
 
 ################################################################
@@ -652,11 +657,11 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
 
     # Finally, indicate that we have started up
     logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
-        
+
 def setup_logging_and_get_config(*,args,**kwargs):
     config = get_config(filename=args.config)
     setup_logging(config=config,**kwargs)
-    return 
+    return
 
 def add_dfxml_tag(tag,text=None,attrs={}):
     e = ET.SubElement(dfxml_writer.doc, tag, attrs)
@@ -664,7 +669,7 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr("INSERT INTO errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
+    DB.csfr(f"INSERT INTO {REIDENT}errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
             (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
     print("LOG ERROR:",error,file=sys.stderr)
 
@@ -731,7 +736,7 @@ def dlistdir(path):
         for d in s3.list_objects(bucket,prefix):
             logging.info(d['Key'])
             yield d['Key']
-        return 
+        return
     try:
         logging.info("listing files at %s",path)
         for d in os.listdir(path):
@@ -816,7 +821,7 @@ def dsystem(x):
 
 def maxrss():
     """Return maxrss in bytes, not KB"""
-    return resource.getrusage(resource.RUSAGE_SELF)[2]*1024 
+    return resource.getrusage(resource.RUSAGE_SELF)[2]*1024
 
 def print_maxrss():
     for who in ['RUSAGE_SELF','RUSAGE_CHILDREN']:
@@ -834,7 +839,7 @@ def mem_info(what,df,dump=True):
             pd.options.display.max_rows     = 5
             pd.options.display.max_colwidth = 240
             print(df)
-        for dtype in ['float','int','object']: 
+        for dtype in ['float','int','object']:
             selected_dtype = df.select_dtypes(include=[dtype])
             mean_usage_b = selected_dtype.memory_usage(deep=True).mean()
             mean_usage_mb = mean_usage_b / 1024 ** 2
@@ -859,4 +864,3 @@ if __name__=="__main__":
     args     = parser.parse_args()
     for fname in sys.gzfile:
         print(fname,':',get_final_pop_for_gzfile(fname))
-

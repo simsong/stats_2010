@@ -16,8 +16,9 @@ import subprocess
 import sys
 import time
 import atexit
+import re
 
-sys.path.append( os.path.join(os.path.dirname(__file__),".."))
+sys.path.append( os.path.join(os.path.dirname(os.path.abspath(__file__)),".."))
 
 import dbrecon
 from dbrecon import DB
@@ -25,14 +26,16 @@ from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
 
 from gurobi_logfile_parser import GurobiLogfileParser
 
-import re
+
+REIDENT = os.getenv('REIDENT')
+
 
 MFRE=re.compile("model_(\d\d)(\d\d\d)(\d\d\d\d\d\d)[.]log")
 def model_filename_to_sct(fname):
     m = MFRE.search(fname)
     (state,county,tract) = m.group(1,2,3)
     return {'state':dbrecon.state_abbr(state), 'county':county, 'tract':tract}
-    
+
 
 def glog_scan_root(rootdir):
     for root, dirs, files in os.walk(rootdir):
@@ -115,4 +118,3 @@ if __name__=="__main__":
     if args.glog:
         for root in args.roots:
             glog_scan_root(root)
-    

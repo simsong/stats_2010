@@ -1,5 +1,11 @@
 #!/usr/bin/env /home/simsong/anaconda3/bin/python3
 # -*- coding: utf-8 -*-
+"""
+This is a CGI script that I ran on DreamHost to report the status of the reconstruction at Cornell.
+(The Cornell reconstruction was coordinated using a MySQL server on Dreamhost.)
+This should be transistioned to the DAS dashboard.
+"""
+
 
 import re
 import cgitb

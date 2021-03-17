@@ -1,8 +1,12 @@
+#
+# Some makefile targets that were useful during debugging
+
+
 mem03-all:
 	echo python 02_build_state_stats.py --mem de 
 	python 02_build_state_stats.py --mem --stdout ca
 	python 02_build_state_stats.py --mem --stdout tx
- 
+
 
 
 mem02-dc:

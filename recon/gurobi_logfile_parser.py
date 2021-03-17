@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+"""
+A module to parse through Gurobi logs.
+"""
 
 import re
 from datetime import datetime
-import dbrecon
 
+import dbrecon
 from ctools.schema.table import Table
 
 
@@ -15,10 +18,10 @@ class GurobiLogfileParser:
     def __init__(self, logfile=None, data=None):
         if logfile is None and data is None:
             raise ValueError("provide logfile or data")
-        
+
         if logfile is not None and data is not None:
             raise ValueError("do not provide both logfile and data")
-        
+
         if logfile is not None:
             data = open(logfile,"r").read()
         self.data = data
@@ -53,7 +56,7 @@ class GurobiLogfileParser:
     @property
     def gurobi_version(self):
         return self.find(r'Gurobi ([0-9.]+)')
-            
+
     @property
     def start(self):
         m = self.grep(r'logging started ... (.*)')
@@ -79,11 +82,11 @@ class GurobiLogfileParser:
     @property
     def presolve_columns(self):
         return self.find(r"Presolved: \d+ rows, (\d+) columns")
-    
+
     @property
     def presolve_NZ(self):
         return self.find(r"Presolved: \d+ rows, \d+ columns, (\d+) nonzeros")
-    
+
     @property
     def integer_vars(self):
         return self.find(r"Variable types: \d+ continuous, (\d+) integer")
@@ -99,19 +102,19 @@ class GurobiLogfileParser:
     @property
     def seconds(self):
         return self.find(r"Explored.* in (\d+[.]\d+) seconds")
-    
+
     @property
     def nodes(self):
         return self.find(r"Explored (\d+) node")
 
     @property
     def dict(self):
-        ret = {field:getattr(self,field) for field in 
+        ret = {field:getattr(self,field) for field in
                ['gurobi_version','rows','columns','nonzeros','presolve_rows','presolve_NZ',
                 'integer_vars','binary_vars','simplex_iterations','seconds'] if getattr(self,field) is not None}
         ret['start'] = self.start.isoformat()[0:19]
         return ret
-    
+
     def sql_table(self, name='glog'):
         return Table.FromDict(name=name,dict=self.dict)
 
@@ -124,5 +127,3 @@ class GurobiLogfileParser:
         args = list(self.dict.values()) + list(extra.values())
         assert len(self.dict) + len(extra) == len(args)
         return (cmd, args)
-                
-

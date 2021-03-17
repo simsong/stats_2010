@@ -2,7 +2,9 @@
 #
 """
 Read the processed SF1 dat and syntheize the LP file that will be input to the optimizer.
-This is currently done with pandas and by buffering much in memory, both of which are quite memory intensive. 
+This is currently done with pandas and by buffering much in memory, both of which are quite memory intensive.
+
+I tried to simplify this, but I was never able to figure out what it was actually doing.
 """
 
 from collections import defaultdict
@@ -30,6 +32,8 @@ from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dmakedirs,LPDI
 
 assert pd.__version__ > '0.19'
 
+REIDENT = os.getenv('REIDENT')
+
 MAX_SF1_ERRORS = 10             # some files may have errors
 MISSING  = 'missing'
 HISPANIC = 'hispanic'
@@ -55,7 +59,7 @@ HISP  = 'hisp'
 GEOID = 'geoid'
 TABLE_NUM = 'table_num'
 CELL_NUMBER = 'cell_number'
-TABLEVAR = 'tablevar'           
+TABLEVAR = 'tablevar'
 
 # geo_table is a column that has cell_number and geoid concatenated
 # do not make it a category, as it appears that the column is distinct
@@ -90,9 +94,9 @@ def make_attributes_categories(df):
             df[a] = df[a].astype('category')
     return df
 
-    
+
 ################################################################
-## 
+##
 ## code to build the LP files
 ##
 ################################################################
@@ -102,9 +106,9 @@ def make_attributes_categories(df):
 def get_p01_counts( level, data_dict):
     p01_counts = {}
     for s in data_dict:
-        if level=='block': 
+        if level=='block':
             q1=data_dict[s]
-        elif level=='tract': 
+        elif level=='tract':
             q1=data_dict
         else:
             raise RuntimeError("invalid level: {}".format(level))
@@ -140,8 +144,8 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
     gc.collect()
     con_frame = pd.DataFrame(con_frame_list, columns=['value'] + ATTRIBUTES + [TABLE_NUM,GEOID,CELL_NUMBER])
     con_frame[GEO_TABLE] = con_frame[CELL_NUMBER] + '_' + con_frame[GEOID]
-    make_attributes_categories(con_frame) 
-    
+    make_attributes_categories(con_frame)
+
     ## Note: we must make con_frame into categories *after* GEO_TABLE is added, because you cannot add categories
 
     if level=='block':
@@ -315,7 +319,7 @@ class LPTractBuilder:
                     # Previously this was done with list comprehension; it was changed to a generator.
                     #
 
-                    s_tuple_list = (['{}_{}_{}_{}'.format(s[GEOID], s['sex'], s['start_age'], p), 
+                    s_tuple_list = (['{}_{}_{}_{}'.format(s[GEOID], s['sex'], s['start_age'], p),
                                     s['sex'], age, wh, bl, AI, As, nh, so, hisp]
                                     for p in range(0, int(s['value']))
                                     for wh in Wh
@@ -326,7 +330,7 @@ class LPTractBuilder:
                                     for so in Sor
                                     for hisp in Hisp
                                     for age in [x for x in range(int(s['start_age']), int(s['end_age']) + 1)])
-                    
+
                     #
                     # Now we use the generator create the master_tuple_list.
                     # This is the slow operation because we are evaluating the generator that we created above.
@@ -367,7 +371,7 @@ class LPTractBuilder:
                                 "will not create another one.")
                 return
             lpdir      = LPDIR(state_abbr=self.state_abbr,county=self.county)
-            dmakedirs(lpdir)  
+            dmakedirs(lpdir)
 
             # file exists and it is good. Note that in the database
             try:
@@ -399,11 +403,11 @@ class LPTractBuilder:
         # Get the constraints from the block dict for all the blocks in the tract
         block_summary_nums = {}
         for block in self.sf1_block_data:
-            self.get_constraint_summary('block', self.sf1_block_data, self.sf1_block_data[block], 
+            self.get_constraint_summary('block', self.sf1_block_data, self.sf1_block_data[block],
                                         block_summary_nums)
         logging.info(f"{self.state_abbr} {self.county} {self.tract}: done getting block summary constraints")
 
-        # 
+        #
         # Create the output LP file and write header
         #
         f = dopen(outfilename,'w')
@@ -428,7 +432,7 @@ class LPTractBuilder:
         logging.info(f"{self.state_abbr} {self.county} {self.tract}: done with tract summary")
 
         # for tracts, need to add the master_tuple_list just once
-        for i in self.master_tuple_list: 
+        for i in self.master_tuple_list:
             tract_summary_nums[geo_id]['tuple_list'].append(i)
 
         # Loop through the tract constraints to write to file.
@@ -462,7 +466,7 @@ class LPTractBuilder:
 
         # Rename the temp file to the gzfile
         dbrecon.drename(outfilename, lpfilenamegz)
-        
+
 
 # Make the tract LP files.
 #
@@ -472,7 +476,7 @@ class LPTractBuilder:
 #
 def build_tract_lp_tuple(tracttuple):
     (state_abbr, county, tract, sf1_tract_data, sf1_block_data) = tracttuple
-    
+
     try:
         lptb = LPTractBuilder(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
         lptb.build_tract_lp()
@@ -497,7 +501,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     if args.debug:
         tracts = [tractgen]
     else:
-        rows = DB.csfr("SELECT tract FROM tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(state_abbr,county))
+        rows = DB.csfr("SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(state_abbr,county))
         tracts_needing_lp_files = [row[0] for row in rows]
         if tractgen=='all':
             if len(tracts_needing_lp_files)==0:
@@ -511,7 +515,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
                                 f"- tract {tractgen} not in {tracts_needing_lp_files}")
                 return
             tracts = [tractgen]
-    
+
     state_code = dbrecon.state_fips(state_abbr)
 
     ### Has the variables and the collapsing values we want (e.g, to collapse race, etc)
@@ -542,7 +546,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ## ...                 ...       ...    ...
     ## 121903  020130001003156  P039I019    0.0
     ## 121904  020130001003156  P039I020    0.0
-    ##       
+    ##
     ## This is the cartesian product of all of the blocks and all of
     ## the tablevars in the tables that cover these blocks.  'value'
     ## is the value for that variable for that geoid, as read from the
@@ -565,13 +569,13 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
         if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
             geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)+str(s['BLOCK'])
             for k,v in list(s.items()):
-                if k[:1]=='P' and geo_id[:1]!='S' and v.strip()!='': 
+                if k[:1]=='P' and geo_id[:1]!='S' and v.strip()!='':
                     sf1_block_list.append([geo_id,k,float(v)])
 
     sf1_block     = pd.DataFrame.from_records(sf1_block_list, columns=[GEOID,TABLEVAR,'value'])
     make_attributes_categories(sf1_block)
 
-    sf1_block_all = pd.merge(sf1_block, sf1_vars_block, how='inner', 
+    sf1_block_all = pd.merge(sf1_block, sf1_vars_block, how='inner',
                              left_on=[TABLEVAR], right_on=[CELL_NUMBER])
     sf1_block_all['value'].fillna(0)
 
@@ -624,6 +628,8 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     sf1_tract_all['value'].fillna(0)
 
     sf1_tract_records = sf1_tract_all.to_dict(orient='records')
+
+    # Try to reclaim the memory
     del sf1_tract_all
     gc.collect()
 
@@ -637,9 +643,9 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
         logging.info("sf1_block_dict total memory: {:,} bytes".format(total_size(sf1_block_dict)))
         logging.info("sf1_tract_dict has data for {} tracts.".format(len(sf1_tract_dict)))
         logging.info("sf1_tract_dict total memory: {:,} bytes".format(total_size(sf1_tract_dict)))
-    
+
     ################################################################
-    ### 
+    ###
     ### We have now made the data for this county.
     ### We now make LP files for a specific set of tracts, or all the tracts.
 
@@ -656,7 +662,7 @@ if __name__=="__main__":
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Synthesize LP files for all of the tracts in the given state and county." )
     dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--j1", 
+    parser.add_argument("--j1",
                         help="Specifies number of threads for state-county parallelism. "
                         "These threads do not share memory. Specify 1 to disable parallelism.",
                         type=int,default=DEFAULT_J1)
@@ -671,11 +677,11 @@ if __name__=="__main__":
     parser.add_argument("state",  help="2-character state abbreviation.")
     parser.add_argument("county", help="3-digit county code")
     parser.add_argument("tract",  help="If provided, just synthesize for this specific 4-digit tract code. Otherwise do all in the county",nargs="?")
-    
+
     DB.quiet = True
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03syn")
-    
+
     assert dbrecon.dfxml_writer is not None
 
     if args.debug and args.output is None:

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 #
-# 00_download_data.py:
-# Downloads all of the files
+"""
+00_download_data.py:
+Downloads all of the files from the Census WWW2 server.
+This will not run inside the DAS environment because the WWW2 server is blocked,
+but you could run it on your desktop under python and then scp the files over.
+"""
 
 import urllib
 import csv
@@ -11,14 +15,15 @@ import os.path
 import dbrecon
 import logging
 import requests
-import time    
+import time
 import zipfile
 import glob
 
 from dbrecon import dmakedirs
 from dbrecon import dopen,dpath_exists
 
-####Get input parameters
+REIDENT = os.getenv('REIDENT')
+
 
 def download(state_abbr, sf1_dest_dir):
     config = dbrecon.get_config()
@@ -62,7 +67,6 @@ def validate(sf1_dist_dir):
         except zipfile.BadZipfile as e:
             print("BadZipfile")
             continue
-
 
 
 if __name__=="__main__":

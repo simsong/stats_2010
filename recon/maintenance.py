@@ -4,7 +4,7 @@
 """
 maintenance.py
 
-Just a little script for doing maintenance
+Just a little script for doing maintenance on the databse. It shouldn't be necessary to use this program.
 
 """
 
@@ -46,11 +46,11 @@ def summarize():
                               database=os.environ['MYSQL_DATABASE'],
                               user=os.environ['MYSQL_USER'],
                               password=os.environ['MYSQL_PASSWORD'])
-                              
+
     dbfile.DBMySQL.csfr(auth,"""INSERT INTO das_sysload_summary
     (t,host,ipaddr,min1_min,min1_avg,min1_max,freegb_min,freegb_avg,freegb_max,n)
     SELECT t,host,ipaddr,min1_min,min1_avg,min1_max,freegb_min,freegb_avg,freegb_max,n
-    FROM (select dayhour as t,
+    FROM (SELECT dayhour as t,
             host, ipaddr,
             min(min1) as min1_min,
             avg(min1) as min1_avg,
@@ -59,9 +59,9 @@ def summarize():
             avg(freegb) as freegb_avg,
             max(freegb) as freegb_max,
             count(*) as n
-     FROM (select from_unixtime(unix_timestamp(date(t))+3600*hour(t)) AS dayhour,host,ipaddr,min1,freegb FROM das_sysload)
+     FROM (SELECT from_unixtime(unix_timestamp(date(t))+3600*hour(t)) AS dayhour,host,ipaddr,min1,freegb FROM das_sysload)
            as cte GROUP BY dayhour,host,ipaddr) AS nums ON DUPLICATE KEY UPDATE das_sysload_summary.t=das_sysload_summary.t""")
-           
+
     dbfile.DBMySQL.csfr(auth,"""DELETE FROM das_sysload where timestampdiff(day,t,now())>7""")
 
 if __name__=="__main__":
@@ -76,4 +76,3 @@ if __name__=="__main__":
         fix_states()
         exit(0)
     summarize()
-    

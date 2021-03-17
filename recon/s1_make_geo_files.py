@@ -19,6 +19,8 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 from dbrecon import dopen,dpath_expand,dmakedirs,DB
 from ctools.timer import Timer
 
+REIDENT = os.getenv('REIDENT')
+
 GEO_LAYOUT_FILENAME="$SRC/layouts/geo_layout.txt"
 TRANSACTION_RECORDS = 20
 def fields_str(field_count,record_count=1):
@@ -98,14 +100,14 @@ def make_county_list(state_abbr:str):
             count  += 1
             total_count += 1
             if count >= TRANSACTION_RECORDS:
-                c.execute("INSERT INTO geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+                c.execute("INSERT INTO {REIDENT}geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
                 vals = []
                 count = 0
 
     # Finish up database transaction
     print("Total: {}".format(total_count))
     if count>0:
-        c.execute("INSERT INTO geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+        c.execute("INSERT INTO {REIDENT}geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
     db.commit()
     sf1file.close()
     if args.csv:
@@ -118,7 +120,7 @@ if __name__=="__main__":
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Read SF1 geography files, creates the counties geography files, and loads the MySQL database."
                              "This is pretty fast and DB heavy, so it is not parallelized" )
-    parser.add_argument("--showcounties", 
+    parser.add_argument("--showcounties",
                         help="Display all counties for state from files that were created", action='store_true')
     parser.add_argument("--nocsv", help="Do not make the CSV files", action='store_true')
     parser.add_argument("state_abbr", help="States to process. Say 'all' for all", nargs='*')
@@ -139,7 +141,7 @@ if __name__=="__main__":
         states = dbrecon.all_state_abbrs()
     else:
         states = args.state_abbr
-              
+
     # Are we just printing status reports?
     if args.showcounties:
         for state_abbr in states:

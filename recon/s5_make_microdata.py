@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 """
-Make the microdata on a county-by-county basis. 
+Make the microdata on a county-by-county basis.
 """
 
 import csv
@@ -15,11 +15,14 @@ import subprocess
 import sys
 import time
 import atexit
-import multiprocessing 
+import multiprocessing
 
 import dbrecon
 from dbrecon import DB
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
+
+REIDENT = os.getenv('REIDENT')
+
 
 def make_csv_file( pair ):
     # Make sure we have a solution file for every tract
@@ -64,7 +67,7 @@ def make_csv_file( pair ):
                         count = round(float(count)) # some of the solutions are not precisely equal to 0 or 1
                         # don't count the zeros
                         if count==0:
-                            continue 
+                            continue
                         elif count==1:
                             c = var.split("_")
                             tract_ = c[1][5:11]
@@ -81,8 +84,8 @@ def make_csv_file( pair ):
             dbrecon.db_done('csv', state_abbr, county, tract)
         # done with all tracts
     dbrecon.drename(county_csv_filename_tmp, county_csv_filename)
-    logging.info(f"Ending {state_code}{county} county pop: {county_total}")        
-    print(f"{__file__} {state_code}{county} county pop: {county_total}")        
+    logging.info(f"Ending {state_code}{county} county pop: {county_total}")
+    print(f"{__file__} {state_code}{county} county pop: {county_total}")
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
@@ -105,17 +108,14 @@ if __name__=="__main__":
         state_abbrs = dbrecon.all_state_abbrs()
     else:
         state_abbrs = [dbrecon.state_abbr(args.state_abbr).lower()]
-    
+
     for state_abbr in state_abbrs:
         if args.county=='all':
             for county in dbrecon.counties_for_state(state_abbr):
                 pairs.append( (state_abbr, county, args.overwrite) )
         else:
             pairs.append( (state_abbr, args.county, args.overwrite) )
-    
+
     print(f"{__file__}: requested {len(pairs)} state/county pairs")
     with multiprocessing.Pool(args.j1) as p:
         p.map(make_csv_file, pairs)
-
-
-

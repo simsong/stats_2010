@@ -2,7 +2,7 @@
 #
 # 02_build_state_stats.py:
 # Reads the SF1 files, filter on geolevels 050, 140 and 101,  join the segment files into a single line,
-# and output statistics. 
+# and output statistics.
 #
 # This is a complete rewrite of 02_build_state_stats.py to process the files syntactically instead of semantically.
 #
@@ -31,10 +31,13 @@ from ctools.timer import Timer
 # The linkage variables, in the order they appear in the file
 SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
 
+REIDENT = os.getenv('REIDENT')
+ANY="any"
+
+
 def sf1_zipfilename(state_abbr):
     return dbrecon.dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip")
 
-ANY="any"
 class ReaderException(Exception):
     pass
 
@@ -50,7 +53,7 @@ class SF1SegmentReader():
             self.names[i] = self.names[i]+"_"+xy
         if self.cifsn>1:
             del self.names[4]   #  don't include
-        
+
     def getfields(self,*,logrecno):
         """ Reads a line, looking for logrecno. If not found, return a line of fields """
         if self.fields is None:
@@ -67,7 +70,7 @@ class SF1SegmentReader():
             # Undo the broken transformations
             # Delete LOGRECNO in all but the CIFSN 1
             if self.cifsn>1:
-                del self.fields[4] 
+                del self.fields[4]
             # These two fields were improperly formatted as floats...
             self.fields[2] = format(int(self.fields[2]),'.1f') # CHARITER
             self.fields[3] = format(int(self.fields[3]),'.1f') # CIFSN
@@ -79,9 +82,9 @@ class SF1SegmentReader():
                 (name,val) = nv
                 if name=='PCT012A001':
                     print(name,val,format(float(val),'.1f'))
-                if (name in ['CHARITER','CIFSN'] 
-                    or name.startswith('PCT') 
-                    or name.startswith('HCT') 
+                if (name in ['CHARITER','CIFSN']
+                    or name.startswith('PCT')
+                    or name.startswith('HCT')
                     or name.startswith('PCT012')):
                     return format(float(val),'.1f')
 
@@ -93,14 +96,14 @@ class SF1SegmentReader():
 
 
                 return val
-            
+
             fields = ([self.fields[0],        # FILEID
                        self.fields[1],        # STUSAB
                        refmt(('CHARITER',self.fields[2])), # CHARITER
                        refmt(('CIFSN',self.fields[3])), # CIFSN
                        self.fields[4]] +      # LOGRECNO
                       [refmt(nv) for nv in zip(self.names[5:],self.fields[5:]) ])
-            
+
             self.fields = None
             return fields
         return ['' for name in self.names]
@@ -163,7 +166,7 @@ def process_state(state_abbr):
 
 
         ################################################################
-        
+
         # The SF1 directory consists of 47 or 48 segments. The first columns are defined below:
         # Summary levels at https://factfinder.census.gov/help/en/summary_level_code_list.htm
         SUMLEV_COUNTY = '050' # State-County
@@ -200,7 +203,7 @@ def process_state(state_abbr):
                                          geoid.strip() )
                     counts[sumlev] += 1
                     ct += 1
-                
+
         print("{} geography file processed. counties:{}  tracts:{}  blocks:{}  mem:{:,}".format(
             state_abbr, counts[SUMLEV_COUNTY], counts[SUMLEV_TRACT], counts[SUMLEV_BLOCK],
             total_size(logrecs)))
@@ -281,7 +284,7 @@ if __name__=="__main__":
 
     if not dbrecon.dpath_exists(f"$SRC/layouts/layouts.json"):
         raise FileNotFoundError("Cannot find $SRC/layouts/layouts.json")
-    
+
     if not dbrecon.dpath_exists(f"$SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv"):
         raise FileNotFoundError("$SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv")
 
@@ -308,4 +311,3 @@ if __name__=="__main__":
     else:
         with multiprocessing.Pool(args.j1) as p:
             p.map(process_state, states)
-

@@ -28,35 +28,32 @@ import xml.etree.ElementTree as ET
 import zipfile
 import psutil
 from configparser import ConfigParser
+from os.path import dirname,basename,abspath
 
-sys.path.append( os.path.join(os.path.dirname(__file__),".."))
+# Make sure we can read ctools, which is in ..
+
+PARENT_DIR = dirname(dirname(abspath(__file__)))
+if PARENT_DIR not in sys.path:
+    sys.path.append( PARENT_DIR )
+
+import ctools.s3 as s3
+import ctools.clogging as clogging
+import ctools.dbfile as dbfile
+from ctools.gzfile import GZFile
+from total_size import total_size
+
+from dfxml.python.dfxml.writer import DFXMLWriter
 
 REIDENT = os.getenv('REIDENT')
 
-try:
-    import ctools.s3 as s3
-    import ctools.clogging as clogging
-    import ctools.dbfile as dbfile
-except ImportError as e:
-    raise RuntimeError("ctools submodule has not been loaded.")
-
-try:
-    from dfxml.python.dfxml.writer import DFXMLWriter
-except ImportError as e:
-    raise RuntimeError("dfxml submodule has not been loaded.")
-
-
-from ctools.gzfile import GZFile
-from total_size import total_size
 
 RETRIES = 10
 RETRY_DELAY_TIME = 10
 DEFAULT_QUIET=True
 # For handling the config file
-SRC_DIRECTORY   = os.path.dirname(__file__)
+SRC_DIRECTORY   = os.path.dirname( os.path.abspath(__file__))
 CONFIG_FILENAME = "config.ini"
-config_path     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
-config_file     = None              # will become a ConfiParser object
+CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
 
 ##
 ## Functions that return paths.
@@ -133,7 +130,7 @@ def get_pw():
                 os.environ[m.group(1)] = m.group(2)
 
 class DB:
-    """DB class with singleton pattern"""
+    """DB class connection class. Note that this is now in ctools.dbfile and should be removed."""
     @staticmethod
     def csfr(cmd,vals=None,quiet=False,rowcount=None):
         """Connect, select, fetchall, and retry as necessary"""
@@ -176,7 +173,7 @@ class DB:
                 logging.error(e)
                 logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
                 pass
-            ftime.sleep(RETRY_DELAY_TIME)
+            time.sleep(RETRY_DELAY_TIME)
         raise e
 
     def cursor(self):
@@ -190,8 +187,14 @@ class DB:
 
     def connect(self):
         from ctools.dbfile import DBMySQLAuth,DBMySQL
-        global config_file
-        mysql_section = config_file['mysql']
+        config = GetConfig().get_config()
+        try:
+            mysql_section = config['mysql']
+        except KeyError as e:
+            print(e,file=sys.stderr)
+            print("config:",file=sys.stderr)
+            print(config,file=sys.stderr)
+            exit(1)
         auth = DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
                                database=os.path.expandvars(mysql_section['database']),
                                user=os.path.expandvars(mysql_section['user']),
@@ -273,7 +276,7 @@ def is_db_done(what, state_abbr, county, tract):
 def db_clean():
     """Clear hostlock if PID is gone"""
     rows = DB.csfr(f"SELECT pid,stusab,county,tract FROM {REIDENT}tracts WHERE hostlock=%s",(hostname(),),quiet=True)
-    for (pid,stusab,country,tract) in rows:
+    for (pid,stusab,county,tract) in rows:
         if not pid:
             db_unlock(stusab,county,tract)
             continue
@@ -333,7 +336,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
             DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL,sol_end=NULL,final_pop=NULL "
                     "WHERE stusab=%s AND county=%s AND tract=%s",
-                    (state,county,tract),quiet=quiet)
+                    (state_abbr,county,tract),quiet=quiet)
 
 ################################################################
 ### functions that return directory and file locations  ########
@@ -461,32 +464,42 @@ STATE_DATA=[
     "Wyoming,WY,56" ]
 STATES=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
 
-# For now, assume that config.ini is in the same directory as the running script
-def config_reload():
-    global config_file,config_path
-    config_file = ConfigParser()
-    config_file.read(config_path)
-    # Add our source directory to the paths
-    if SECTION_PATHS not in config_file:
-        config_file.add_section(SECTION_PATHS)
-    config_file[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY
-    return config_file
+# https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
+class Singleton(type):
+    _instances = {}
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]
 
-def get_config(*,filename=None):
-    global config_file,config_path
-    if config_file is not None:
-        return config_file
-    if filename is not None:
-        config_path = filename
-    return config_reload()
+class GetConfig(metaclass=Singleton):
+    def __init__(self):
+        self.config = None
+
+    def config_reload(self, path=CONFIG_PATH):
+        self.config = ConfigParser()
+        self.config.read(path)
+
+        # Add our source directory to the paths
+        if SECTION_PATHS not in self.config:
+            raise RuntimeError(f"No [{SECTION_PATHS}] section in config file {path}")
+        self.config[SECTION_PATHS][OPTION_SRC] = SRC_DIRECTORY
+        return self.config
+
+    def get_config(self, *, path=CONFIG_PATH):
+        if self.config is None:
+            self.config_reload(path=path)
+        return self.config
+
+
 
 def get_config_str(section,name):
     """Like config[section][name], but looks for [name@hostname] first"""
-    global config_file
+    config = GetConfig().get_config()
     name_hostname = name + '@' + socket.gethostname()
-    if name_hostname in config_file[section]:
+    if name_hostname in config[section]:
         name = name_hostname
-    return config_file[section][name]
+    return config[section][name]
 
 def get_config_int(section,name):
     return int(get_config_str(section,name))
@@ -561,7 +574,7 @@ def lpfile_properly_terminated(fname):
 ################################################################
 def valid_state_code(code):
     assert isinstance(code,str)
-    return len(state)==2 and all(ch.isdigit() for ch in code)
+    return len(code)==2 and all(ch.isdigit() for ch in code)
 
 def valid_county_code(code):
     assert isinstance(code,str)
@@ -640,12 +653,6 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     warning_handler.setFormatter( logging.Formatter(clogging.LOG_FORMAT) )
     logger.addHandler(warning_handler)
 
-    # Log errors to stderr
-    error_handler = logging.StreamHandler(sys.stderr)
-    error_handler.setLevel(logging.ERROR)
-    error_handler.setFormatter( logging.Formatter(clogging.LOG_FORMAT) )
-    logger.addHandler(error_handler)
-
     # Log to DFXML
     dfxml_writer    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
     dfxml_handler   = dfxml_writer.logHandler()
@@ -659,7 +666,7 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
 
 def setup_logging_and_get_config(*,args,**kwargs):
-    config = get_config(filename=args.config)
+    config = GetConfig().get_config()
     setup_logging(config=config,**kwargs)
     return
 
@@ -689,24 +696,33 @@ def dpath_expand(path):
     """
 
     # Find and replace all of the dollar variables with those in the config file
-    global config_file
+    config = GetConfig().get_config()
     while True:
         m = var_re.search(path)
+        print("path=",path,"m=",m)
         if not m:
             break
         varname  = m.group(1)[1:]
         varname_hostname = varname + "@" + socket.gethostname()
         # See if the variable with my hostname is present. If so, use that one
-        if varname_hostname in config_file[SECTION_PATHS]:
+        if varname_hostname in config[SECTION_PATHS]:
             varname = varname_hostname
 
-        if varname in config_file[SECTION_PATHS]:
-            val = config_file[SECTION_PATHS][varname]
+        print("varname=",varname)
+        if varname in config[SECTION_PATHS]:
+            val = config[SECTION_PATHS][varname]
+            print("1.val=",val)
         elif varname in os.environ:
             val = os.environ[varname]
+            print("2.val=",val)
         else:
-            raise KeyError(f"'{varname}' not in [path] of config file and not in global environment")
-        path = path.replace(m.group(1), val)
+            logging.error("varname: %s",varname)
+            logging.error("path: %s",path)
+            logging.error("keys in [%s]: %s",SECTION_PATHS,list(config[SECTION_PATHS].keys()))
+            raise KeyError(f"'{varname}' not in [{SECTION_PATHS}] of config file and not in global environment")
+        path = path[0:m.start(1)] + val + path[m.end(1):]
+        print("new path:",path)
+
     return path
 
 def dpath_exists(path):
@@ -862,5 +878,3 @@ if __name__=="__main__":
                              description="Get the count for SOL.GZ files" )
     parser.add_argument("gzfile",nargs="*")
     args     = parser.parse_args()
-    for fname in sys.gzfile:
-        print(fname,':',get_final_pop_for_gzfile(fname))

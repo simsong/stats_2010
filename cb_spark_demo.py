@@ -40,6 +40,7 @@ else:
     DATAROOT = os.path.join( os.path.dirname(__file__), 'data')
 
 SUMMARY_LEVEL_MAP = {
+    'NATION': '010',
     'STATE' : '040',
     'COUNTY' : '050'
 }
@@ -118,8 +119,9 @@ def smallCellStructure_HouseholdsSF2000(summary_level, threshold):
 
     start_time = time.time()
     state_dict = build_state_level(multi_index_list=multi_index_list)
+    uuid_str = str(uuid.uuid4())[:5]
     for v, k in state_dict.items():
-        save_data(summary_level, v, k, threshold)
+        save_data(summary_level, v, k, threshold, uuid_str)
     end_time = time.time()
     if DEBUG:
         print(f'Save data in {end_time - start_time}',file=sys.stderr)
@@ -259,7 +261,7 @@ def save_data(summary_level, state_id, index_list, threshold, uuid_str):
         item.generate_expanded_histogram()
         path = pathlib.Path(local_temp_store)
         path.parent.mkdir(parents=True, exist_ok=True)
-        output_dict[local_temp_store].extend(item.histogram_expanded)
+        output_dict[local_temp_store].extend(item.generate_expanded_histogram())
     for local_file_location, histogram in output_dict.items():
         with open(local_file_location, "w+") as filehandler:
             json.dump(histogram, filehandler)
@@ -369,7 +371,7 @@ if __name__=="__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--validate", help="Validate all data files", action='store_true')
     parser.add_argument("--type", help="housing or person")
-    parser.add_argument("--sumlevel", help="Valid summary levels include STATE, COUNTY", required=True, choices=['STATE', 'COUNTY'])
+    parser.add_argument("--sumlevel", help="Valid summary levels include STATE, COUNTY", required=True, choices=['NATION', 'STATE', 'COUNTY'])
     parser.add_argument("--threshold", help="Threshold to be include in multi list", required=True, type=float)
     parser.add_argument("--filterstate", help="The fips state code", type=int)
     args = parser.parse_args()
@@ -400,7 +402,7 @@ if __name__=="__main__":
         exit(0)
     # Note that getting spark here causes the arguments to be reparsed under spark-submit
     # Normally that's not a problem
-    spark  = cspark.spark_session(logLevel='ERROR', pydirs=['.','ctools','ctools/schema'])
+    spark  = cspark.spark_session(logLevel='ERROR', pydirs=['.','ctools','ctools/schema'], appName="cb_spark_demo")
     if args.filterstate:
         filter_state_query = f" AND GEO_2000.STATE='{args.filterstate}' "
     else:

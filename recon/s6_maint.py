@@ -26,9 +26,7 @@ from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
 
 from gurobi_logfile_parser import GurobiLogfileParser
 
-
 REIDENT = os.getenv('REIDENT')
-
 
 MFRE=re.compile("model_(\d\d)(\d\d\d)(\d\d\d\d\d\d)[.]log")
 def model_filename_to_sct(fname):
@@ -60,14 +58,14 @@ def final_pop_scan_sct(sct):
         final_pop = dbrecon.get_final_pop_from_sol(stusab, county, tract)
     except FileNotFoundError:
         print(f"{stusab} {county} {tract} has no solution. Removing")
-        DB.csfr("UPDATE tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
+        DB.csfr(f"UPDATE {REIDENT}tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
     else:
         print(f"{stusab} {county} {tract} = {final_pop}")
-        DB.csfr("UPDATE tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",(final_pop,stusab,county,tract))
+        DB.csfr(f"UPDATE {REIDENT}tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",(final_pop,stusab,county,tract))
 
 def final_pop_scan():
     """This should be parallelized"""
-    rows = DB.csfr("SELECT stusab, county, tract from tracts where final_pop is null")
+    rows = DB.csfr(f"SELECT stusab, county, tract from {REIDENT}tracts where final_pop is null")
     for row in rows:
         final_pop_scan_sct(row)
 
@@ -91,10 +89,10 @@ if __name__=="__main__":
     if args.clear or args.schema:
         glog = GurobiLogfileParser("tests/model_04001944300.log")
         if args.schema:
-            DB.csfr("DROP TABLE IF EXISTS glog")
+            DB.csfr(f"DROP TABLE IF EXISTS {REIDENT}glog")
             DB.csfr(glog.sql_schema())
         if args.clear:
-            DB.csfr("delete from glog")
+            DB.csfr(f"DELETE from {REIDENT}glog")
 
     if args.final_pop:
         final_pop_scan()
@@ -105,12 +103,22 @@ if __name__=="__main__":
         exit(0)
 
     if args.validate:
-        bad = DB.csfr("SELECT t.stusab,t.county,t.tract,t.final_pop,g.pop100 FROM tracts t LEFT JOIN geo g "
-                      "ON t.state=g.state AND t.county=g.county AND t.tract=g.tract WHERE g.sumlev=140 AND t.final_pop != g.pop100")
+        bad = DB.csfr(
+            f"""
+            SELECT t.stusab,t.county,t.tract,t.final_pop,g.pop100
+            FROM {REIDENT}tracts t
+            LEFT JOIN {REIDENT}geo g
+            ON t.state=g.state AND t.county=g.county AND t.tract=g.tract
+            WHERE g.sumlev=140 AND t.final_pop != g.pop100
+            """)
         for (stusab,county,tract,final_pop,pop100) in bad:
             print(f"{stusab} {county} {tract} {final_pop} != {pop100}")
             if args.rm:
-                DB.csfr("UPDATE tracts set lp_start=Null,lp_end=null,sol_start=null,sol_end=null,hostlock=null,final_pop=null where stusab=%s and county=%s and tract=%s",
+                DB.csfr(f"""
+                UPDATE {REIDENT}tracts
+                SET lp_start=Null,lp_end=null,sol_start=null,sol_end=null,hostlock=null,final_pop=null
+                where stusab=%s and county=%s and tract=%s
+                """,
                         (stusab,county,tract))
                 dbrecon.dpath_unlink(dbrecon.LPFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))
                 dbrecon.dpath_unlink(dbrecon.SOLFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))

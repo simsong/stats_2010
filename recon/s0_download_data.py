@@ -26,7 +26,7 @@ REIDENT = os.getenv('REIDENT')
 
 
 def download(state_abbr, sf1_dest_dir):
-    config = dbrecon.get_config()
+    config = dbrecon.GetConfig().get_config()
     state_abbr = state_abbr.lower()
     rec        = dbrecon.state_rec(state_abbr)
     state_code = dbrecon.state_fips(state_abbr)
@@ -70,17 +70,16 @@ def validate(sf1_dist_dir):
 
 
 if __name__=="__main__":
-    config = dbrecon.get_config()
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Data Migration Tool" )
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--all",action='store_true',help='All states')
     parser.add_argument("state_abbrs",nargs="*",help='Specify states to download on')
-    parser.add_argument("--validate",action='store_true',help='Validate the ZIP files and delete those that are incomplete')
+    parser.add_argument("--validate",action='store_true',
+                        help='Validate the ZIP files and delete those that are incomplete')
     args = parser.parse_args()
-
-    config = dbrecon.get_config(filename=args.config)
+    config     = dbrecon.setup_logging_and_get_config(args=args,prefix="00dwn")
 
     ## Make sure we have a directory for the state
     sf1_dist_dir = dbrecon.dpath_expand("$SF1_DIST")

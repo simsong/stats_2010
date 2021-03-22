@@ -23,6 +23,7 @@ import sys
 import time
 import tempfile
 import subprocess
+import atexit
 
 from total_size import total_size
 
@@ -201,7 +202,7 @@ class LPTractBuilder:
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         if not args.debug:
-            DB.csfr("UPDATE tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
+            DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
                     (self.state_abbr,self.county,self.tract),rowcount=1)
 
     def get_constraint_summary(self, level, p01_data, data_dict, summary_nums):
@@ -453,7 +454,7 @@ class LPTractBuilder:
         f.close()
         if not args.debug:
             dbrecon.db_done('lp',self.state_abbr, self.county, self.tract)
-            dbrecon.DB.csfr("UPDATE tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
+            dbrecon.DB.csfr(f"UPDATE {REIDENT}tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
                             (dbrecon.maxrss()//GB,self.state_abbr, self.county, self.tract), rowcount=1)
             atexit.unregister(self.db_fail)
 
@@ -482,8 +483,12 @@ def build_tract_lp_tuple(tracttuple):
         lptb.build_tract_lp()
     except MemoryError as e:
         if not args.debug:
-            dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL where stusab=%s and county=%s and tract=%s",
-                            (state_abbr, county, tract))
+            dbrecon.DB.csfr(
+                f"""
+                UPDATE {REIDENT}tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL
+                WHERE stusab=%s and county=%s and tract=%s"
+                """,
+                (state_abbr, county, tract))
         logging.error(f"MEMORY ERROR in {state_abbr} {county} {tract}: {e}")
 
 """Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""
@@ -501,7 +506,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     if args.debug:
         tracts = [tractgen]
     else:
-        rows = DB.csfr("SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(state_abbr,county))
+        rows = DB.csfr(f"SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(state_abbr,county))
         tracts_needing_lp_files = [row[0] for row in rows]
         if tractgen=='all':
             if len(tracts_needing_lp_files)==0:
@@ -676,11 +681,13 @@ if __name__=="__main__":
 
     parser.add_argument("state",  help="2-character state abbreviation.")
     parser.add_argument("county", help="3-digit county code")
-    parser.add_argument("tract",  help="If provided, just synthesize for this specific 4-digit tract code. Otherwise do all in the county",nargs="?")
+    parser.add_argument("tract",
+                        help="If provided, just synthesize for this specific 4-digit tract code. "
+                        "Otherwise do all in the county",nargs="?")
 
     DB.quiet = True
     args     = parser.parse_args()
-    config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03syn")
+    config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03pan")
 
     assert dbrecon.dfxml_writer is not None
 
@@ -700,6 +707,6 @@ if __name__=="__main__":
 
     else:
         # We are doing a single state/county pair. We may do each tract multithreaded. Lock the tracts...
-        DB.csfr("UPDATE tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
+        DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
                 (dbrecon.hostname(),os.getpid(),args.state,args.county))
         make_state_county_files(args.state, args.county)

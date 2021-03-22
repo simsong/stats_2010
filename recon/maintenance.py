@@ -22,6 +22,7 @@ import ctools.lock
 import ctools.env as env
 import ctools.dbfile as dbfile
 
+REIDENT = os.getenv('REIDENT')
 
 def fix_states():
     db = dbrecon.DB()
@@ -35,7 +36,12 @@ def fix_states():
         fips = dbrecon.state_fips(sa)
         print(sa,fips)
         c = db.cursor()
-        c.execute("update tracts set state=%s where stusab=%s",(fips,sa))
+        c.execute(
+            f"""
+            UPDATE {REIDENT}tracts
+            SET state=%s
+            WHERE stusab=%s
+            """,(fips,sa))
         print("Changed:",c.rowcount)
         db.commit()
 
@@ -47,7 +53,7 @@ def summarize():
                               user=os.environ['MYSQL_USER'],
                               password=os.environ['MYSQL_PASSWORD'])
 
-    dbfile.DBMySQL.csfr(auth,"""INSERT INTO das_sysload_summary
+    dbfile.DBMySQL.csfr(auth,f"""INSERT INTO das_sysload_summary
     (t,host,ipaddr,min1_min,min1_avg,min1_max,freegb_min,freegb_avg,freegb_max,n)
     SELECT t,host,ipaddr,min1_min,min1_avg,min1_max,freegb_min,freegb_avg,freegb_max,n
     FROM (SELECT dayhour as t,
@@ -62,7 +68,7 @@ def summarize():
      FROM (SELECT from_unixtime(unix_timestamp(date(t))+3600*hour(t)) AS dayhour,host,ipaddr,min1,freegb FROM das_sysload)
            as cte GROUP BY dayhour,host,ipaddr) AS nums ON DUPLICATE KEY UPDATE das_sysload_summary.t=das_sysload_summary.t""")
 
-    dbfile.DBMySQL.csfr(auth,"""DELETE FROM das_sysload where timestampdiff(day,t,now())>7""")
+    dbfile.DBMySQL.csfr(auth,f"""DELETE FROM das_sysload where timestampdiff(day,t,now())>7""")
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter, description='perform a maintneance task')

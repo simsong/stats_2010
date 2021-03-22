@@ -53,8 +53,7 @@ if __name__=="__main__":
         Format.demo()
         exit(0)
 
-    config = dbrecon.setup_logging_and_get_config(args=args,
-                                                  prefix="s9report",error_alert=False)
+    config = dbrecon.setup_logging_and_get_config(args=args, prefix="s9report",error_alert=False)
 
     db = dbrecon.DB()
     db.connect()

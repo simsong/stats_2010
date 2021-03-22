@@ -27,7 +27,7 @@ REIDENT = os.getenv('REIDENT')
 
 def db_fail(state_abbr, county, tract):
     print(f"db_fail({state_abbr},{county},{tract})")
-    DB.csfr("UPDATE {REIDENT}tracts SET sol_start=NULL,sol_end=NULL,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",(state_abbr,county,tract))
+    DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL,sol_end=NULL,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",(state_abbr,county,tract))
 
 
 class InfeasibleError(RuntimeError):
@@ -44,7 +44,7 @@ and giving the Gurobi optimizer device to read from.
 """
 def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
     logging.info(f'RunGurobi({state_abbr},{county},{tract})')
-    config      = dbrecon.get_config()
+    config      = dbrecon.GetConfig().get_config()
     state_abbr  = state_abbr
     county      = county
     tract       = tract
@@ -165,7 +165,7 @@ def run_gurobi(state_abbr, county, tract, lpgz_filename, dry_run):
         vars.append("sol_gb")
         vals.append(dbrecon.maxrss() // GB)
 
-        cmd = "UPDATE tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
+        cmd = f"UPDATE {REIDENT}tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
         dbrecon.DB.csfr(cmd, vals+[state_abbr,county,tract])
     del env
     if tempname is not None:
@@ -203,12 +203,12 @@ def run_gurobi_for_county_tract(state_abbr, county, tract):
             dbrecon.dpath_unlink(lpgz_filename)
             dbrecon.rescan_files(state_abbr, county, tract)
         else:
-            dbrecon.DB.csfr('INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
+            dbrecon.DB.csfr(f'INSERT INTO {REIDENT}errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                             (str(e),state_abbr,county,tract))
             raise e;
     except InfeasibleError as e:
         logging.error(f"Infeasible in {state_abbr} {county} {tract}")
-        dbrecon.DB.csfr('INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
+        dbrecon.DB.csfr(f'INSERT INTO {REIDENT}errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                         (str(e),state_abbr,county,tract))
         raise e
     #except Exception as e:
@@ -228,13 +228,18 @@ def run_gurobi_tuple(tt):
 def run_gurobi_for_county(state_abbr, county, tracts):
     logging.info(f"run_gurobi_for_county({state_abbr},{county})")
     if (tracts==[]) or (tracts==['all']):
-        tracts = [row[0] for row in DB.csfr(f"SELECT tract FROM {REIDENT}tracts WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND stusab=%s AND county=%s",
-                                            (state_abbr, county))]
+        tracts = [row[0] for row in DB.csfr(
+            f"""
+            SELECT tract
+            FROM {REIDENT}tracts
+            WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND stusab=%s AND county=%s
+            """,
+            (state_abbr, county))]
 
         logging.info(f"Tracts require solving in {state_abbr} {county}: {tracts}")
         if tracts==[]:
             # No tracts. Report if there are tracts in county missing LP files
-            rows = DB.csfr(f"SELECT {REIDENT}tract FROM tracts WHERE (lp_end IS NULL) AND stusab=%s AND county=%s",(state_abbr,county))
+            rows = DB.csfr(f"SELECT tract FROM {REIDENT}tracts WHERE (lp_end IS NULL) AND stusab=%s AND county=%s",(state_abbr,county))
             if rows:
                 logging.warning(f"run_gurobi_for_county({state_abbr},{county}): {len(rows)} tracts do not have LP files")
             return

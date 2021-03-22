@@ -59,7 +59,7 @@ CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be chang
 ## Functions that return paths.
 ## These cannot be constants because they do substituion, and f-strings don't work as macros
 ###
-SF1_DIR           = '$ROOT/{state_abbr}/{state_code}{county}'
+SF1_DIR           = '$ROOT/work/{state_abbr}/{state_code}{county}'
 SF1_RACE_BINARIES = '$SRC/layouts/sf1_vars_race_binaries.csv'
 
 global dfxml_writer
@@ -231,7 +231,7 @@ def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
         raise RuntimeError(f"errors: {errors}")
     return count
 
-def get_final_pop_from_sol(state_abbr,county,tract,delete=True):
+def get_final_pop_from_sol(state_abbr, county, tract, delete=True):
     sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
     count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
@@ -344,20 +344,20 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
 
 def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
     fips = state_fips(state_abbr)
-    return f"{root}/{state_abbr}/{fips}{county}"
+    return f"{root}/work/{state_abbr}/{fips}{county}"
 
 def LPDIR(*,state_abbr,county):
     """Returns the directory where LP files for a particular state and county are stored.
     dpath_expand() is not called because we may search this directory for files."""
     fips = state_fips(state_abbr)
-    return f'$ROOT/{state_abbr}/{fips}{county}/lp'
+    return f'$ROOT/work/{state_abbr}/{fips}{county}/lp'
 
 def SOLDIR(*,state_abbr,county):
     """Returns the directory where LP files for a particular state and county are stored.
     dpath_expand() is not called because we may search this directory for files.
     """
     fips = state_fips(state_abbr)
-    return f'$ROOT/{state_abbr}/{fips}{county}/sol'
+    return f'$ROOT/work/{state_abbr}/{fips}{county}/sol'
 
 def SF1_ZIP_FILE(*,state_abbr):
     return dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr))
@@ -536,12 +536,12 @@ def parse_state_abbrs(statelist):
 
 def counties_for_state(state_abbr):
     """Return a list of the the county codes (as strings) for the counties in state_abbr"""
-    rows = DB.csfr(f"SELECT {REIDENT}county FROM geo WHERE stusab=%s and sumlev='050'",(state_abbr,))
+    rows = DB.csfr(f"SELECT county FROM {REIDENT}geo WHERE stusab=%s and sumlev='050'",(state_abbr,))
     return [row[0] for row in rows]
 
 def tracts_for_state_county(*,state_abbr,county):
     """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr(f"SELECT {REIDENT}tract from tracts where stusab=%s and county=%s",(state_abbr,county))
+    rows = DB.csfr(f"SELECT tract from {REIDENT}tracts where stusab=%s and county=%s",(state_abbr,county))
     return [row[0] for row in rows]
 
 ################################################################
@@ -668,7 +668,7 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
 def setup_logging_and_get_config(*,args,**kwargs):
     config = GetConfig().get_config()
     setup_logging(config=config,**kwargs)
-    return
+    return config
 
 def add_dfxml_tag(tag,text=None,attrs={}):
     e = ET.SubElement(dfxml_writer.doc, tag, attrs)
@@ -676,7 +676,7 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr(f"INSERT INTO {REIDENT}errors (host,error,argv0,file,last_value) VALUES (%s,%s,%s,%s,%s)",
+    DB.csfr(f"INSERT INTO {REIDENT}errors (`host`,`error`,`argv0`,`file`,`last_value`) VALUES (%s,%s,%s,%s,%s)",
             (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
     print("LOG ERROR:",error,file=sys.stderr)
 
@@ -699,7 +699,6 @@ def dpath_expand(path):
     config = GetConfig().get_config()
     while True:
         m = var_re.search(path)
-        print("path=",path,"m=",m)
         if not m:
             break
         varname  = m.group(1)[1:]
@@ -708,21 +707,16 @@ def dpath_expand(path):
         if varname_hostname in config[SECTION_PATHS]:
             varname = varname_hostname
 
-        print("varname=",varname)
         if varname in config[SECTION_PATHS]:
             val = config[SECTION_PATHS][varname]
-            print("1.val=",val)
         elif varname in os.environ:
             val = os.environ[varname]
-            print("2.val=",val)
         else:
             logging.error("varname: %s",varname)
             logging.error("path: %s",path)
             logging.error("keys in [%s]: %s",SECTION_PATHS,list(config[SECTION_PATHS].keys()))
             raise KeyError(f"'{varname}' not in [{SECTION_PATHS}] of config file and not in global environment")
         path = path[0:m.start(1)] + val + path[m.end(1):]
-        print("new path:",path)
-
     return path
 
 def dpath_exists(path):

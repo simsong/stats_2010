@@ -27,6 +27,7 @@ from total_size import total_size
 import dbrecon
 from dbrecon import dopen,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE
 from ctools.timer import Timer
+import ctools.s3 as s3
 
 # The linkage variables, in the order they appear in the file
 SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
@@ -34,14 +35,23 @@ SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
 REIDENT = os.getenv('REIDENT')
 ANY="any"
 
-
 def sf1_zipfilename(state_abbr):
-    return dbrecon.dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip")
+    """If the SF1 is on S3, download it to a known location and work from there"""
+    sf1_path = dbrecon.dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip")
+    if sf1_path.startswith("s3://"):
+        local_path = "/tmp/" + sf1_path.replace("/","_")
+        if not os.path.exists(local_path):
+            (bucket,key) = s3.get_bucket_key(sf1_path)
+            print(f"Downloading {sf1_path} to {local_path}")
+            s3.get_object(bucket, key, local_path)
+        return local_path
+    return sf1_path
 
 class ReaderException(Exception):
     pass
 
 class SF1SegmentReader():
+    """Class to read directly out of the ZIP file."""
     def __init__(self,*,state_abbr,segment_filename,names,xy,cifsn):
         """ Given a state abbreviation and a segment number, open it"""
         self.infile = dopen(segment_filename, zipfilename=sf1_zipfilename(state_abbr), encoding='latin1')
@@ -189,6 +199,9 @@ def process_state(state_abbr):
                                          geoid.strip() )
                     counts[sumlev] += 1
                     ct += 1
+                    if ct%1000==0:
+                        logging.info("ct=%d",ct)
+
 
         print("{} geography file processed. counties:{}  tracts:{}  blocks:{}  mem:{:,}".format(
             state_abbr, counts[SUMLEV_COUNTY], counts[SUMLEV_TRACT], counts[SUMLEV_BLOCK],
@@ -253,6 +266,8 @@ def process_state(state_abbr):
 
                 outline = ",".join(fields) + "\n"
                 output_files[county][sumlev].write(outline)
+            if count%1000==0:
+                logging.info("count=%d",count)
 
 
 if __name__=="__main__":

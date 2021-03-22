@@ -784,7 +784,7 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
         if encoding==None and ("b" not in mode):
             encoding='utf-8'
         logging.info("zipfilename bypass: zipfilename=%s filename=%s  mode=%s encoding=%s",zipfilename,filename,mode,encoding)
-        return io.TextIOWrapper(zf , encoding=encoding)
+        return io.TextIOWrapper(io.BufferedReader(zf, buffer_size=1024*1024) , encoding=encoding) # big buffer please
 
 
     # Legacy code follow

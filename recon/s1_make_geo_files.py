@@ -24,14 +24,12 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 import ctools.s3
 from ctools.timer import Timer
 
-from dbrecon import dopen,dpath_expand,dmakedirs,DB
+from dbrecon import dopen,dpath_expand,dmakedirs,DB,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE
 
 
 
 REIDENT = os.getenv('REIDENT')
 GEO_LAYOUT_FILENAME="$SRC/layouts/geo_layout.txt"
-GEOFILE_FILENAME_TEMPLATE = "$ROOT/work/{state_abbr}/geofile_{state_abbr}.csv"
-STATE_COUNTY_FILENAME_TEMPLATE = '$ROOT/work/{state_abbr}/state_county_list_{state_code}.csv'
 
 TRANSACTION_RECORDS = 20
 

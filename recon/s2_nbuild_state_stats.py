@@ -25,7 +25,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 from total_size import total_size
 import dbrecon
-from dbrecon import dopen
+from dbrecon import dopen,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE
 from ctools.timer import Timer
 
 # The linkage variables, in the order they appear in the file
@@ -119,22 +119,8 @@ def process_state(state_abbr):
 
         state_abbr_upper = state_abbr.upper()
         layouts          = json.load(dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
-        geo_filename     = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
-        done_filename    = f"$ROOT/{state_abbr}/completed_{state_abbr}_02"
+        geo_filename     = GEOFILE_FILENAME_TEMPLATE.format(state_abbr=state_abbr)
 
-        # done_filename is created when files are generated
-        # If there are no county directories, delete the done file.
-        for county in dbrecon.counties_for_state(state_abbr):
-            if ( (not dbrecon.dpath_exists(dbrecon.STATE_COUNTY_DIR(state_abbr=state_abbr,county=county) ) )
-                 and dbrecon.dpath_exists(done_filename)):
-                dbrecon.dpath_unlink(done_filename)
-
-        # If done_file exists, we don't need to run.
-        # This would be better done by checking all of the county files.
-
-        if dbrecon.dpath_exists(done_filename):
-            print(f"{state_abbr} already exists")
-            return
 
         # Generate the CSV header that the original code used
         # This looks weird, but we are trying to match the original files exactly.

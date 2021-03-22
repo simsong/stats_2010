@@ -59,8 +59,11 @@ CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be chang
 ## Functions that return paths.
 ## These cannot be constants because they do substituion, and f-strings don't work as macros
 ###
-SF1_DIR           = '$ROOT/work/{state_abbr}/{state_code}{county}'
-SF1_RACE_BINARIES = '$SRC/layouts/sf1_vars_race_binaries.csv'
+SF1_DIR                        = '$ROOT/work/{state_abbr}/{state_code}{county}'
+SF1_RACE_BINARIES              = '$SRC/layouts/sf1_vars_race_binaries.csv'
+GEOFILE_FILENAME_TEMPLATE      = "$ROOT/work/{state_abbr}/geofile_{state_abbr}.csv"
+STATE_COUNTY_FILENAME_TEMPLATE = '$ROOT/work/{state_abbr}/state_county_list_{state_code}.csv'
+
 
 global dfxml_writer
 dfxml_writer = None
@@ -760,14 +763,31 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     logging.info("  dopen('{}','{}','{}', zipfilename={})".format(path,mode,encoding,zipfilename))
     path = dpath_expand(path)
 
-    if path[0:5]=='s3://':
+    # immediate passthrough if zipfilename is None and s3 is requested
+    if path[0:5]=='s3://' and zipfilename is None:
         if mode.startswith('r') and not s3.s3exists(path):
             raise FileNotFoundError(path)
-        return s3.s3open(path, mode=mode, encoding=encoding)
+        if mode=='rb':
+            return s3.S3File(path, mode=mode)
+        else:
+            return s3.s3open(path, mode=mode, encoding=encoding)
 
     if 'b' in mode:
         encoding=None
 
+    # immediate passthrough if zipfilename  is provided
+    if zipfilename:
+        assert mode.startswith('r') # can only read from zipfiles
+        filename = os.path.basename(path)
+        zip_file = zipfile.ZipFile(dopen(zipfilename, mode='rb'))
+        zf       = zip_file.open(filename, 'r')
+        if encoding==None and ("b" not in mode):
+            encoding='utf-8'
+        logging.info("zipfilename bypass: zipfilename=%s filename=%s  mode=%s encoding=%s",zipfilename,filename,mode,encoding)
+        return io.TextIOWrapper(zf , encoding=encoding)
+
+
+    # Legacy code follow
     # Check for full path name
     logging.info("=>open(path={},mode={},encoding={})".format(path,mode,encoding))
 
@@ -785,7 +805,7 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
             if len(zipnames)==1:
                 zipfilename = zipnames[0]
         if zipfilename:
-            zip_file  = zipfile.ZipFile(dpath_expand(zipfilename))
+            zip_file  = zipfile.ZipFile(dopen(zipfilename, mode='rb'))
             zf        = zip_file.open(filename, 'r')
             logging.info("  ZIP: {} found in {}".format(filename,zipfilename))
             if encoding==None and ("b" not in mode):

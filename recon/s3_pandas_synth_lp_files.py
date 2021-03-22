@@ -29,7 +29,7 @@ from total_size import total_size
 
 import dbrecon
 from dbrecon import DB,GB,MB
-from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info
+from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info
 
 assert pd.__version__ > '0.19'
 
@@ -498,8 +498,8 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     All of the tract LP files are built from the same data model, so they can be built in parallel with shared memory.
     Consults the database to see which files need to be rebuilt, and only builds those files.
     """
-    assert state_abbr[0].isalpha()
-    assert county[0].isdigit()
+    assert (state_abbr[0].isalpha()) and (len(state_abbr)==2)
+    assert (county[0].isdigit()) and (len(county)==3)
     logging.info(f"make_state_county_files({state_abbr},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
@@ -526,6 +526,9 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ### Has the variables and the collapsing values we want (e.g, to collapse race, etc)
     ### These data frames are all quite small
     sf1_vars       = pd.read_csv(dopen(dbrecon.SF1_RACE_BINARIES), quoting=2)
+
+    assert len(sf1_vars) > 0
+
     make_attributes_categories(sf1_vars)
 
     sf1_vars_block = sf1_vars[(sf1_vars['level']=='block')]
@@ -535,13 +538,19 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ### These files are not that large
 
     try:
-        sf1_block_reader = csv.DictReader(dopen(
-            dbrecon.SF1_BLOCK_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
-        sf1_tract_reader = csv.DictReader(dopen(
-            dbrecon.SF1_TRACT_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
+        sf1_block_data_file = dpath_expand( dbrecon.SF1_BLOCK_DATA_FILE(state_abbr=state_abbr,county=county) )
+        sf1_block_reader = csv.DictReader(dopen( sf1_block_data_file,'r'))
     except FileNotFoundError as e:
         print(e)
-        logging.error(f"ERROR. NO BLOCK DATA FILE for {state_abbr} {county} ")
+        logging.error(f"ERROR. NO BLOCK DATA FILE {sf1_block_data_file} for {state_abbr} {county} ")
+        return
+
+    try:
+        sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(state_abbr=state_abbr,county=county) )
+        sf1_tract_reader = csv.DictReader(dopen( sf1_tract_data_file,'r'))
+    except FileNotFoundError as e:
+        print(e)
+        logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {state_abbr} {county} ")
         return
 
     ## make sf1_block_list, looks like this:
@@ -568,20 +577,28 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ## TODO: Improve this by turning the geoids and tablevars into categories.
     ##
     logging.info("building sf1_block_list for %s %s",state_abbr,county)
-    sf1_block_list=[]
+    sf1_block_list = []
     for s in sf1_block_reader:
-        temp_list=[]
+        temp_list = []
         if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
             geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)+str(s['BLOCK'])
             for k,v in list(s.items()):
                 if k[:1]=='P' and geo_id[:1]!='S' and v.strip()!='':
                     sf1_block_list.append([geo_id,k,float(v)])
 
+    assert len(sf1_block_list) > 0
     sf1_block     = pd.DataFrame.from_records(sf1_block_list, columns=[GEOID,TABLEVAR,'value'])
+    assert len(sf1_block)>0
+
     make_attributes_categories(sf1_block)
 
     sf1_block_all = pd.merge(sf1_block, sf1_vars_block, how='inner',
                              left_on=[TABLEVAR], right_on=[CELL_NUMBER])
+
+    print(f"sf1_block:\n{sf1_block}")
+    print(f"sf1_vars_block:\n{sf1_vars_block}")
+    print(f"sf1_block_all:\n{sf1_block_all}")
+
     sf1_block_all['value'].fillna(0)
 
     ## make sf1_block_dict.
@@ -590,6 +607,8 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
 
     logging.info("collecting tract and block data for %s %s",state_abbr,county)
     sf1_block_records = sf1_block_all.to_dict(orient='records')
+    assert len(sf1_block_records) > 0
+
     sf1_block_dict = {}
     for d in sf1_block_records:
         tract=d[GEOID][5:11]  # tracts are six digits

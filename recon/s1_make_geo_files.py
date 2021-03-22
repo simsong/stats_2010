@@ -29,9 +29,12 @@ from dbrecon import dopen,dpath_expand,dmakedirs,DB
 
 
 REIDENT = os.getenv('REIDENT')
-
 GEO_LAYOUT_FILENAME="$SRC/layouts/geo_layout.txt"
+GEOFILE_FILENAME_TEMPLATE = "$ROOT/work/{state_abbr}/geofile_{state_abbr}.csv"
+STATE_COUNTY_FILENAME_TEMPLATE = '$ROOT/work/{state_abbr}/state_county_list_{state_code}.csv'
+
 TRANSACTION_RECORDS = 20
+
 def fields_str(field_count,record_count=1):
     fields = "(" + ",".join(['%s']*field_count) + ")"
     fields_str = ",".join([fields] * record_count)
@@ -65,14 +68,14 @@ def make_county_list(state_abbr:str):
         names.append(g['field_name'])
         colspecs.append((int(g['start_pos'])-1, int(g['start_pos'])+int(g['length'])-1))
 
-    # CSV output. We make this by default, but we should be able to run it entirely out of the database
+    # CSV output. We make this by default. In the future  we should be able to run it entirely out of the database
     if args.csv:
         # Output files
-        geofile_csv_filename       = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
-        state_county_list_filename = f'$ROOT/{state_abbr}/state_county_list_{state_code}.csv'
+        geofile_csv_filename       = GEOFILE_FILENAME_TEMPLATE.format(state_abbr=state_abbr)
+        state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(state_abbr=state_abbr, state_code=state_code)
 
         logging.info(f"Creating {geofile_csv_filename}")
-        dbrecon.dmakedirs(f"$ROOT/{state_abbr}") # make sure we can create the output file
+        dbrecon.dmakedirs( os.path.dirname(geofile_csv_filename) ) # make sure we can create the output file
 
         csvfile = dopen(geofile_csv_filename, 'w')
         writer  = csv.DictWriter(csvfile, fieldnames=names)

@@ -761,6 +761,8 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     path = dpath_expand(path)
 
     if path[0:5]=='s3://':
+        if mode.startswith('r') and not s3.s3exists(path):
+            raise FileNotFoundError(path)
         return s3.s3open(path, mode=mode, encoding=encoding)
 
     if 'b' in mode:

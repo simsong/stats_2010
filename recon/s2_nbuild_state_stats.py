@@ -220,7 +220,7 @@ def process_state(state_abbr):
         output_files = {}
         state_code = dbrecon.state_fips(state_abbr)
         for county_code in dbrecon.counties_for_state(state_abbr):
-            countydir = f'$ROOT/{state_abbr}/{state_code}{county_code}'
+            countydir = f'$ROOT/work/{state_abbr}/{state_code}{county_code}'
             dbrecon.dmakedirs(countydir)
             output_files[county_code] = {
                 SUMLEV_COUNTY: dopen(f'{countydir}/sf1_county_{state_code}{county_code}.csv','w') ,

@@ -27,6 +27,8 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 import psutil
+import boto3
+import botocore
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
@@ -817,10 +819,25 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
         return GZFile(path,mode=mode,encoding=encoding)
     return open(path,mode=mode,encoding=encoding)
 
+def dwait_exists(src):
+    """When writing to S3, objects may not exist immediately. You can call this to wait until they do."""
+    (bucket,key) = s3.get_bucket_key(src)
+    cmd=['wait','object-exists','--bucket',bucket,'--key',key]
+    logging.info(' '.join(cmd))
+    s3.aws_s3api(cmd)
+
 def drename(src,dst):
     logging.info('drename({},{})'.format(src,dst))
+    if src.startswith('s3://') and dst.startswith('s3://'):
+        (src_bucket, src_key) = s3.get_bucket_key(src)
+        (dst_bucket, dst_key) = s3.get_bucket_key(dst)
+        s3r = boto3.resource('s3')
+        s3r.Object(dst_bucket,dst_key).copy_from(CopySource=src_bucket + '/' + src_key)
+        s3r.Object(src_bucket, src_key).delete()
+        return
+
     if src.startswith('s3://') or dst.startswith('s3://'):
-        raise RuntimeError('drename does not yet implement s3')
+        raise RuntimeError('drename does not implement renaming local file to S3')
     return os.rename( dpath_expand(src), dpath_expand(dst) )
 
 def dmakedirs(dpath):
@@ -835,7 +852,14 @@ def dmakedirs(dpath):
 
 def dgetsize(dpath):
     path = dpath_expand(dpath)
-    assert path.startswith("s3://")==False
+    if path.startswith("s3://"):
+        (bucket,key) = s3.get_bucket_key(path)
+        try:
+            return boto3.resource('s3').Object(bucket,key).content_length
+        except botocore.exceptions.ClientError as err:
+            if err.response['Error']['Code']=='404':
+                raise FileNotFoundError(path) from err
+            raise
     return os.path.getsize(path)
 
 def dsystem(x):

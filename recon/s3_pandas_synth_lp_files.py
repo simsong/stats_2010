@@ -360,6 +360,7 @@ class LPTractBuilder:
         state_code    = dbrecon.state_fips(self.state_abbr)
         geo_id        = self.sf1_tract_data[0][GEOID]
         lpfilenamegz  = LPFILENAMEGZ(state_abbr=self.state_abbr,county=self.county,tract=self.tract)
+        use_s3        = lpfilenamegz.startswith("s3://")
         tmpgzfilename = lpfilenamegz.replace(".gz",".tmp.gz")
         if args.output:
             outfilename = args.output
@@ -381,7 +382,9 @@ class LPTractBuilder:
                     dbrecon.db_done('lp',self.state_abbr, self.county, self.tract)
                     return
             except FileNotFoundError as e:
+                # Intentional fall through
                 pass
+
 
         t0         = time.time()
         logging.info(f"{state_code}{self.county}{self.tract} tract_data_size:{sys.getsizeof(self.sf1_tract_data):,} ; "
@@ -466,6 +469,8 @@ class LPTractBuilder:
             exit(0)
 
         # Rename the temp file to the gzfile
+        # If running on S3, make sure the object exists
+        dbrecon.dwait_exists(outfilename)
         dbrecon.drename(outfilename, lpfilenamegz)
 
 

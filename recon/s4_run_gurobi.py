@@ -17,12 +17,15 @@ import time
 import atexit
 import multiprocessing
 
+from os.path import dirname,basename,abspath
+
 import gurobipy
 import dbrecon
 from dbrecon import DB
-from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
+from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR
 
 REIDENT = os.getenv('REIDENT')
+
 
 
 def db_fail(stusab, county, tract):
@@ -37,6 +40,11 @@ class InfeasibleError(RuntimeError):
 # http://www.gurobi.com/documentation/8.1/refman/mip_logging.html
 GUROBI_THREADS_DEFAULT=16
 MODEL_ATTRS="NumVars,NumConstrs,NumNZs,NumIntVars,MIPGap,Runtime,IterCount,BarIterCount,isMIP".split(",")
+
+def remove_lp_from_db(stusab,county,tract):
+    dbrecon.DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where stusab=%s and county=%s and tract=%s",
+                    (stusab,county,tract))
+
 
 """Run gurobi with a given LP file.
 Note: automatically handles the case where lpfile is compressed by decompressing
@@ -58,18 +66,15 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
     p           = None # subprocess for decompressor
     tempname    = None # symlink that points to decompressed model file
 
-    if lpgz_filename.startswith("s3:"):
-        raise RuntimeError("This must be modified to allow Gurobi to read files from S3 using the stdin hack.")
-
     # make sure input file exists and is valid
-    if not os.path.exists(lpgz_filename) or dbrecon.dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
-        if os.path.exists(lpgz_filename):
+    if dpath_exists(lpgz_filename):
+        if dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
             logging.warning("File {} is too small ({}). Removing and updating database.".format(lpgz_filename,os.path.getsize(lpgz_filename)))
             os.unlink(lpgz_filename)
-        else:
-            logging.warning("File does not exist: {}. Updating database.".format(lpgz_filename))
-        dbrecon.DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where stusab=%s and county=%s and tract=%s",
-                        (stusab,county,tract))
+            remove_lp_from_db(stusab,county,tract)
+    else:
+        logging.warning("File does not exist: {}. Updating database.".format(lpgz_filename))
+        remove_lp_from_db(stusab,county,tract)
         return
 
     # Make sure output does not exist. If it exists, delete it, otherwise give an error
@@ -79,7 +84,7 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
             dbrecon.dpath_unlink(fn)
 
     # make sure output directory exists
-    dbrecon.dmakedirs( os.path.dirname( sol_filename))
+    dbrecon.dmakedirs( dirname( sol_filename))
     dbrecon.db_start('sol', stusab, county, tract)
 
     try:
@@ -100,10 +105,14 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
         model = gurobipy.read(lpgz_filename, env=env)
         tempname = None
     elif lpgz_filename.endswith(".lp.gz"):
-        p = subprocess.Popen(['zcat',lpgz_filename],stdout=subprocess.PIPE)
         # Because Gurobin must read from a file that ends with a .lp,
         # make /tmp/stdin.lp a symlink to /dev/stdin, and
         # then read that
+        if lpgz_filename.startswith('s3://'):
+            cmd = os.path.join( MY_DIR, 's3zcat')
+        else:
+            cmd = 'zcat'
+        p = subprocess.Popen([cmd,lpgz_filename],stdout=subprocess.PIPE)
         tempname = f"/tmp/stdin-{p.pid}-"+(lpgz_filename.replace("/","_"))+".lp"
         if os.path.exists(tempname):
             raise RuntimeError(f"File should not exist: {tempname}")
@@ -118,6 +127,7 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
         print(f"MODEL FOR {stusab} {county} {tract} ")
         model.printStats()
     else:
+        model.printStats()      # debug code
         logging.info(f"Starting optimizer. pid={os.getpid()}")
         start_time = time.time()
         model.optimize()
@@ -127,23 +137,34 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
         vars = []
         vals = []
 
-        # Model is optimal
+        # Model is optimal. If sol_filename is on s3, write to a tempoary file and copy it up there
+        if sol_filename.startswith('s3://'):
+            s3_sol_filename = sol_filename
+            sol_filename = f'/mnt/tmp/sol-{stusab}{county}{tract}.sol'
+        else:
+            s3_sol_filename = None
+
+        #
         if model.status == 2:
             logging.info(f'Model {geoid_tract} is optimal. Solve time: {sol_time}s. Writing solution to {sol_filename}')
             model.write(sol_filename)
         # Model is infeasible. This should not happen
         elif model.status == 3:
             logging.info(f'Model {geoid_tract} is infeasible. Elapsed time: {sol_time}s. Writing ILP to {ilp_filename}')
-            dbrecon.dmakedirs( os.path.dirname( ilp_filename)) # make sure output directory exists
+            dbrecon.dmakedirs( dirname( ilp_filename)) # make sure output directory exists
             model.computeIIS()
             model.write(dbrecon.dpath_expand(ilp_filename))
             raise InfeasibleError();
         else:
             logging.error(f"Unknown model status code: {model.status}")
 
-        # Compress the output file
-        cmd = ['gzip','-1f',sol_filename]
+        # Compress the output file in place, or while writing to s3
+        if s3_sol_filename:
+            cmd = [ os.path.join( MY_DIR, 's3zput'), sol_filename, s3_sol_filename+'.gz' ]
+        else:
+            cmd = ['gzip','-1f',sol_filename]
         subprocess.check_call(cmd)
+
         dbrecon.db_done('sol', stusab, county, tract) # indicate we have a solution
 
         # Save model information in the database
@@ -167,7 +188,7 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
 
         cmd = f"UPDATE {REIDENT}tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
         dbrecon.DB.csfr(cmd, vals+[stusab,county,tract])
-    del env
+    del env                     # free the memory and release the Gurobi token
     if tempname is not None:
         os.unlink(tempname)
 
@@ -270,7 +291,7 @@ if __name__=="__main__":
 
     args       = parser.parse_args()
     config     = dbrecon.setup_logging_and_get_config(args=args,prefix="04run")
-    stusab = dbrecon.stusab(args.stusab).lower()
+    stusab     = dbrecon.stusab(args.stusab).lower()
     tracts     = args.tracts
 
     DB.quiet = True

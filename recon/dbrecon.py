@@ -29,12 +29,14 @@ import zipfile
 import psutil
 import boto3
 import botocore
+import subprocess
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
 # Make sure we can read ctools, which is in ..
 
-PARENT_DIR = dirname(dirname(abspath(__file__)))
+MY_DIR      = dirname(abspath(__file__))
+PARENT_DIR = dirname(MY_DIR)
 if PARENT_DIR not in sys.path:
     sys.path.append( PARENT_DIR )
 
@@ -771,8 +773,11 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
             raise FileNotFoundError(path)
         if mode=='rb':
             return s3.S3File(path, mode=mode)
-        else:
-            return s3.s3open(path, mode=mode, encoding=encoding)
+        if mode.startswith('w') and path.endswith('.gz'):
+            p = subprocess.Popen([ os.path.join(MY_DIR, 's3zput'), '/dev/stdin', path],
+                                 stdin=subprocess.PIPE)
+            return p.stdin
+        return s3.s3open(path, mode=mode, encoding=encoding)
 
     if 'b' in mode:
         encoding=None

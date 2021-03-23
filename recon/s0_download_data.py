@@ -25,14 +25,14 @@ from dbrecon import dopen,dpath_exists
 REIDENT = os.getenv('REIDENT')
 
 
-def download(state_abbr, sf1_dest_dir):
+def download(stusab, sf1_dest_dir):
     config = dbrecon.GetConfig().get_config()
-    state_abbr = state_abbr.lower()
-    rec        = dbrecon.state_rec(state_abbr)
-    state_code = dbrecon.state_fips(state_abbr)
+    stusab = stusab.lower()
+    rec        = dbrecon.state_rec(stusab)
+    state_code = dbrecon.state_fips(stusab)
 
     ### check for file and if does not exist, download it
-    url      = config['urls']['SF1_URL_TEMPLATE'].format(state_name=rec['state_name'], state_abbr=state_abbr)
+    url      = config['urls']['SF1_URL_TEMPLATE'].format(state_name=rec['state_name'], stusab=stusab)
     sf1_dist = dbrecon.dpath_expand("$SF1_DIST")
     filename = sf1_dist+"/"+os.path.basename(url)
     print(f"Downloading {url} -> {filename}")
@@ -75,7 +75,7 @@ if __name__=="__main__":
                              description="Data Migration Tool" )
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--all",action='store_true',help='All states')
-    parser.add_argument("state_abbrs",nargs="*",help='Specify states to download on')
+    parser.add_argument("stusabs",nargs="*",help='Specify states to download on')
     parser.add_argument("--validate",action='store_true',
                         help='Validate the ZIP files and delete those that are incomplete')
     args = parser.parse_args()
@@ -93,9 +93,9 @@ if __name__=="__main__":
 
     states = []
     if args.all:
-        states = dbrecon.all_state_abbrs()
+        states = dbrecon.all_stusabs()
     else:
-        states = args.state_abbrs
+        states = args.stusabs
 
     if not states:
         print("Specify states to download or --all")

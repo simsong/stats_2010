@@ -4,7 +4,7 @@
 read_geo_file.py:
 Inputs: SF1 ZIPFILES
 Outputs: SF1 geofile as a CSV with a file header and list of counties in the state
-Output location: $ROOT/{state_abbr}/
+Output location: $ROOT/{stusab}/
 """
 
 import json
@@ -38,18 +38,18 @@ def fields_str(field_count,record_count=1):
     fields_str = ",".join([fields] * record_count)
     return fields_str
 
-def make_county_list(state_abbr:str):
+def make_county_list(stusab:str):
     """Given a state abbreviation, find the geo file, extract information, and store in the CSV files
     and in the SQL database."""
 
-    print(f"make_county_list({state_abbr})")
+    print(f"make_county_list({stusab})")
 
-    state_code       = dbrecon.state_fips(state_abbr)
+    state_code       = dbrecon.state_fips(stusab)
 
     # Input files
 
-    sf1_zipfilename  = dbrecon.dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip")
-    sf1_geofilename  = f"{state_abbr}geo2010.sf1"
+    sf1_zipfilename  = dbrecon.dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
+    sf1_geofilename  = f"{stusab}geo2010.sf1"
 
     # Open the SF1 zipfile
     if sf1_zipfilename.startswith("s3://"):
@@ -69,8 +69,8 @@ def make_county_list(state_abbr:str):
     # CSV output. We make this by default. In the future  we should be able to run it entirely out of the database
     if args.csv:
         # Output files
-        geofile_csv_filename       = GEOFILE_FILENAME_TEMPLATE.format(state_abbr=state_abbr)
-        state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(state_abbr=state_abbr, state_code=state_code)
+        geofile_csv_filename       = GEOFILE_FILENAME_TEMPLATE.format(stusab=stusab)
+        state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(stusab=stusab, state_code=state_code)
 
         logging.info(f"Creating {geofile_csv_filename}")
         dbrecon.dmakedirs( os.path.dirname(geofile_csv_filename) ) # make sure we can create the output file
@@ -85,7 +85,7 @@ def make_county_list(state_abbr:str):
     db = DB()
     db.connect()
     c = db.cursor()
-    c.execute(f"DELETE from {REIDENT}geo where STUSAB=%s",(state_abbr,))
+    c.execute(f"DELETE from {REIDENT}geo where STUSAB=%s",(stusab,))
 
     # extract fields from the geofile and write them to the geofile_csv_file and/or the database
     # We do this because the geofile is position-specified and it was harder to use that.
@@ -106,7 +106,7 @@ def make_county_list(state_abbr:str):
         if args.csv:
             writer.writerow(dataline)
             if dataline['SUMLEV']=='050':
-                row = [dataline['STATE'], dataline['COUNTY'],state_abbr]
+                row = [dataline['STATE'], dataline['COUNTY'],stusab]
                 writer2.writerow(row)
 
         # Write to database specific geolevels
@@ -145,7 +145,7 @@ if __name__=="__main__":
     parser.add_argument("--showcounties",
                         help="Display all counties for state from files that were created", action='store_true')
     parser.add_argument("--nocsv", help="Do not make the CSV files", action='store_true')
-    parser.add_argument("state_abbr", help="States to process. Say 'all' for all", nargs='*')
+    parser.add_argument("stusab", help="States to process. Say 'all' for all", nargs='*')
     dbrecon.argparse_add_logging(parser)
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="01mak")
@@ -159,15 +159,15 @@ if __name__=="__main__":
         if not dbrecon.dpath_exists(fn):
             raise FileNotFoundError(fn)
 
-    if args.state_abbr==[] or args.state_abbr[0]=='all':
-        states = dbrecon.all_state_abbrs()
+    if args.stusab==[] or args.stusab[0]=='all':
+        states = dbrecon.all_stusabs()
     else:
-        states = args.state_abbr
+        states = args.stusab
 
     # Are we just printing status reports?
     if args.showcounties:
-        for state_abbr in states:
-            print(dbrecon.counties_for_state(state_abbr))
+        for stusab in states:
+            print(dbrecon.counties_for_state(stusab))
         exit(0)
 
     # Generate the CSV files. Do this in parallel

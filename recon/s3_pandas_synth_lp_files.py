@@ -191,9 +191,9 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
 class LPTractBuilder:
     """Build the LP files for a given tract"""
 
-    def __init__(self,state_abbr, county, tract, sf1_tract_data, sf1_block_data):
+    def __init__(self,stusab, county, tract, sf1_tract_data, sf1_block_data):
         self.master_tuple_list=[]
-        self.state_abbr = state_abbr
+        self.stusab = stusab
         self.county     = county
         self.tract      = tract
         self.sf1_tract_data = sf1_tract_data
@@ -203,7 +203,7 @@ class LPTractBuilder:
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         if not args.debug:
             DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
-                    (self.state_abbr,self.county,self.tract),rowcount=1)
+                    (self.stusab,self.county,self.tract),rowcount=1)
 
     def get_constraint_summary(self, level, p01_data, data_dict, summary_nums):
         """
@@ -357,9 +357,9 @@ class LPTractBuilder:
         Modified to write gzipped LP files because the LP files are so large
         """
 
-        state_code    = dbrecon.state_fips(self.state_abbr)
+        state_code    = dbrecon.state_fips(self.stusab)
         geo_id        = self.sf1_tract_data[0][GEOID]
-        lpfilenamegz  = LPFILENAMEGZ(state_abbr=self.state_abbr,county=self.county,tract=self.tract)
+        lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
         use_s3        = lpfilenamegz.startswith("s3://")
         tmpgzfilename = lpfilenamegz.replace(".gz",".tmp.gz")
         if args.output:
@@ -368,18 +368,18 @@ class LPTractBuilder:
             outfilename   = tmpgzfilename
             lpfileexists  = dbrecon.dpath_exists(lpfilenamegz)
 
-            if dbrecon.is_db_done('lp',self.state_abbr, self.county, self.tract):
-                logging.warning(f"note: LP file exists in database: {self.state_abbr}{self.county}{self.tract}  exists in file system: {lpfileexists}; "
+            if dbrecon.is_db_done('lp',self.stusab, self.county, self.tract):
+                logging.warning(f"note: LP file exists in database: {self.stusab}{self.county}{self.tract}  exists in file system: {lpfileexists}; "
                                 "will not create another one.")
                 return
-            lpdir      = LPDIR(state_abbr=self.state_abbr,county=self.county)
+            lpdir      = LPDIR(stusab=self.stusab,county=self.county)
             dmakedirs(lpdir)
 
             # file exists and it is good. Note that in the database
             try:
                 if dbrecon.lpfile_properly_terminated(lpfilenamegz):
                     logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
-                    dbrecon.db_done('lp',self.state_abbr, self.county, self.tract)
+                    dbrecon.db_done('lp',self.stusab, self.county, self.tract)
                     return
             except FileNotFoundError as e:
                 # Intentional fall through
@@ -391,7 +391,7 @@ class LPTractBuilder:
                      "block_data_size:{sys.getsizeof(self.sf1_block_data):,} ")
 
         if not args.debug:
-            dbrecon.db_start('lp', self.state_abbr, self.county, self.tract)
+            dbrecon.db_start('lp', self.stusab, self.county, self.tract)
             atexit.register(self.db_fail)
 
         if args.dry_run:
@@ -409,7 +409,7 @@ class LPTractBuilder:
         for block in self.sf1_block_data:
             self.get_constraint_summary('block', self.sf1_block_data, self.sf1_block_data[block],
                                         block_summary_nums)
-        logging.info(f"{self.state_abbr} {self.county} {self.tract}: done getting block summary constraints")
+        logging.info(f"{self.stusab} {self.county} {self.tract}: done getting block summary constraints")
 
         #
         # Create the output LP file and write header
@@ -433,7 +433,7 @@ class LPTractBuilder:
 
         tract_summary_nums = {}
         self.get_constraint_summary('tract', self.sf1_tract_data, self.sf1_tract_data, tract_summary_nums)
-        logging.info(f"{self.state_abbr} {self.county} {self.tract}: done with tract summary")
+        logging.info(f"{self.stusab} {self.county} {self.tract}: done with tract summary")
 
         # for tracts, need to add the master_tuple_list just once
         for i in self.master_tuple_list:
@@ -456,9 +456,9 @@ class LPTractBuilder:
         f.write('End\n')
         f.close()
         if not args.debug:
-            dbrecon.db_done('lp',self.state_abbr, self.county, self.tract)
+            dbrecon.db_done('lp',self.stusab, self.county, self.tract)
             dbrecon.DB.csfr(f"UPDATE {REIDENT}tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
-                            (dbrecon.maxrss()//GB,self.state_abbr, self.county, self.tract), rowcount=1)
+                            (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract), rowcount=1)
             atexit.unregister(self.db_fail)
 
         if args.debug:
@@ -481,10 +481,10 @@ class LPTractBuilder:
 # functions.
 #
 def build_tract_lp_tuple(tracttuple):
-    (state_abbr, county, tract, sf1_tract_data, sf1_block_data) = tracttuple
+    (stusab, county, tract, sf1_tract_data, sf1_block_data) = tracttuple
 
     try:
-        lptb = LPTractBuilder(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
+        lptb = LPTractBuilder(stusab, county, tract, sf1_tract_data, sf1_block_data)
         lptb.build_tract_lp()
     except MemoryError as e:
         if not args.debug:
@@ -493,40 +493,40 @@ def build_tract_lp_tuple(tracttuple):
                 UPDATE {REIDENT}tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL
                 WHERE stusab=%s and county=%s and tract=%s"
                 """,
-                (state_abbr, county, tract))
-        logging.error(f"MEMORY ERROR in {state_abbr} {county} {tract}: {e}")
+                (stusab, county, tract))
+        logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
 
-"""Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""
-def make_state_county_files(state_abbr, county, tractgen='all'):
+"""Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
+def make_state_county_files(stusab, county, tractgen='all'):
     """
     Reads the data files for the state and county, then call build_tract_lp to build the LP files for each tract.
     All of the tract LP files are built from the same data model, so they can be built in parallel with shared memory.
     Consults the database to see which files need to be rebuilt, and only builds those files.
     """
-    assert (state_abbr[0].isalpha()) and (len(state_abbr)==2)
+    assert (stusab[0].isalpha()) and (len(stusab)==2)
     assert (county[0].isdigit()) and (len(county)==3)
-    logging.info(f"make_state_county_files({state_abbr},{county},{tractgen})")
+    logging.info(f"make_state_county_files({stusab},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
     if args.debug:
         tracts = [tractgen]
     else:
-        rows = DB.csfr(f"SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(state_abbr,county))
+        rows = DB.csfr(f"SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(stusab,county))
         tracts_needing_lp_files = [row[0] for row in rows]
         if tractgen=='all':
             if len(tracts_needing_lp_files)==0:
-                logging.warning(f"make_state_county_files({state_abbr},{county},{tractgen}) "
+                logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
                                 f"- No more tracts need LP files")
                 return
             tracts = tracts_needing_lp_files
         else:
             if tractgen not in tracts_needing_lp_files:
-                logging.warning(f"make_state_county_files({state_abbr},{county},{tractgen}) "
+                logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
                                 f"- tract {tractgen} not in {tracts_needing_lp_files}")
                 return
             tracts = [tractgen]
 
-    state_code = dbrecon.state_fips(state_abbr)
+    state_code = dbrecon.state_fips(stusab)
 
     ### Has the variables and the collapsing values we want (e.g, to collapse race, etc)
     ### These data frames are all quite small
@@ -543,19 +543,19 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ### These files are not that large
 
     try:
-        sf1_block_data_file = dpath_expand( dbrecon.SF1_BLOCK_DATA_FILE(state_abbr=state_abbr,county=county) )
+        sf1_block_data_file = dpath_expand( dbrecon.SF1_BLOCK_DATA_FILE(stusab=stusab,county=county) )
         sf1_block_reader = csv.DictReader(dopen( sf1_block_data_file,'r'))
     except FileNotFoundError as e:
         print(e)
-        logging.error(f"ERROR. NO BLOCK DATA FILE {sf1_block_data_file} for {state_abbr} {county} ")
+        logging.error(f"ERROR. NO BLOCK DATA FILE {sf1_block_data_file} for {stusab} {county} ")
         return
 
     try:
-        sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(state_abbr=state_abbr,county=county) )
+        sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )
         sf1_tract_reader = csv.DictReader(dopen( sf1_tract_data_file,'r'))
     except FileNotFoundError as e:
         print(e)
-        logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {state_abbr} {county} ")
+        logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {stusab} {county} ")
         return
 
     ## make sf1_block_list, looks like this:
@@ -581,7 +581,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ##
     ## TODO: Improve this by turning the geoids and tablevars into categories.
     ##
-    logging.info("building sf1_block_list for %s %s",state_abbr,county)
+    logging.info("building sf1_block_list for %s %s",stusab,county)
     sf1_block_list = []
     for s in sf1_block_reader:
         temp_list = []
@@ -610,7 +610,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ## This is a dictionary of dictionaries of lists where:
     ## sf1_block_dict[tract][block] = list of sf1_block rows from the SF1 data that match each block
 
-    logging.info("collecting tract and block data for %s %s",state_abbr,county)
+    logging.info("collecting tract and block data for %s %s",stusab,county)
     sf1_block_records = sf1_block_all.to_dict(orient='records')
     assert len(sf1_block_records) > 0
 
@@ -632,7 +632,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ## This is a dictionary of lists where
     ## sf1_block_dict[tract] = list of sf1_tract rows from the SF1 data that match each tract
 
-    logging.info("getting tract data for %s %s",state_abbr,county)
+    logging.info("getting tract data for %s %s",stusab,county)
     sf1_tract_list=[]
     error_count = 0
     for s in sf1_tract_reader:
@@ -643,7 +643,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
                     try:
                         sf1_tract_list.append([geo_id,k,float(v)])
                     except ValueError as e:
-                        logging.error(f"state:{state_abbr} county:{county} geo_id:{geo_id} k:{k} v:{v}")
+                        logging.error(f"state:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
                         error_count += 1
                         if error_count>MAX_SF1_ERRORS:
                             return
@@ -667,7 +667,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
         tract=d[GEOID][5:]
         sf1_tract_dict[tract].append(d)
     logging.info("%s %s total_size(sf1_block_dict)=%s total_size(sf1_tract_dict)=%s",
-                 state_abbr,county,total_size(sf1_block_dict),total_size(sf1_tract_dict))
+                 stusab,county,total_size(sf1_block_dict),total_size(sf1_tract_dict))
     if args.debug:
         logging.info("sf1_block_dict total memory: {:,} bytes".format(total_size(sf1_block_dict)))
         logging.info("sf1_tract_dict has data for {} tracts.".format(len(sf1_tract_dict)))
@@ -678,7 +678,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ### We have now made the data for this county.
     ### We now make LP files for a specific set of tracts, or all the tracts.
 
-    tracttuples = [(state_abbr, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract]) for tract in tracts]
+    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract]) for tract in tracts]
 
     if args.j2>1:
         with multiprocessing.Pool( args.j2 ) as p:

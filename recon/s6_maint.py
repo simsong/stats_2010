@@ -32,7 +32,7 @@ MFRE=re.compile("model_(\d\d)(\d\d\d)(\d\d\d\d\d\d)[.]log")
 def model_filename_to_sct(fname):
     m = MFRE.search(fname)
     (state,county,tract) = m.group(1,2,3)
-    return {'state':dbrecon.state_abbr(state), 'county':county, 'tract':tract}
+    return {'state':dbrecon.stusab(state), 'county':county, 'tract':tract}
 
 
 def glog_scan_root(rootdir):
@@ -120,8 +120,8 @@ if __name__=="__main__":
                 where stusab=%s and county=%s and tract=%s
                 """,
                         (stusab,county,tract))
-                dbrecon.dpath_unlink(dbrecon.LPFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))
-                dbrecon.dpath_unlink(dbrecon.SOLFILENAMEGZ(state_abbr=stusab,county=county,tract=tract))
+                dbrecon.dpath_unlink(dbrecon.LPFILENAMEGZ(stusab=stusab,county=county,tract=tract))
+                dbrecon.dpath_unlink(dbrecon.SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract))
 
     if args.glog:
         for root in args.roots:

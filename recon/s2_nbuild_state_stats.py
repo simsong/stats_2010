@@ -35,9 +35,9 @@ SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
 REIDENT = os.getenv('REIDENT')
 ANY="any"
 
-def sf1_zipfilename(state_abbr):
+def sf1_zipfilename(stusab):
     """If the SF1 is on S3, download it to a known location and work from there"""
-    sf1_path = dbrecon.dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip")
+    sf1_path = dbrecon.dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
     if sf1_path.startswith("s3://"):
         local_path = "/tmp/" + sf1_path.replace("/","_")
         if not os.path.exists(local_path):
@@ -52,9 +52,9 @@ class ReaderException(Exception):
 
 class SF1SegmentReader():
     """Class to read directly out of the ZIP file."""
-    def __init__(self,*,state_abbr,segment_filename,names,xy,cifsn):
+    def __init__(self,*,stusab,segment_filename,names,xy,cifsn):
         """ Given a state abbreviation and a segment number, open it"""
-        self.infile = dopen(segment_filename, zipfilename=sf1_zipfilename(state_abbr), encoding='latin1')
+        self.infile = dopen(segment_filename, zipfilename=sf1_zipfilename(stusab), encoding='latin1')
         self.fields = None       # the last line read
         self.names  = names      # names of the fields
         self.cifsn  = cifsn
@@ -118,8 +118,8 @@ class SF1SegmentReader():
             return fields
         return ['' for name in self.names]
 
-def process_state(state_abbr):
-    logging.info(f"{state_abbr}: building data frame with all SF1 measurements")
+def process_state(stusab):
+    logging.info(f"{stusab}: building data frame with all SF1 measurements")
     with Timer() as timer:
 
         # Read in layouts -- they are json created from xsd from the access database
@@ -127,9 +127,9 @@ def process_state(state_abbr):
         # mods due to access limitations.  It's read as a ordered dict to preserve
         # the order of the layouts to read the csv.
 
-        state_abbr_upper = state_abbr.upper()
+        stusab_upper = stusab.upper()
         layouts          = json.load(dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
-        geo_filename     = GEOFILE_FILENAME_TEMPLATE.format(state_abbr=state_abbr)
+        geo_filename     = GEOFILE_FILENAME_TEMPLATE.format(stusab=stusab)
 
 
         # Generate the CSV header that the original code used
@@ -143,8 +143,8 @@ def process_state(state_abbr):
                 cifsn = int(l[4:-4])
                 names = layouts[l]
                 extra = l[4:-4]
-                fname = f'$ROOT/{state_abbr}/sf1/{state_abbr}{extra}2010.sf1'
-                segreader = SF1SegmentReader(state_abbr=state_abbr,
+                fname = f'$ROOT/{stusab}/sf1/{stusab}{extra}2010.sf1'
+                segreader = SF1SegmentReader(stusab=stusab,
                                              segment_filename=fname,
                                              names = names,
                                              xy = xy,
@@ -204,7 +204,7 @@ def process_state(state_abbr):
 
 
         print("{} geography file processed. counties:{}  tracts:{}  blocks:{}  mem:{:,}".format(
-            state_abbr, counts[SUMLEV_COUNTY], counts[SUMLEV_TRACT], counts[SUMLEV_BLOCK],
+            stusab, counts[SUMLEV_COUNTY], counts[SUMLEV_TRACT], counts[SUMLEV_BLOCK],
             total_size(logrecs)))
 
         # Open the geofile and find all of the LOGRECNOs for the
@@ -217,9 +217,9 @@ def process_state(state_abbr):
         # Open the block, tract, and county files for every county
         # and write the first line
         output_files = {}
-        state_code = dbrecon.state_fips(state_abbr)
-        for county_code in dbrecon.counties_for_state(state_abbr):
-            countydir = f'$ROOT/work/{state_abbr}/{state_code}{county_code}'
+        state_code = dbrecon.state_fips(stusab)
+        for county_code in dbrecon.counties_for_state(stusab):
+            countydir = f'$ROOT/work/{stusab}/{state_code}{county_code}'
             dbrecon.dmakedirs(countydir)
             output_files[county_code] = {
                 SUMLEV_COUNTY: dopen(f'{countydir}/sf1_county_{state_code}{county_code}.csv','w') ,
@@ -274,7 +274,7 @@ if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Create per-county county, block and tract count files from the state-level SF1 files." )
-    parser.add_argument("state_abbrs",nargs="*",help='Specify states to process (or type all for all)')
+    parser.add_argument("stusabs",nargs="*",help='Specify states to process (or type all for all)')
     parser.add_argument("--all",action='store_true',help='All states')
     parser.add_argument("--j1", type=int, help='Number of states to run at once (defaults to thread count in config file).')
     dbrecon.argparse_add_logging(parser)
@@ -293,10 +293,10 @@ if __name__=="__main__":
     dfxml    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
 
     states = []
-    if (args.all) or (args.state_abbrs == ['all']):
-        states = dbrecon.all_state_abbrs()
+    if (args.all) or (args.stusabs == ['all']):
+        states = dbrecon.all_stusabs()
     else:
-        states = [dbrecon.state_abbr(st).lower() for st in args.state_abbrs]
+        states = [dbrecon.stusab(st).lower() for st in args.stusabs]
 
     if not states:
         print("Specify states to process or --all")

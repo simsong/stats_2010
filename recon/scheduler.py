@@ -53,13 +53,13 @@ LP_J1    = 1                    # let this program schedule
 ## These are Memoized because they are only used for init() and rescan()
 
 def rescan():
-    states = [args.state] if args.state else dbrecon.all_state_abbrs()
-    for state_abbr in states:
-        counties = [args.county] if args.county else dbrecon.counties_for_state(state_abbr=state_abbr)
+    states = [args.state] if args.state else dbrecon.all_stusabs()
+    for stusab in states:
+        counties = [args.county] if args.county else dbrecon.counties_for_state(stusab=stusab)
         for county in counties:
-            print(f"RESCAN {state_abbr} {county}")
-            for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
-                dbrecon.rescan_files(state_abbr,county,tract,quiet=False)
+            print(f"RESCAN {stusab} {county}")
+            for tract in dbrecon.tracts_for_state_county(stusab=stusab,county=county):
+                dbrecon.rescan_files(stusab,county,tract,quiet=False)
         print()
 
 def clean():
@@ -79,11 +79,11 @@ def clean():
                 m = dbrecon.extract_state_county_tract(fname)
                 if m is None:
                     continue
-                (state_abbr,county,tract) = m
+                (stusab,county,tract) = m
                 what = "sol" if "sol" in path else "lp"
                 DB.csfr(f"UPDATE {REIDENT}tracts SET {what}_start=NULL,{what}_end=NULL "
                         "where stusab=%s and county=%s and tract=%s",
-                        (state_abbr, county, tract))
+                        (stusab, county, tract))
                 os.unlink(path)
 
 

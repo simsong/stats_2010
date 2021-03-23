@@ -32,7 +32,7 @@ def fix_states():
     print("tables: ")
     for row in c:
         print(row[0])
-    for sa in dbrecon.all_state_abbrs():
+    for sa in dbrecon.all_stusabs():
         fips = dbrecon.state_fips(sa)
         print(sa,fips)
         c = db.cursor()

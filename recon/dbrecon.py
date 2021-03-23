@@ -61,10 +61,10 @@ CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be chang
 ## Functions that return paths.
 ## These cannot be constants because they do substituion, and f-strings don't work as macros
 ###
-SF1_DIR                        = '$ROOT/work/{state_abbr}/{state_code}{county}'
+SF1_DIR                        = '$ROOT/work/{stusab}/{state_code}{county}'
 SF1_RACE_BINARIES              = '$SRC/layouts/sf1_vars_race_binaries.csv'
-GEOFILE_FILENAME_TEMPLATE      = "$ROOT/work/{state_abbr}/geofile_{state_abbr}.csv"
-STATE_COUNTY_FILENAME_TEMPLATE = '$ROOT/work/{state_abbr}/state_county_list_{state_code}.csv'
+GEOFILE_FILENAME_TEMPLATE      = "$ROOT/work/{stusab}/geofile_{stusab}.csv"
+STATE_COUNTY_FILENAME_TEMPLATE = '$ROOT/work/{stusab}/state_county_list_{state_code}.csv'
 
 
 global dfxml_writer
@@ -236,46 +236,46 @@ def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
         raise RuntimeError(f"errors: {errors}")
     return count
 
-def get_final_pop_from_sol(state_abbr, county, tract, delete=True):
-    sol_filenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
+def get_final_pop_from_sol(stusab, county, tract, delete=True):
+    sol_filenamegz = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
         if delete:
             dpath_unlink(sol_filenamegz)
         DB.csfr(f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
-                (state_abbr,county,tract))
+                (stusab,county,tract))
         return None
     return count
 
-def db_lock(state_abbr, county, tract):
+def db_lock(stusab, county, tract):
     DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
-            (hostname(),os.getpid(),state_abbr,county,tract),
+            (hostname(),os.getpid(),stusab,county,tract),
             rowcount=1 )
-    logging.info(f"db_lock: {hostname()} {sys.argv[0]} {state_abbr} {county} {tract} ")
+    logging.info(f"db_lock: {hostname()} {sys.argv[0]} {stusab} {county} {tract} ")
 
-def db_unlock(state_abbr, county, tract):
+def db_unlock(stusab, county, tract):
     DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
-            (state_abbr,county,tract),
+            (stusab,county,tract),
             rowcount = 1 )
 
-def db_start(what,state_abbr, county, tract):
+def db_start(what,stusab, county, tract):
     assert what in [LP, SOL, CSV]
     DB.csfr(f"UPDATE {REIDENT}tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
-            (hostname(),hostname(),os.getpid(),state_abbr,county,tract),
+            (hostname(),hostname(),os.getpid(),stusab,county,tract),
             rowcount=1 )
-    logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {state_abbr} {county} {tract} ")
+    logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {stusab} {county} {tract} ")
 
-def db_done(what, state_abbr, county, tract):
+def db_done(what, stusab, county, tract):
     assert what in [LP,SOL, CSV]
     DB.csfr(f"UPDATE {REIDENT}tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
-            (hostname(),state_abbr,county,tract),rowcount=1)
-    logging.info(f"db_done: {what} {state_abbr} {county} {tract} ")
+            (hostname(),stusab,county,tract),rowcount=1)
+    logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
-def is_db_done(what, state_abbr, county, tract):
+def is_db_done(what, stusab, county, tract):
     assert what in [LP,SOL, CSV]
     row = DB.csfr(f"SELECT {what}_end FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1",
-                  (state_abbr,county,tract))
+                  (stusab,county,tract))
     return len(row)==1
 
 def db_clean():
@@ -290,17 +290,17 @@ def db_clean():
         except psutil.NoSuchProcess:
             db_unlock(stusab,county,tract)
 
-def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
+def rescan_files(stusab, county, tract, check_final_pop=False, quiet=True):
     raise RuntimeError("don't do at the moment. The database is more accurate than the file system.")
-    logging.info(f"rescanning {state_abbr} {county} {tract} in database.")
-    lpfilenamegz  = LPFILENAMEGZ(state_abbr=state_abbr,county=county,tract=tract)
-    solfilenamegz = SOLFILENAMEGZ(state_abbr=state_abbr,county=county, tract=tract)
+    logging.info(f"rescanning {stusab} {county} {tract} in database.")
+    lpfilenamegz  = LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
+    solfilenamegz = SOLFILENAMEGZ(stusab=stusab,county=county, tract=tract)
 
     rows = DB.csfr(f"SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
                        "FROM {REIDENT}tracts where stusab=%s and county=%s and tract=%s LIMIT 1",
-                       (state_abbr,county,tract),quiet=quiet)
+                       (stusab,county,tract),quiet=quiet)
     if len(rows)!=1:
-        raise RuntimeError(f"{state_abbr} {county} {tract} is not in database")
+        raise RuntimeError(f"{stusab} {county} {tract} is not in database")
 
     (lp_start,lp_end,sol_start,sol_end,final_pop_db) = rows[0]
     logging.info(f"lp_start={lp_start} lp_end={lp_end} sol_start={sol_start} "
@@ -311,7 +311,7 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
         if lp_end is None:
             logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
             DB.csfr(f"UPDATE {REIDENT}tracts set lp_end=%s where stusab=%s and county=%s and tract=%s",
-                    (filename_mtime(lpfilenamegz).isoformat()[0:19],state_abbr,county,tract),quiet=quiet)
+                    (filename_mtime(lpfilenamegz).isoformat()[0:19],stusab,county,tract),quiet=quiet)
     else:
         if not quiet:
             print(f"{lpfilenamegz} does not exist")
@@ -321,90 +321,90 @@ def rescan_files(state_abbr, county, tract, check_final_pop=False, quiet=True):
             UPDATE {REIDENT}tracts set lp_start=NULL,lp_end=NULL
             WHERE stusab=%s and county=%s and tract=%s
             """,
-                    (state_abbr,county,tract),quiet=quiet)
+                    (stusab,county,tract),quiet=quiet)
 
     if dpath_exists(solfilenamegz):
         if sol_end is None:
             logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
             DB.csfr(f"UPDATE {REIDENT}tracts set sol_end=%s where stusab=%s and county=%s and tract=%s",
-                    (filename_mtime(solfilenamegz).isoformat()[0:19],state_abbr,county,tract))
+                    (filename_mtime(solfilenamegz).isoformat()[0:19],stusab,county,tract))
 
         if check_final_pop:
-            final_pop_file = get_final_pop_from_sol(state_abbr,county,tract)
+            final_pop_file = get_final_pop_from_sol(stusab,county,tract)
             if final_pop_db!=final_pop_file:
                 logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
-                                f"for {state_abbr} {county} {tract}. Correcting")
+                                f"for {stusab} {county} {tract}. Correcting")
                 DB.csfr(f"UPDATE {REIDENT}tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",
-                        (final_pop_file,state_abbr,county,tract))
+                        (final_pop_file,stusab,county,tract))
     else:
         if sol_end is not None:
             logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
             DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL,sol_end=NULL,final_pop=NULL "
                     "WHERE stusab=%s AND county=%s AND tract=%s",
-                    (state_abbr,county,tract),quiet=quiet)
+                    (stusab,county,tract),quiet=quiet)
 
 ################################################################
 ### functions that return directory and file locations  ########
 ################################################################
 
-def STATE_COUNTY_DIR(*,root='$ROOT',state_abbr,county):
-    fips = state_fips(state_abbr)
-    return f"{root}/work/{state_abbr}/{fips}{county}"
+def STATE_COUNTY_DIR(*,root='$ROOT',stusab,county):
+    fips = state_fips(stusab)
+    return f"{root}/work/{stusab}/{fips}{county}"
 
-def LPDIR(*,state_abbr,county):
+def LPDIR(*,stusab,county):
     """Returns the directory where LP files for a particular state and county are stored.
     dpath_expand() is not called because we may search this directory for files."""
-    fips = state_fips(state_abbr)
-    return f'$ROOT/work/{state_abbr}/{fips}{county}/lp'
+    fips = state_fips(stusab)
+    return f'$ROOT/work/{stusab}/{fips}{county}/lp'
 
-def SOLDIR(*,state_abbr,county):
+def SOLDIR(*,stusab,county):
     """Returns the directory where LP files for a particular state and county are stored.
     dpath_expand() is not called because we may search this directory for files.
     """
-    fips = state_fips(state_abbr)
-    return f'$ROOT/work/{state_abbr}/{fips}{county}/sol'
+    fips = state_fips(stusab)
+    return f'$ROOT/work/{stusab}/{fips}{county}/sol'
 
-def SF1_ZIP_FILE(*,state_abbr):
-    return dpath_expand(f"$SF1_DIST/{state_abbr}2010.sf1.zip".format(state_abbr=state_abbr))
+def SF1_ZIP_FILE(*,stusab):
+    return dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip".format(stusab=stusab))
 
-def SF1_BLOCK_DATA_FILE(*,state_abbr,county):
-    state_code = state_fips(state_abbr)
-    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
+def SF1_BLOCK_DATA_FILE(*,stusab,county):
+    state_code = state_fips(stusab)
+    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,stusab=stusab)
     return dpath_expand(f'{sf1_dir}/sf1_block_{state_code}{county}.csv')
 
-def SF1_TRACT_DATA_FILE(*,state_abbr,county):
-    state_code = state_fips(state_abbr)
-    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,state_abbr=state_abbr)
+def SF1_TRACT_DATA_FILE(*,stusab,county):
+    state_code = state_fips(stusab)
+    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,stusab=stusab)
     return dpath_expand(f'{sf1_dir}/sf1_tract_{state_code}{county}.csv')
 
-def LPFILENAMEGZ(*,state_abbr,county,tract):
-    geo_id = state_fips(state_abbr)+county+tract
-    lpdir  = LPDIR(state_abbr=state_abbr,county=county)
+def LPFILENAMEGZ(*,stusab,county,tract):
+    geo_id = state_fips(stusab)+county+tract
+    lpdir  = LPDIR(stusab=stusab,county=county)
     return dpath_expand(f'{lpdir}/model_{geo_id}.lp.gz')
 
-def ILPFILENAME(*,state_abbr,county,tract):
-    geo_id = state_fips(state_abbr)+county+tract
-    lpdir = LPDIR(state_abbr=state_abbr,county=county)
+def ILPFILENAME(*,stusab,county,tract):
+    geo_id = state_fips(stusab)+county+tract
+    lpdir = LPDIR(stusab=stusab,county=county)
     return dpath_expand(f'{lpdir}/model_{geo_id}.ilp')
 
-def SOLFILENAME(*,state_abbr,county,tract):
-    soldir = SOLDIR(state_abbr=state_abbr,county=county)
-    fips = state_fips(state_abbr)
+def SOLFILENAME(*,stusab,county,tract):
+    soldir = SOLDIR(stusab=stusab,county=county)
+    fips = state_fips(stusab)
     return dpath_expand(f'{soldir}/model_{fips}{county}{tract}.sol')
 
-def SOLFILENAMEGZ(*,state_abbr,county,tract):
-    return SOLFILENAME(state_abbr=state_abbr,county=county,tract=tract)+".gz"
+def SOLFILENAMEGZ(*,stusab,county,tract):
+    return SOLFILENAME(stusab=stusab,county=county,tract=tract)+".gz"
 
-def COUNTY_CSV_FILENAME(*,state_abbr,county):
-    csvdir = STATE_COUNTY_DIR(root='$ROOT',state_abbr=state_abbr,county=county)
-    geo_id = state_fips(state_abbr) + county
+def COUNTY_CSV_FILENAME(*,stusab,county):
+    csvdir = STATE_COUNTY_DIR(root='$ROOT',stusab=stusab,county=county)
+    geo_id = state_fips(stusab) + county
     return dpath_expand(f'{csvdir}/synth_out_{geo_id}.csv')
 
 SET_RE = re.compile(r"[^0-9](?P<state>\d\d)(?P<county>\d\d\d)(?P<tract>\d\d\d\d\d\d)[^0-9]")
 def extract_state_county_tract(fname):
     m = SET_RE.search(fname)
     if m:
-        return( state_abbr(m.group('state')), m.group('county'), m.group('tract'))
+        return( stusab(m.group('state')), m.group('county'), m.group('tract'))
     return None
 
 ##
@@ -467,7 +467,7 @@ STATE_DATA=[
     "West_Virginia,WV,54",
     "Wisconsin,WI,55",
     "Wyoming,WY,56" ]
-STATES=[dict(zip("state_name,state_abbr,fips_state".split(","),line.split(","))) for line in STATE_DATA]
+STATES=[dict(zip("state_name,stusab,fips_state".split(","),line.split(","))) for line in STATE_DATA]
 
 # https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
 class Singleton(type):
@@ -514,7 +514,7 @@ def state_rec(key):
     assert isinstance(key,str)
     for rec in STATES:
         if (key.lower()==rec['state_name'].lower()
-            or key.lower()==rec['state_abbr'].lower()
+            or key.lower()==rec['stusab'].lower()
             or key==rec['fips_state']):
                 return rec
     raise ValueError(f"{key}: not a valid state name, abbreviation, or FIPS code")
@@ -524,29 +524,29 @@ def state_fips(key):
     assert isinstance(key,str)
     return state_rec(key)['fips_state']
 
-def state_abbr(key):
+def stusab(key):
     """Convert state FIPS code to the appreviation"""
     assert isinstance(key,str)
-    return state_rec(key)['state_abbr'].lower()
+    return state_rec(key)['stusab'].lower()
 
-def all_state_abbrs():
+def all_stusabs():
     # Return a list of all the states
-    return [rec['state_abbr'].lower() for rec in STATES]
+    return [rec['stusab'].lower() for rec in STATES]
 
-def parse_state_abbrs(statelist):
+def parse_stusabs(statelist):
     # Turn a comman-separated list of states into an array of all state abbreviations.
     # also accepts state numbers
     assert isinstance(statelist,str)
-    return [state_rec(key)['state_abbr'].lower() for key in statelist.split(",")]
+    return [state_rec(key)['stusab'].lower() for key in statelist.split(",")]
 
-def counties_for_state(state_abbr):
-    """Return a list of the the county codes (as strings) for the counties in state_abbr"""
-    rows = DB.csfr(f"SELECT county FROM {REIDENT}geo WHERE stusab=%s and sumlev='050'",(state_abbr,))
+def counties_for_state(stusab):
+    """Return a list of the the county codes (as strings) for the counties in stusab"""
+    rows = DB.csfr(f"SELECT county FROM {REIDENT}geo WHERE stusab=%s and sumlev='050'",(stusab,))
     return [row[0] for row in rows]
 
-def tracts_for_state_county(*,state_abbr,county):
+def tracts_for_state_county(*,stusab,county):
     """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr(f"SELECT tract from {REIDENT}tracts where stusab=%s and county=%s",(state_abbr,county))
+    rows = DB.csfr(f"SELECT tract from {REIDENT}tracts where stusab=%s and county=%s",(stusab,county))
     return [row[0] for row in rows]
 
 ################################################################
@@ -585,28 +585,28 @@ def valid_county_code(code):
     assert isinstance(code,str)
     return len(code)==3 and all(ch.isdigit() for ch in code)
 
-def state_county_tract_has_file(state_abbr, county_code, tract_code, filetype=LP):
-    assert isinstance(state_abbr,str)
+def state_county_tract_has_file(stusab, county_code, tract_code, filetype=LP):
+    assert isinstance(stusab,str)
     assert isinstance(county_code,str)
     assert isinstance(tract_code,str)
-    state_code = state_fips(state_abbr)
-    files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
+    state_code = state_fips(stusab)
+    files = dlistdir(f'$ROOT/{stusab}/{state_code}{county_code}/{filetype}/')
     return f"model_{state_code}{county_code}{tract_code}.{filetype}" in files
 
-def state_county_has_any_files(state_abbr, county_code, filetype=LP):
-    assert isinstance(state_abbr,str)
+def state_county_has_any_files(stusab, county_code, filetype=LP):
+    assert isinstance(stusab,str)
     assert isinstance(county_code,str)
-    state_code = state_fips(state_abbr)
-    files = dlistdir(f'$ROOT/{state_abbr}/{state_code}{county_code}/{filetype}/')
+    state_code = state_fips(stusab)
+    files = dlistdir(f'$ROOT/{stusab}/{state_code}{county_code}/{filetype}/')
     return any([fn.endswith("."+filetype) for fn in files])
 
-def state_has_any_files(state_abbr, county_code, filetype=LP):
-    assert isinstance(state_abbr,str)
+def state_has_any_files(stusab, county_code, filetype=LP):
+    assert isinstance(stusab,str)
     assert isinstance(county_code,str)
-    state_code = state_fips(state_abbr)
-    counties   = counties_for_state(state_abbr)
+    state_code = state_fips(stusab)
+    counties   = counties_for_state(stusab)
     for county_code in counties:
-        if state_county_has_any_files(state_abbr, county_code, filetype=filetype):
+        if state_county_has_any_files(stusab, county_code, filetype=filetype):
             return True
 
 

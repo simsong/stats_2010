@@ -22,15 +22,20 @@ from os.path import dirname,basename,abspath
 import gurobipy
 import dbrecon
 from dbrecon import DB
-from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR
+from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT
 
 REIDENT = os.getenv('REIDENT')
-
-
+GZIP    = 'gzip'                # compressor
+GZIP_OPT = '-1f'                # compression options
 
 def db_fail(stusab, county, tract):
     print(f"db_fail({stusab},{county},{tract})")
-    DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL,sol_end=NULL,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
+    DB.csfr(
+        f"""
+        UPDATE {REIDENT}tracts
+        SET sol_start=NULL,sol_end=NULL,hostlock=NULL,pid=NULL
+        WHERE stusab=%s AND county=%s AND tract=%s
+        """,(stusab,county,tract))
 
 
 class InfeasibleError(RuntimeError):
@@ -41,40 +46,36 @@ class InfeasibleError(RuntimeError):
 GUROBI_THREADS_DEFAULT=16
 MODEL_ATTRS="NumVars,NumConstrs,NumNZs,NumIntVars,MIPGap,Runtime,IterCount,BarIterCount,isMIP".split(",")
 
-def remove_lp_from_db(stusab,county,tract):
-    dbrecon.DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL,lp_end=NULL,hostlock=NULL where stusab=%s and county=%s and tract=%s",
-                    (stusab,county,tract))
-
-
 """Run gurobi with a given LP file.
 Note: automatically handles the case where lpfile is compressed by decompressing
 and giving the Gurobi optimizer device to read from.
 """
 def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
     logging.info(f'RunGurobi({stusab},{county},{tract})')
-    config      = dbrecon.GetConfig().get_config()
-    stusab  = stusab
-    county      = county
-    tract       = tract
-    state_code  = dbrecon.state_fips(stusab)
-    geoid_tract = state_code + county + tract
-    lpgz_filename = dbrecon.dpath_expand(lpgz_filename)
-    ilp_filename= dbrecon.ILPFILENAME(stusab=stusab, county=county, tract=geoid_tract)
-    sol_filename= dbrecon.SOLFILENAME(stusab=stusab, county=county, tract=tract)
-    solgz_filename= sol_filename+".gz"
-    env         = None # Guorbi environment
-    p           = None # subprocess for decompressor
-    tempname    = None # symlink that points to decompressed model file
+
+    config           = dbrecon.GetConfig().get_config()
+    state_code       = dbrecon.state_fips(stusab)
+    geoid_tract      = state_code + county + tract
+    lpgz_filename    = dbrecon.dpath_expand(lpgz_filename)
+    ilp_filename     = dbrecon.ILPFILENAME(stusab=stusab, county=county, tract=geoid_tract)
+    sol_filename     = dbrecon.SOLFILENAME(stusab=stusab, county=county, tract=tract)
+    solgz_filename   = sol_filename+".gz"
+    log_filename     = os.path.splitext(sol_filename)[0]+".log" # where final log gets written to
+    tmp_log_filename = '/tmp/' + log_filename.replace('/','_').replace(".gz","") # were the temp log gets written
+
+    env            = None # Guorbi environment
+    p              = None # subprocess for decompressor
+    tempname       = None # symlink that points to decompressed model file
 
     # make sure input file exists and is valid
     if dpath_exists(lpgz_filename):
         if dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
             logging.warning("File {} is too small ({}). Removing and updating database.".format(lpgz_filename,os.path.getsize(lpgz_filename)))
-            os.unlink(lpgz_filename)
-            remove_lp_from_db(stusab,county,tract)
+            dbrecon.remove_lpfile(stusab=stusab, county=county, tract=tract)
+
     else:
         logging.warning("File does not exist: {}. Updating database.".format(lpgz_filename))
-        remove_lp_from_db(stusab,county,tract)
+        dbrecon.remove_lpfile(stusab=stusab, county=county, tract=tract)
         return
 
     # Make sure output does not exist. If it exists, delete it, otherwise give an error
@@ -93,23 +94,22 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
     except KeyError:
         customer = ''
         appname = ''
-    log_filename = os.path.splitext(sol_filename)[0]+".log"
 
     if customer=='':
-        env = gurobipy.Env( log_filename )
+        env = gurobipy.Env( tmp_log_filename )
     else:
-        env = gurobipy.Env.OtherEnv( log_filename, customer, appname, 0, "")
+        env = gurobipy.Env.OtherEnv( tmp_log_filename, customer, appname, 0, "")
 
     env.setParam("LogToConsole",0)
+
+    # Gurobi determines what kind of file it is reading by its extension.
     if lpgz_filename.endswith(".lp"):
         model = gurobipy.read(lpgz_filename, env=env)
-        tempname = None
     elif lpgz_filename.endswith(".lp.gz"):
-        # Because Gurobin must read from a file that ends with a .lp,
-        # make /tmp/stdin.lp a symlink to /dev/stdin, and
-        # then read that
+        # Make /tmp/stdin.lp a symlink to /dev/stdin, and then read that
+        # so Gurobi can end a file ending with .lp
         if lpgz_filename.startswith('s3://'):
-            cmd = os.path.join( MY_DIR, 's3zcat')
+            cmd = S3ZCAT
         else:
             cmd = 'zcat'
         p = subprocess.Popen([cmd,lpgz_filename],stdout=subprocess.PIPE)
@@ -160,9 +160,9 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
 
         # Compress the output file in place, or while writing to s3
         if s3_sol_filename:
-            cmd = [ os.path.join( MY_DIR, 's3zput'), sol_filename, s3_sol_filename+'.gz' ]
+            cmd = [ S3ZPUT, sol_filename, s3_sol_filename+'.gz' ]
         else:
-            cmd = ['gzip','-1f',sol_filename]
+            cmd = [ GZIP, GZIP_OPT, sol_filename]
         subprocess.check_call(cmd)
 
         dbrecon.db_done('sol', stusab, county, tract) # indicate we have a solution
@@ -189,8 +189,16 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
         cmd = f"UPDATE {REIDENT}tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
         dbrecon.DB.csfr(cmd, vals+[stusab,county,tract])
     del env                     # free the memory and release the Gurobi token
+
+    # either compress or upload the tmp_logfile
+    if log_filename.startswith('s3://'):
+        subprocess.check_call([ S3ZPUT, tmp_log_filename, log_filename])
+    else:
+        subprocess.check_call([ GZIP, GZIP_OPT], stdin=open(tmp_log_filename,'rb'), stdout=open(log_filename,'wb'))
+    os.path.unlink(tmp_log_filename)
     if tempname is not None:
         os.unlink(tempname)
+
 
 def run_gurobi_for_county_tract(stusab, county, tract):
     assert len(stusab)==2
@@ -248,15 +256,16 @@ def run_gurobi_tuple(tt):
 
 def run_gurobi_for_county(stusab, county, tracts):
     logging.info(f"run_gurobi_for_county({stusab},{county})")
+    assert stusab is not None
+    assert county is not None
     if (tracts==[]) or (tracts==['all']):
-        tracts = [row[0] for row in DB.csfr(
+        rows = DB.csfr(
             f"""
             SELECT tract
             FROM {REIDENT}tracts
             WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND stusab=%s AND county=%s
-            """,
-            (stusab, county))]
-
+            """, (stusab, county))
+        tracts = [row[0] for row in rows]
         logging.info(f"Tracts require solving in {stusab} {county}: {tracts}")
         if tracts==[]:
             # No tracts. Report if there are tracts in county missing LP files

@@ -59,6 +59,10 @@ SRC_DIRECTORY   = os.path.dirname( os.path.abspath(__file__))
 CONFIG_FILENAME = "config.ini"
 CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
 
+S3ZPUT  = os.path.join(MY_DIR, 's3zput') # script that uploads a file to s3 with compression
+S3ZCAT  = os.path.join( MY_DIR, 's3zcat') # script that downloads and decompresses a file from s3
+
+
 ##
 ## Functions that return paths.
 ## These cannot be constants because they do substituion, and f-strings don't work as macros
@@ -93,6 +97,68 @@ SUMLEVS = {
 }
 
 SUMLEV_STATE = '040'
+
+STATE_DATA=[
+    "Alabama,AL,01",
+    "Alaska,AK,02",
+    "Arizona,AZ,04",
+    "Arkansas,AR,05",
+    "California,CA,06",
+    "Colorado,CO,08",
+    "Connecticut,CT,09",
+    "Delaware,DE,10",
+    "District_of_Columbia,DC,11",
+    "Florida,FL,12",
+    "Georgia,GA,13",
+    "Hawaii,HI,15",
+    "Idaho,ID,16",
+    "Illinois,IL,17",
+    "Indiana,IN,18",
+    "Iowa,IA,19",
+    "Kansas,KS,20",
+    "Kentucky,KY,21",
+    "Louisiana,LA,22",
+    "Maine,ME,23",
+    "Maryland,MD,24",
+    "Massachusetts,MA,25",
+    "Michigan,MI,26",
+    "Minnesota,MN,27",
+    "Mississippi,MS,28",
+    "Missouri,MO,29",
+    "Montana,MT,30",
+    "Nebraska,NE,31",
+    "Nevada,NV,32",
+    "New_Hampshire,NH,33",
+    "New_Jersey,NJ,34",
+    "New_Mexico,NM,35",
+    "New_York,NY,36",
+    "North_Carolina,NC,37",
+    "North_Dakota,ND,38",
+    "Ohio,OH,39",
+    "Oklahoma,OK,40",
+    "Oregon,OR,41",
+    "Pennsylvania,PA,42",
+    "Rhode_Island,RI,44",
+    "South_Carolina,SC,45",
+    "South_Dakota,SD,46",
+    "Tennessee,TN,47",
+    "Texas,TX,48",
+    "Utah,UT,49",
+    "Vermont,VT,50",
+    "Virginia,VA,51",
+    "Washington,WA,53",
+    "West_Virginia,WV,54",
+    "Wisconsin,WI,55",
+    "Wyoming,WY,56" ]
+STATES=[dict(zip("state_name,stusab,fips_state".split(","),line.split(","))) for line in STATE_DATA]
+
+##
+## For parsing the config file
+##
+SECTION_PATHS='paths'
+SECTION_RUN='run'
+OPTION_NAME='NAME'
+OPTION_SRC='SRC'                # the $SRC is added to the [paths] section of the config file
 
 ################################################################
 ### Utility Functions ##########################################
@@ -167,7 +233,7 @@ class DB:
                     logging.error("vals: "+str(vals))
                     logging.error(str(e))
                     raise e
-                if cmd.upper().startswith("SELECT"):
+                if cmd.strip().upper().startswith("SELECT"):
                     result = c.fetchall()
                 c.close()       # close the cursor
                 db.close() # close the connection
@@ -220,7 +286,7 @@ class DB:
 def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
     count = 0
     errors = 0
-    with dopen(sol_filenamegz) as f:
+    with dopen(sol_filenamegz,'r') as f:
         for (num,line) in enumerate(f,1):
             if line.startswith('C'):
                 line = line.strip()
@@ -409,68 +475,6 @@ def extract_state_county_tract(fname):
         return( stusab(m.group('state')), m.group('county'), m.group('tract'))
     return None
 
-##
-## For parsing the config file
-##
-SECTION_PATHS='paths'
-SECTION_RUN='run'
-OPTION_NAME='NAME'
-OPTION_SRC='SRC'                # the $SRC is added to the [paths] section of the config file
-
-STATE_DATA=[
-    "Alabama,AL,01",
-    "Alaska,AK,02",
-    "Arizona,AZ,04",
-    "Arkansas,AR,05",
-    "California,CA,06",
-    "Colorado,CO,08",
-    "Connecticut,CT,09",
-    "Delaware,DE,10",
-    "District_of_Columbia,DC,11",
-    "Florida,FL,12",
-    "Georgia,GA,13",
-    "Hawaii,HI,15",
-    "Idaho,ID,16",
-    "Illinois,IL,17",
-    "Indiana,IN,18",
-    "Iowa,IA,19",
-    "Kansas,KS,20",
-    "Kentucky,KY,21",
-    "Louisiana,LA,22",
-    "Maine,ME,23",
-    "Maryland,MD,24",
-    "Massachusetts,MA,25",
-    "Michigan,MI,26",
-    "Minnesota,MN,27",
-    "Mississippi,MS,28",
-    "Missouri,MO,29",
-    "Montana,MT,30",
-    "Nebraska,NE,31",
-    "Nevada,NV,32",
-    "New_Hampshire,NH,33",
-    "New_Jersey,NJ,34",
-    "New_Mexico,NM,35",
-    "New_York,NY,36",
-    "North_Carolina,NC,37",
-    "North_Dakota,ND,38",
-    "Ohio,OH,39",
-    "Oklahoma,OK,40",
-    "Oregon,OR,41",
-    "Pennsylvania,PA,42",
-    "Rhode_Island,RI,44",
-    "South_Carolina,SC,45",
-    "South_Dakota,SD,46",
-    "Tennessee,TN,47",
-    "Texas,TX,48",
-    "Utah,UT,49",
-    "Vermont,VT,50",
-    "Virginia,VA,51",
-    "Washington,WA,53",
-    "West_Virginia,WV,54",
-    "Wisconsin,WI,55",
-    "Wyoming,WY,56" ]
-STATES=[dict(zip("state_name,stusab,fips_state".split(","),line.split(","))) for line in STATE_DATA]
-
 # https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
 class Singleton(type):
     _instances = {}
@@ -497,8 +501,6 @@ class GetConfig(metaclass=Singleton):
         if self.config is None:
             self.config_reload(path=path)
         return self.config
-
-
 
 def get_config_str(section,name):
     """Like config[section][name], but looks for [name@hostname] first"""
@@ -575,6 +577,21 @@ def lpfile_properly_terminated(fname):
             lastline = line
         return b'End' in lastline
     return True
+
+def remove_lpfile(*,stusab,county,tract):
+    lpgz_filename = LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
+    dpath_unlink(lpgz_filename)
+    DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL, lp_end=NULL, lp_gb=NULL, lp_host=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+            (stusab,county,tract))
+
+
+def remove_solfile(*,stusab,county,tract):
+    solgz_filename = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
+    dpath_unlink(solgz_filename)
+    DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL, sol_end=NULL, sol_gb=NULL, sol_host=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+            (stusab,county,tract))
+
+
 
 ################################################################
 ### Output Products
@@ -737,9 +754,11 @@ def dpath_exists(path):
 
 def dpath_unlink(path):
     path = dpath_expand(path)
-    if path[0:5]=='s3://':
-        raise RuntimeError("dpath_unlink doesn't work with s3 paths yet")
-    return os.unlink(path)
+    if path.startswith('s3://'):
+        (bucket,key) = s3.get_bucket_key(path)
+        boto3.client('s3').delete_object(Bucket=bucket, Key=key)
+    else:
+        return os.unlink(path)
 
 def dlistdir(path):
     path = dpath_expand(path)
@@ -774,9 +793,11 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
         if mode=='rb':
             return s3.S3File(path, mode=mode)
         if mode.startswith('w') and path.endswith('.gz'):
-            p = subprocess.Popen([ os.path.join(MY_DIR, 's3zput'), '/dev/stdin', path],
-                                 stdin=subprocess.PIPE)
+            p = subprocess.Popen([ S3ZPUT, '/dev/stdin', path], stdin=subprocess.PIPE, encoding=encoding)
             return p.stdin
+        if mode.startswith('r') and path.endswith('.gz'):
+            p = subprocess.Popen([ S3ZCAT, path], stdout=subprocess.PIPE, encoding=encoding)
+            return p.stdout
         return s3.s3open(path, mode=mode, encoding=encoding)
 
     if 'b' in mode:

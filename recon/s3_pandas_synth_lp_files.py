@@ -29,7 +29,7 @@ from total_size import total_size
 
 import dbrecon
 from dbrecon import DB,GB,MB
-from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info
+from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile
 
 assert pd.__version__ > '0.19'
 
@@ -521,9 +521,15 @@ def make_state_county_files(stusab, county, tractgen='all'):
             tracts = tracts_needing_lp_files
         else:
             if tractgen not in tracts_needing_lp_files:
-                logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
-                                f"- tract {tractgen} not in {tracts_needing_lp_files}")
-                return
+                # Check to see if the tract file is large enough
+                lpgz_filename = dbrecon.LPFILENAMEGZ(stusab=stusab,county=county,tract=tractgen)
+                if dpath_exists(lpgz_filename) and dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
+                    logging.warning(f"{lpgz_filename} exists but is too small ({dgetsize(lpgz_filename)}); deleting")
+                    remove_lpfile(stusab=stusab,county=county,tract=tractgen)
+                else:
+                    logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
+                                    f"- tract {tractgen} not in {tracts_needing_lp_files}")
+                    return
             tracts = [tractgen]
 
     state_code = dbrecon.state_fips(stusab)
@@ -705,9 +711,7 @@ if __name__=="__main__":
 
     parser.add_argument("state",  help="2-character state abbreviation.")
     parser.add_argument("county", help="3-digit county code")
-    parser.add_argument("tract",
-                        help="If provided, just synthesize for this specific 4-digit tract code. "
-                        "Otherwise do all in the county",nargs="?")
+    parser.add_argument("tract",  help="If provided, just synthesize for this specific 6-digit tract code. Otherwise do all in the county",nargs="?")
 
     DB.quiet = True
     args     = parser.parse_args()

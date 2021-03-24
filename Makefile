@@ -22,7 +22,7 @@ clean_data:
 ################################################################
 ## Custom reports that use spark
 cr42:
-	zip multi_report.zip *.py ctools/*.py ctools/schema/*.py
+	zip -q multi_report.zip *.py ctools/*.py ctools/schema/*.py
 	spark-submit --py-files multi_report.zip multi_report.py --cr42
 
 ################################################################

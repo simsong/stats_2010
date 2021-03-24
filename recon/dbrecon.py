@@ -591,6 +591,16 @@ def remove_solfile(*,stusab,county,tract):
     DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL, sol_end=NULL, sol_gb=NULL, sol_host=NULL WHERE stusab=%s AND county=%s AND tract=%s",
             (stusab,county,tract))
 
+def remove_csvfile(*,stusab,county,tract):
+    csv_filename = COUNTY_CSV_FILENAME(stusab=stusab,county=county)
+    for fn in [csv_filename, csv_filename+'.tmp']:
+        try:
+            dpath_unlink(fn)
+        except FileNotFoundError as e:
+            pass
+    DB.csfr(f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",
+            (stusab,county))
+
 
 
 ################################################################
@@ -756,7 +766,8 @@ def dpath_unlink(path):
     path = dpath_expand(path)
     if path.startswith('s3://'):
         (bucket,key) = s3.get_bucket_key(path)
-        boto3.client('s3').delete_object(Bucket=bucket, Key=key)
+        r = boto3.client('s3').delete_object(Bucket=bucket, Key=key)
+        print("delete",bucket,key,r)
     else:
         return os.unlink(path)
 

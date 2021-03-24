@@ -29,11 +29,9 @@ from total_size import total_size
 
 import dbrecon
 from dbrecon import DB,GB,MB
-from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile
+from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
 
 assert pd.__version__ > '0.19'
-
-REIDENT = os.getenv('REIDENT')
 
 MAX_SF1_ERRORS = 10             # some files may have errors
 MISSING  = 'missing'

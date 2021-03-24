@@ -19,10 +19,7 @@ import multiprocessing
 
 import dbrecon
 from dbrecon import DB
-from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
-
-REIDENT = os.getenv('REIDENT')
-
+from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,REIDENT
 
 def make_csv_file( pair ):
     # Make sure we have a solution file for every tract
@@ -83,6 +80,8 @@ def make_csv_file( pair ):
             # done with this tract
             dbrecon.db_done('csv', stusab, county, tract)
         # done with all tracts
+
+    dbrecon.dwait_exists(county_csv_filename_tmp)
     dbrecon.drename(county_csv_filename_tmp, county_csv_filename)
     logging.info(f"Ending {state_code}{county} county pop: {county_total}")
     print(f"{__file__} {state_code}{county} county pop: {county_total}")

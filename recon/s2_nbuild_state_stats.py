@@ -32,7 +32,6 @@ import ctools.s3 as s3
 # The linkage variables, in the order they appear in the file
 SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
 
-REIDENT = os.getenv('REIDENT')
 ANY="any"
 
 def sf1_zipfilename(stusab):

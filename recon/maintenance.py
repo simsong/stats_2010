@@ -21,8 +21,8 @@ import ctools
 import ctools.lock
 import ctools.env as env
 import ctools.dbfile as dbfile
+from dbrecon import REIDENT
 
-REIDENT = os.getenv('REIDENT')
 
 def fix_states():
     db = dbrecon.DB()

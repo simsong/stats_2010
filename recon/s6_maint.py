@@ -22,11 +22,9 @@ sys.path.append( os.path.join(os.path.dirname(os.path.abspath(__file__)),".."))
 
 import dbrecon
 from dbrecon import DB
-from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB
+from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,REIDENT
 
 from gurobi_logfile_parser import GurobiLogfileParser
-
-REIDENT = os.getenv('REIDENT')
 
 MFRE=re.compile("model_(\d\d)(\d\d\d)(\d\d\d\d\d\d)[.]log")
 def model_filename_to_sct(fname):

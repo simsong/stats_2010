@@ -20,9 +20,8 @@ import zipfile
 import glob
 
 from dbrecon import dmakedirs
-from dbrecon import dopen,dpath_exists
+from dbrecon import dopen,dpath_exists,REIDENT
 
-REIDENT = os.getenv('REIDENT')
 
 
 def download(stusab, sf1_dest_dir):

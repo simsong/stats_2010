@@ -24,10 +24,10 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
-from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int
+from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
 
 HOSTNAME = dbrecon.hostname()
-REIDENT = os.getenv('REIDENT')
+
 
 # Tuning parameters
 

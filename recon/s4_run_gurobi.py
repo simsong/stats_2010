@@ -22,9 +22,8 @@ from os.path import dirname,basename,abspath
 import gurobipy
 import dbrecon
 from dbrecon import DB
-from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT
+from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT,REIDENT
 
-REIDENT = os.getenv('REIDENT')
 GZIP    = 'gzip'                # compressor
 GZIP_OPT = '-1f'                # compression options
 

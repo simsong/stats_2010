@@ -21,6 +21,7 @@ import sys
 import time
 import tempfile
 import subprocess
+import atexit
 
 from total_size import total_size
 

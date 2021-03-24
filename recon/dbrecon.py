@@ -173,7 +173,7 @@ class DB:
                 logging.error(e)
                 logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
                 pass
-            ftime.sleep(RETRY_DELAY_TIME)
+            time.sleep(RETRY_DELAY_TIME)
         raise e
 
     def cursor(self):
@@ -270,7 +270,7 @@ def is_db_done(what, state_abbr, county, tract):
 def db_clean():
     """Clear hostlock if PID is gone"""
     rows = DB.csfr("SELECT pid,stusab,county,tract FROM tracts WHERE hostlock=%s",(hostname(),),quiet=True)
-    for (pid,stusab,country,tract) in rows:
+    for (pid,stusab,county,tract) in rows:
         if not pid:
             db_unlock(stusab,county,tract)
             continue

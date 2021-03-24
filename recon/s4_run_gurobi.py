@@ -126,7 +126,6 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
         print(f"MODEL FOR {stusab} {county} {tract} ")
         model.printStats()
     else:
-        model.printStats()      # debug code
         logging.info(f"Starting optimizer. pid={os.getpid()}")
         start_time = time.time()
         model.optimize()
@@ -194,7 +193,7 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
         subprocess.check_call([ S3ZPUT, tmp_log_filename, log_filename])
     else:
         subprocess.check_call([ GZIP, GZIP_OPT], stdin=open(tmp_log_filename,'rb'), stdout=open(log_filename,'wb'))
-    os.path.unlink(tmp_log_filename)
+    os.unlink(tmp_log_filename)
     if tempname is not None:
         os.unlink(tempname)
 

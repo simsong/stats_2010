@@ -604,9 +604,9 @@ def make_state_county_files(stusab, county, tractgen='all'):
     sf1_block_all = pd.merge(sf1_block, sf1_vars_block, how='inner',
                              left_on=[TABLEVAR], right_on=[CELL_NUMBER])
 
-    print(f"sf1_block:\n{sf1_block}")
-    print(f"sf1_vars_block:\n{sf1_vars_block}")
-    print(f"sf1_block_all:\n{sf1_block_all}")
+    #print(f"sf1_block:\n{sf1_block}")
+    #print(f"sf1_vars_block:\n{sf1_vars_block}")
+    #print(f"sf1_block_all:\n{sf1_block_all}")
 
     sf1_block_all['value'].fillna(0)
 

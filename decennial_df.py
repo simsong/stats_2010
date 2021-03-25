@@ -39,10 +39,11 @@ def find_files():
             raise RuntimeError("Environment variable DECENNIAL_ROOT must be defined with location of unzipped Decennial data files")
     for root in roots:
         root = os.path.expandvars(root) # expand dollar signs
-        print("Checking",root)
+        (bucket,prefix)  =  s3.get_bucket_key(root)
+        print("Searching for published data in ",root)
         if root.startswith('s3:'):
             for obj in s3.list_objects(root):
-                yield obj[s3._Key]
+                yield f's3://{bucket}/{obj[s3._Key]}'
         elif root.startswith('hdfs:'):
             raise RuntimeError('hdfs SF1_ROOT not implemented')
         else:
@@ -57,7 +58,7 @@ def register_files(verbose=False):
 def unique_selector(selector):
     """Return the unique values for a given selector"""
     return set( [obj[selector] for obj in files] )
-    
+
 
 # Regular expressions for data products
 RE='re'
@@ -105,10 +106,14 @@ def register_file(path, verbose=False):
     if verbose:
         print("Unrecognized filename:",filename)
 
+# pylint: disable=E0401
 class DecennialDF:
     """Create a set of dataframes associated with a decennial product."""
     def __init__(self,*,year,product):
         """Inventory the files and return an SF1 object."""
+
+        self.year = year
+        self.product = product
 
         # Validate parameters
         if year not in YEARS:
@@ -119,19 +124,21 @@ class DecennialDF:
 
 
         # Validate schema
-        ch6file = CHAPTER6_CSV_FILES.format(year=year,product=product)
+        ch6file = CHAPTER6_CSV_FILE.format(year=year,product=product)
         if not os.path.exists(ch6file):
             raise FileNotFoundError(f"Requires {ch6file}")
-        self.schema = cb_spec_decoder.schema_for_spec(ch6file)
+        self.schema = cb_spec_decoder.schema_for_spec(ch6file, year=self.year, product=self.product )
 
         # Find the data files
         register_files()
+        if len(files)==0:
+            raise RuntimeError("No product files found")
 
 
     def get_table(self,tableName):
         return self.schema.get_table(tableName)
 
-    def get_df(self,*,tableName,sqlName):
+    def get_df(self,*, tableName, sqlName):
         """Get a dataframe where the tables are specified by a selector. Things to try:
         year=2010  (currently required, but defaults to 2010)
         table=tabname (you must specify a table),
@@ -146,22 +153,30 @@ class DecennialDF:
 
         # Find the files
         paths = [ obj[PATH] for obj in files if
-                  (obj[YEAR]==year and obj[PRODUCT]==product) and obj[CIFSN]==cifsn]
+                  (obj[YEAR]==self.year and obj[PRODUCT]==self.product) and obj[CIFSN]==cifsn]
+        for p in paths:
+            print("path:",p)
+
         if len(paths)==0:
             print("No file found. Available data files:")
             for obj in files:
                 print(obj)
-            raise RuntimeError(f"No files found looking for year:{year} product:{product} CIFSN:{cifsn}")
-            
+            raise RuntimeError(f"No files found looking for year:{self.year} product:{self.product} CIFSN:{cifsn}")
+
+        from pyspark.sql import SparkSession
+        spark = SparkSession.builder.getOrCreate()
+
         # Create an RDD for each text file
         rdds = [spark.sparkContext.textFile(path) for path in paths]
+
         # Combine them into a single file
         rdd  = spark.sparkContext.union(rdds)
+
         # Convert it to a dataframe
         df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
         df.registerTempTable( sqlName )
         return df
-            
+
     def find_variable_by_name(self,name):
         """Scans all tables in the schema until a variable name is found. Returns it"""
         for table in self.schema.tables():
@@ -190,4 +205,3 @@ class DecennialDF:
                 old_table = table
             print("  ", var.name, var.desc)
         print("")
-

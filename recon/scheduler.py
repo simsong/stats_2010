@@ -24,13 +24,14 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
-from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int
+from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
 
 HOSTNAME = dbrecon.hostname()
 
+
 # Tuning parameters
 
-SCHEMA_FILENAME="schema.sql"                
+SCHEMA_FILENAME="schema.sql"
 MAX_LOAD     = 32
 MAX_CHILDREN = 10
 PYTHON_START_TIME = 1
@@ -52,13 +53,13 @@ LP_J1    = 1                    # let this program schedule
 ## These are Memoized because they are only used for init() and rescan()
 
 def rescan():
-    states = [args.state] if args.state else dbrecon.all_state_abbrs()
-    for state_abbr in states:
-        counties = [args.county] if args.county else dbrecon.counties_for_state(state_abbr=state_abbr)
+    states = [args.state] if args.state else dbrecon.all_stusabs()
+    for stusab in states:
+        counties = [args.county] if args.county else dbrecon.counties_for_state(stusab=stusab)
         for county in counties:
-            print(f"RESCAN {state_abbr} {county}")
-            for tract in dbrecon.tracts_for_state_county(state_abbr=state_abbr,county=county):
-                dbrecon.rescan_files(state_abbr,county,tract,quiet=False)
+            print(f"RESCAN {stusab} {county}")
+            for tract in dbrecon.tracts_for_state_county(stusab=stusab,county=county):
+                dbrecon.rescan_files(stusab,county,tract,quiet=False)
         print()
 
 def clean():
@@ -78,20 +79,20 @@ def clean():
                 m = dbrecon.extract_state_county_tract(fname)
                 if m is None:
                     continue
-                (state_abbr,county,tract) = m
+                (stusab,county,tract) = m
                 what = "sol" if "sol" in path else "lp"
-                DB.csfr(f"UPDATE tracts SET {what}_start=NULL,{what}_end=NULL "
+                DB.csfr(f"UPDATE {REIDENT}tracts SET {what}_start=NULL,{what}_end=NULL "
                         "where stusab=%s and county=%s and tract=%s",
-                        (state_abbr, county, tract))
+                        (stusab, county, tract))
                 os.unlink(path)
 
-                      
+
 class SCT:
     def __init__(self,state,county,tract):
         self.state = state
         self.county = county
         self.tract  = tract
-        
+
 # This is a simple scheduler for a single system. A distributed scheduler would be easier: we would just schedule everything.
 def load():
     return os.getloadavg()[0]
@@ -119,12 +120,15 @@ def report_load_memory():
     mins     = int((total_seconds % 3600) // 60)
     secs     = int(total_seconds % 60)
     if time.time() > last_report + REPORT_FREQUENCY:
-        dbrecon.DB.csfr("insert into sysload (t, host, min1, min5, min15, freegb) "
-                        "values (now(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1", 
-                        [HOSTNAME] + list(os.getloadavg()) + [get_free_mem()//GiB])
+        dbrecon.DB.csfr(
+            """
+            INSERT INTO sysload (t, host, min1, min5, min15, freegb)
+            VALUES (NOW(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1
+            """,
+            [HOSTNAME] + list(os.getloadavg()) + [get_free_mem()//GiB])
         last_report = time.time()
     return free_mem
-    
+
 
 def pcmd(p):
     """Return a process command"""
@@ -162,7 +166,7 @@ class PSTree():
                 sum([child.memory_info().rss for child in p.children(recursive=True)]))
 
     def total_user_time(self,p):
-        return (p.cpu_times().user + 
+        return (p.cpu_times().user +
                 sum([child.cpu_times().user for child in p.children(recursive=True)]))
 
     def ps_list(self):
@@ -229,7 +233,7 @@ def run():
         free_mem = report_load_memory()
 
         # Are we done yet?
-        remain = dbrecon.DB.csfr("select count(*) from tracts where sol_end is null",quiet=True)
+        remain = dbrecon.DB.csfr(f"select count(*) from tracts where sol_end is null",quiet=True)
         if remain[0][0]==0:
             print("All done!")
             break
@@ -268,12 +272,12 @@ def run():
                     continue
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))
-                dbrecon.DB.csfr("INSERT INTO errors (host,file,error) values (%s,%s,%s)",
+                dbrecon.DB.csfr(f"INSERT INTO errors (host,file,error) values (%s,%s,%s)",
                                 (HOSTNAME,__file__,"Free memory down to {}".format(get_free_mem())))
                 kill_tree(p)
                 running.remove(p)
                 continue
-            
+
         if stop_requested:
             print("STOP REQUESTED")
             if len(running)==0:
@@ -284,7 +288,7 @@ def run():
                 time.sleep(PROCESS_DIE_TIME)
                 continue
 
-        # See if we can create another process. 
+        # See if we can create another process.
         # For stability, we create a max of one LP and one SOL each time through.
 
         # The LP makers take a lot of memory, so if we aren't running less than two, run up to two.
@@ -298,9 +302,14 @@ def run():
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
             lp_limit = 1
-            make_lps = DB.csfr("SELECT stusab,county,count(*) FROM tracts "
-                               "WHERE (lp_end IS NULL) and (hostlock IS NULL) GROUP BY state,county "
-                               "order BY RAND() DESC LIMIT %s", (lp_limit,))
+            make_lps = DB.csfr(
+                f"""
+                SELECT stusab,county,count(*)
+                FROM {REIDENT}tracts
+                WHERE (lp_end IS NULL) AND (hostlock IS NULL)
+                GROUP BY state,county
+                ORDER BY RAND() DESC LIMIT %s
+                """, (lp_limit,))
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
@@ -333,9 +342,12 @@ def run():
             limit_sol = max(needed_sol, max_sol_launch)
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 continue
-            solve_lps = DB.csfr("SELECT stusab,county,tract FROM tracts "
-                                "WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL) "
-                                "ORDER BY RAND() LIMIT %s",(limit_sol,))
+            solve_lps = DB.csfr(
+                f"""
+                SELECT stusab,county,tract FROM tracts
+                WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)
+                ORDER BY RAND() LIMIT %s
+                """,(limit_sol,))
             if (len(solve_lps)==0 and needed_sol>0) or not quiet:
                 print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
             for (ct,(state,county,tract)) in enumerate(solve_lps,1):
@@ -354,14 +366,34 @@ def run():
 def none_running(hostname=None):
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
     print("LP in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT stusab,county,tract FROM tracts WHERE lp_start IS NOT NULL AND lp_end IS NULL " + hostlock):
+    for (state,county,tract) in  DB.csfr(
+            f"""
+            SELECT stusab,county,tract
+            FROM {REIDENT}tracts
+            WHERE lp_start IS NOT NULL AND lp_end IS NULL
+            """ + hostlock):
         print(state,county,tract)
-    DB.csfr("UPDATE tracts set lp_start=NULL WHERE lp_start IS NOT NULL and lp_end is NULL " + hostlock)
-        
+    DB.csfr(
+        f"""
+        UPDATE {REIDENT}tracts
+        SET lp_start=NULL
+        WHERE lp_start IS NOT NULL AND lp_end IS NULL
+        """ + hostlock)
+
     print("SOL in progress:")
-    for (state,county,tract) in  DB.csfr("SELECT stusab,county,tract FROM tracts WHERE sol_start IS NOT NULL AND sol_end IS NULL" + hostlock):
+    for (state,county,tract) in DB.csfr(
+            f"""
+            SELECT stusab,county,tract
+            FROM {REIDENT}tracts
+            WHERE sol_start IS NOT NULL AND sol_end IS NULL
+            """ + hostlock):
         print(state,county,tract)
-    DB.csfr("UPDATE tracts set sol_start=NULL WHERE sol_start IS NOT NULL AND sol_end IS NULL " + hostlock)
+    DB.csfr(
+        f"""
+        UPDATE {REIDENT}tracts
+        SET sol_start=NULL
+        WHERE sol_start IS NOT NULL AND sol_end IS NULL
+        """ + hostlock)
     print("Resume...")
 
 def get_lock():
@@ -374,7 +406,7 @@ def get_lock():
         fd = os.open( lockfile, os.O_RDONLY )
         if fd>0:
             # non-blocking
-            fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB) 
+            fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
             return
     except IOError:
         pass
@@ -398,7 +430,7 @@ if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Maintains a database of reconstruction and schedule "
-                             "next work if the CPU load and memory use is not too high." ) 
+                             "next work if the CPU load and memory use is not too high." )
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
     parser.add_argument("--rescan", help="scan all of the files and update the database if we find any missing LP or Solution files",
@@ -413,14 +445,14 @@ if __name__=="__main__":
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
     parser.add_argument("--state", help="state for rescanning")
     parser.add_argument("--county", help="county for rescanning")
-    
+
     args   = parser.parse_args()
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
     DB.quiet = True
 
     if args.testdb:
         print("Tables:")
-        rows = DB.csfr("show tables")
+        rows = DB.csfr(f"show tables")
         for row in rows:
             print(row)
     elif args.rescan:
@@ -438,4 +470,3 @@ if __name__=="__main__":
         scan_s3_s4()
         none_running(HOSTNAME)
         run()
-        

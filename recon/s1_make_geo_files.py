@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 #
-# read_geo_file.py:
-# Inputs: SF1 ZIPFILES
-# Outputs: SF1 geofile as a CSV with a file header and list of counties in the state
-# Output location: $ROOT/{state_abbr}/
+"""
+read_geo_file.py:
+Inputs: SF1 ZIPFILES
+Outputs: SF1 geofile as a CSV with a file header and list of counties in the state
+Output location: $ROOT/{stusab}/
+"""
 
 import json
 import csv
@@ -13,30 +15,48 @@ import dbrecon
 import logging
 import time
 import os
+import io
+import multiprocessing
+import zipfile
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
-from dbrecon import dopen,dpath_expand,dmakedirs,DB
+import ctools.s3
 from ctools.timer import Timer
 
+from dbrecon import dopen,dpath_expand,dmakedirs,DB,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE,REIDENT
+
+
+
 GEO_LAYOUT_FILENAME="$SRC/layouts/geo_layout.txt"
+
 TRANSACTION_RECORDS = 20
+
 def fields_str(field_count,record_count=1):
     fields = "(" + ",".join(['%s']*field_count) + ")"
     fields_str = ",".join([fields] * record_count)
     return fields_str
 
-def make_county_list(state_abbr:str):
+def make_county_list(stusab:str):
     """Given a state abbreviation, find the geo file, extract information, and store in the CSV files
     and in the SQL database."""
 
-    print(f"make_county_list({state_abbr})")
+    print(f"make_county_list({stusab})")
+
+    state_code       = dbrecon.state_fips(stusab)
 
     # Input files
-    state_code       = dbrecon.state_fips(state_abbr)
-    sf1_zipfilename  = dbrecon.dpath_expand("$SF1_DIST/{state_abbr}2010.sf1.zip").format(state_abbr=state_abbr)
-    sf1_geofile      = dbrecon.dpath_expand("$SF1_DIST/{state_abbr}geo2010.sf1").format(state_abbr=state_abbr)
-    sf1file          = dopen(sf1_geofile, zipfilename=sf1_zipfilename, encoding='latin1')
+
+    sf1_zipfilename  = dbrecon.dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
+    sf1_geofilename  = f"{stusab}geo2010.sf1"
+
+    # Open the SF1 zipfile
+    if sf1_zipfilename.startswith("s3://"):
+        zf = zipfile.ZipFile(ctools.s3.S3File(sf1_zipfilename))
+    else:
+        zf = zipfile.ZipFile(sf1_zipfilename)
+    sf1_geofile = io.TextIOWrapper(zf.open(sf1_geofilename))
+
 
     # Input Reader --- Get layout for geofile. This uses the hard-coded information in the geo_layout.txt file.
     names    = []
@@ -45,19 +65,14 @@ def make_county_list(state_abbr:str):
         names.append(g['field_name'])
         colspecs.append((int(g['start_pos'])-1, int(g['start_pos'])+int(g['length'])-1))
 
-    # CSV output
+    # CSV output. We make this by default. In the future  we should be able to run it entirely out of the database
     if args.csv:
         # Output files
-        geofile_csv_filename       = f"$ROOT/{state_abbr}/geofile_{state_abbr}.csv"
-        state_county_list_filename = f'$ROOT/{state_abbr}/state_county_list_{state_code}.csv'
-
-        # If the output files exist, return
-        if dbrecon.dpath_exists(geofile_csv_filename) and dbrecon.dpath_exists(state_county_list_filename):
-            logging.warning(f"{geofile_csv_filename} exists; {state_county_list_filename} exists; will not overwrite")
-            return
+        geofile_csv_filename       = GEOFILE_FILENAME_TEMPLATE.format(stusab=stusab)
+        state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(stusab=stusab, state_code=state_code)
 
         logging.info(f"Creating {geofile_csv_filename}")
-        dbrecon.dmakedirs(f"$ROOT/{state_abbr}") # make sure we can create the output file
+        dbrecon.dmakedirs( os.path.dirname(geofile_csv_filename) ) # make sure we can create the output file
 
         csvfile = dopen(geofile_csv_filename, 'w')
         writer  = csv.DictWriter(csvfile, fieldnames=names)
@@ -65,11 +80,11 @@ def make_county_list(state_abbr:str):
         f       = dopen(state_county_list_filename,'w')
         writer2 = csv.writer(f)
 
-    # Database output
+    # Get our own database connection
     db = DB()
     db.connect()
     c = db.cursor()
-    c.execute("delete from geo where STUSAB=%s",(state_abbr,))
+    c.execute(f"DELETE from {REIDENT}geo where STUSAB=%s",(stusab,))
 
     # extract fields from the geofile and write them to the geofile_csv_file and/or the database
     # We do this because the geofile is position-specified and it was harder to use that.
@@ -81,7 +96,8 @@ def make_county_list(state_abbr:str):
     vals = []
     count = 0
     total_count = 0
-    for line in sf1file:
+
+    for line in sf1_geofile:
         # convert the column-specified line to a dict
         dataline = collections.OrderedDict(list(zip(names,[line[c[0]:c[1]] for c in colspecs])))
 
@@ -89,7 +105,7 @@ def make_county_list(state_abbr:str):
         if args.csv:
             writer.writerow(dataline)
             if dataline['SUMLEV']=='050':
-                row = [dataline['STATE'], dataline['COUNTY'],state_abbr]
+                row = [dataline['STATE'], dataline['COUNTY'],stusab]
                 writer2.writerow(row)
 
         # Write to database specific geolevels
@@ -98,16 +114,23 @@ def make_county_list(state_abbr:str):
             count  += 1
             total_count += 1
             if count >= TRANSACTION_RECORDS:
-                c.execute("INSERT INTO geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+                c.execute(f"INSERT INTO {REIDENT}geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
                 vals = []
                 count = 0
 
     # Finish up database transaction
-    print("Total: {}".format(total_count))
     if count>0:
-        c.execute("INSERT INTO geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+        c.execute(f"INSERT INTO {REIDENT}geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+        total_count += count
     db.commit()
-    sf1file.close()
+    print("Total: {}".format(total_count))
+    assert total_count>0
+    sf1_geofile.close()
+
+    # Select georecords into the tracts
+    c.execute(f"INSERT INTO {REIDENT}tracts (stusab,state,county,tract) SELECT stusab,state,county,tract from {REIDENT}geo where sumlev=140")
+    db.commit()
+
     if args.csv:
         csvfile.close()
         f.close()
@@ -118,10 +141,10 @@ if __name__=="__main__":
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Read SF1 geography files, creates the counties geography files, and loads the MySQL database."
                              "This is pretty fast and DB heavy, so it is not parallelized" )
-    parser.add_argument("--showcounties", 
+    parser.add_argument("--showcounties",
                         help="Display all counties for state from files that were created", action='store_true')
     parser.add_argument("--nocsv", help="Do not make the CSV files", action='store_true')
-    parser.add_argument("state_abbr", help="States to process. Say 'all' for all", nargs='*')
+    parser.add_argument("stusab", help="States to process. Say 'all' for all", nargs='*')
     dbrecon.argparse_add_logging(parser)
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="01mak")
@@ -135,20 +158,19 @@ if __name__=="__main__":
         if not dbrecon.dpath_exists(fn):
             raise FileNotFoundError(fn)
 
-    if args.state_abbr==[] or args.state_abbr[0]=='all':
-        states = dbrecon.all_state_abbrs()
+    if args.stusab==[] or args.stusab[0]=='all':
+        states = dbrecon.all_stusabs()
     else:
-        states = args.state_abbr
-              
+        states = args.stusab
+
     # Are we just printing status reports?
     if args.showcounties:
-        for state_abbr in states:
-            print(dbrecon.counties_for_state(state_abbr))
+        for stusab in states:
+            print(dbrecon.counties_for_state(stusab))
         exit(0)
 
-    # Generate the CSV files. This may be parallelized in the future
-    for state_abbr in states:
-        with Timer() as t:
-            make_county_list(state_abbr)
+    # Generate the CSV files. Do this in parallel
+    with multiprocessing.Pool(10) as p:
+        p.map(make_county_list, states)
 
     print("Made geofiles for: {}".format(" ".join(states)))

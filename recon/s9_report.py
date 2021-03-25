@@ -23,15 +23,15 @@ class Format:
     def demo(self):
         for i in range(0,64):
             print(f"\033[{i}m Mode {i}")
-# 
+#
 queries1 = [
-    ('z','Current Time', 'select now()'),
-    ('a', 'tracts with population for which we have no LP file', 
-     'select * from tracts_geostatus as a left join geo_tracts as b on a.geocode=b.geocode where a.lp_end is null and b.pop100>0 limit 10'),
+    ('z','Current Time', 'SELECT now()'),
+    ('a', 'tracts with population for which we have no LP file',
+     'select * from {REIDENT}tracts_geostatus as a left join {REIDENT}geo_tracts as b on a.geocode=b.geocode where a.lp_end is null and b.pop100>0 limit 10'),
     ('','',
-     'select * from tracts_geostatus inner join geo_tracts on tracts_geostatus.geocode=geo_tracts.geocode where tracts_geostatus.lp_end is null and geo_tracts.pop100>0 limit 100')
+     'select * from {REIDENT}tracts_geostatus inner join {REIDENT}geo_tracts on tracts_geostatus.geocode=geo_tracts.geocode where tracts_geostatus.lp_end is null and geo_tracts.pop100>0 limit 100')
     ]
-    
+
 
 def fmt(r):
     if isinstance(r,int):
@@ -44,7 +44,7 @@ def fmt(r):
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
-                             description="Reports on the state of the reconstruction project.") 
+                             description="Reports on the state of the reconstruction project.")
     parser.add_argument("--demo", action='store_true')
     dbrecon.argparse_add_logging(parser)
     args   = parser.parse_args()
@@ -53,8 +53,7 @@ if __name__=="__main__":
         Format.demo()
         exit(0)
 
-    config = dbrecon.setup_logging_and_get_config(args=args,
-                                                  prefix="s9report",error_alert=False)
+    config = dbrecon.setup_logging_and_get_config(args=args, prefix="s9report",error_alert=False)
 
     db = dbrecon.DB()
     db.connect()
@@ -77,6 +76,3 @@ if __name__=="__main__":
                 table.add_data([fmt(r) for r in row])
             table.render(sys.stdout, format=tydoc.FORMAT_MARKDOWN)
             print("")
-            
-
-        

@@ -7,7 +7,7 @@
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!40101 SET NAMES utf8 */;
+/*!40101 SET NAMES utf8MB4 */;
 /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
 /*!40103 SET TIME_ZONE='+00:00' */;
 /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
@@ -25,7 +25,7 @@
 
 DROP TABLE IF EXISTS `errors`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8MB4 */;
 CREATE TABLE `errors` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `t` datetime DEFAULT CURRENT_TIMESTAMP,
@@ -45,7 +45,7 @@ CREATE TABLE `errors` (
   KEY `host` (`host`(255)),
   KEY `file` (`file`),
   KEY `line` (`line`)
-) ENGINE=InnoDB AUTO_INCREMENT=481 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=481 DEFAULT CHARSET=utf8MB4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -54,7 +54,7 @@ CREATE TABLE `errors` (
 
 DROP TABLE IF EXISTS `geo`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8MB4 */;
 CREATE TABLE `geo` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `STUSAB` char(2) NOT NULL,
@@ -77,7 +77,7 @@ CREATE TABLE `geo` (
   KEY `POP100` (`POP100`),
   KEY `SUMLEV` (`SUMLEV`),
   KEY `STATE_2` (`STATE`,`COUNTY`,`TRACT`,`BLOCK`)
-) ENGINE=InnoDB AUTO_INCREMENT=13151296 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=13151296 DEFAULT CHARSET=utf8MB4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -87,7 +87,7 @@ CREATE TABLE `geo` (
 DROP TABLE IF EXISTS `geo_blocks`;
 /*!50001 DROP VIEW IF EXISTS `geo_blocks`*/;
 SET @saved_cs_client     = @@character_set_client;
-SET character_set_client = utf8;
+SET character_set_client = utf8MB4;
 /*!50001 CREATE VIEW `geo_blocks` AS SELECT 
  1 AS `geocode`,
  1 AS `state`,
@@ -105,7 +105,7 @@ SET character_set_client = @saved_cs_client;
 DROP TABLE IF EXISTS `geo_counties`;
 /*!50001 DROP VIEW IF EXISTS `geo_counties`*/;
 SET @saved_cs_client     = @@character_set_client;
-SET character_set_client = utf8;
+SET character_set_client = utf8MB4;
 /*!50001 CREATE VIEW `geo_counties` AS SELECT 
  1 AS `geocode`,
  1 AS `state`,
@@ -121,7 +121,7 @@ SET character_set_client = @saved_cs_client;
 DROP TABLE IF EXISTS `geo_tracts`;
 /*!50001 DROP VIEW IF EXISTS `geo_tracts`*/;
 SET @saved_cs_client     = @@character_set_client;
-SET character_set_client = utf8;
+SET character_set_client = utf8MB4;
 /*!50001 CREATE VIEW `geo_tracts` AS SELECT 
  1 AS `geocode`,
  1 AS `state`,
@@ -137,7 +137,7 @@ SET character_set_client = @saved_cs_client;
 
 DROP TABLE IF EXISTS `glog`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8MB4 */;
 CREATE TABLE `glog` (
   `gurobi_version` varchar(254) DEFAULT NULL,
   `rows` int(8) DEFAULT NULL,
@@ -153,7 +153,7 @@ CREATE TABLE `glog` (
   `state` varchar(254) DEFAULT NULL,
   `county` varchar(254) DEFAULT NULL,
   `tract` varchar(254) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8MB4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -162,7 +162,7 @@ CREATE TABLE `glog` (
 
 DROP TABLE IF EXISTS `sysload`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8MB4 */;
 CREATE TABLE `sysload` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `t` datetime NOT NULL,
@@ -178,7 +178,7 @@ CREATE TABLE `sysload` (
   KEY `min5` (`min5`),
   KEY `min15` (`min15`),
   KEY `freegb` (`freegb`)
-) ENGINE=InnoDB AUTO_INCREMENT=490435 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=490435 DEFAULT CHARSET=utf8MB4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -187,7 +187,7 @@ CREATE TABLE `sysload` (
 
 DROP TABLE IF EXISTS `tracts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
+/*!40101 SET character_set_client = utf8MB4 */;
 CREATE TABLE `tracts` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `stusab` varchar(2) NOT NULL,
@@ -232,7 +232,7 @@ CREATE TABLE `tracts` (
   KEY `PID` (`pid`),
   KEY `csv_start` (`csv_start`),
   KEY `csv_end` (`csv_end`)
-) ENGINE=InnoDB AUTO_INCREMENT=74081 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=74081 DEFAULT CHARSET=utf8MB4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -242,7 +242,7 @@ CREATE TABLE `tracts` (
 DROP TABLE IF EXISTS `tracts_geostatus`;
 /*!50001 DROP VIEW IF EXISTS `tracts_geostatus`*/;
 SET @saved_cs_client     = @@character_set_client;
-SET character_set_client = utf8;
+SET character_set_client = utf8MB4;
 /*!50001 CREATE VIEW `tracts_geostatus` AS SELECT 
  1 AS `geocode`,
  1 AS `state`,
@@ -264,7 +264,6 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET character_set_results     = latin1 */;
 /*!50001 SET collation_connection      = latin1_swedish_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
 /*!50001 VIEW `geo_blocks` AS select concat(`geo`.`STATE`,`geo`.`COUNTY`,`geo`.`TRACT`,`geo`.`BLOCK`) AS `geocode`,`geo`.`STATE` AS `state`,`geo`.`COUNTY` AS `county`,`geo`.`TRACT` AS `tract`,`geo`.`BLOCK` AS `block`,`geo`.`NAME` AS `name`,`geo`.`POP100` AS `pop100` from `geo` where (`geo`.`SUMLEV` = '101') */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -282,7 +281,6 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET character_set_results     = latin1 */;
 /*!50001 SET collation_connection      = latin1_swedish_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
 /*!50001 VIEW `geo_counties` AS select concat(`geo`.`STATE`,`geo`.`COUNTY`) AS `geocode`,`geo`.`STATE` AS `state`,`geo`.`COUNTY` AS `county`,`geo`.`NAME` AS `name`,`geo`.`POP100` AS `pop100` from `geo` where (`geo`.`SUMLEV` = '050') */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -300,7 +298,6 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET character_set_results     = latin1 */;
 /*!50001 SET collation_connection      = latin1_swedish_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
 /*!50001 VIEW `geo_tracts` AS select concat(`geo`.`STATE`,`geo`.`COUNTY`,`geo`.`TRACT`) AS `geocode`,`geo`.`STATE` AS `state`,`geo`.`COUNTY` AS `county`,`geo`.`TRACT` AS `tract`,`geo`.`NAME` AS `name`,`geo`.`POP100` AS `pop100` from `geo` where (`geo`.`SUMLEV` = '140') */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -318,7 +315,6 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET character_set_results     = latin1 */;
 /*!50001 SET collation_connection      = latin1_swedish_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`recon_writer`@`%.biohpc.cornell.edu` SQL SECURITY DEFINER */
 /*!50001 VIEW `tracts_geostatus` AS select concat(`tracts`.`state`,`tracts`.`county`,`tracts`.`tract`) AS `geocode`,`tracts`.`state` AS `state`,`tracts`.`county` AS `county`,`tracts`.`tract` AS `tract`,`tracts`.`lp_end` AS `lp_end`,`tracts`.`sol_end` AS `sol_end` from `tracts` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;

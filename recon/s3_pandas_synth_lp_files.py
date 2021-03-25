@@ -455,7 +455,7 @@ class LPTractBuilder:
         f.close()
         if not args.debug:
             dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-            dbrecon.DB.csfr(f"UPDATE {REIDENT}tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
+            DB.csfr(f"UPDATE {REIDENT}tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
                             (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract), rowcount=1)
             atexit.unregister(self.db_fail)
 
@@ -486,7 +486,7 @@ def build_tract_lp_tuple(tracttuple):
         lptb.build_tract_lp()
     except MemoryError as e:
         if not args.debug:
-            dbrecon.DB.csfr(
+            DB.csfr(
                 f"""
                 UPDATE {REIDENT}tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL
                 WHERE stusab=%s and county=%s and tract=%s"

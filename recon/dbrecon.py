@@ -204,6 +204,7 @@ def get_pw():
 
 class DB:
     """DB class connection class. Note that this is now in ctools.dbfile and should be removed."""
+
     @staticmethod
     def csfr(cmd,vals=None,quiet=False,rowcount=None):
         """Connect, select, fetchall, and retry as necessary"""
@@ -229,8 +230,8 @@ class DB:
                     if (rowcount is not None) and ( c.rowcount!=rowcount):
                         logging.error(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
                 except ProgrammingError as e:
-                    logging.error("cmd: "+str(cmd))
-                    logging.error("vals: "+str(vals))
+                    logging.error(f" cmd: {cmd}")
+                    logging.error(f"vals: {vals}")
                     logging.error(str(e))
                     raise e
                 if cmd.strip().upper().startswith("SELECT"):

@@ -11,6 +11,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 import dbrecon
 import ctools.tydoc as tydoc
+from dbrecon import DB
 
 class Format:
     END = '\033[0m'
@@ -55,15 +56,11 @@ if __name__=="__main__":
 
     config = dbrecon.setup_logging_and_get_config(args=args, prefix="s9report",error_alert=False)
 
-    db = dbrecon.DB()
-    db.connect()
     for (label,desc,query) in queries1:
-        c = db.cursor()
         print(query)
-        c.execute(query)
+        rows = DB.csfr(query)
         if not query.upper().startswith("SELECT"):
             continue
-        rows = c.fetchall()
         if len(rows)==0:
             print(desc," No results")
         elif len(rows)==1:

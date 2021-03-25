@@ -58,6 +58,12 @@ import ctools.dbfile as dbfile
 # pylint: disable=E0401
 import kms as kms
 
+# Step1 Parallelism
+S1_J1 = '50'
+
+# Step2 Parallelism
+S2_J1 = '50'
+
 # Step3 parallelism
 S3_J1 = "1"
 S3_J2 = "32"
@@ -208,13 +214,17 @@ def run(cmd):
     print(" ".join(cmd))
     subprocess.run(cmd, cwd=RECON_DIR, check=True)
 
-def do_step1(auth, reident, state):
+def do_step1(auth, reident, state, *, force=False):
     print(f"Step 1 - s1_make_geo_files.py")
-    run([sys.executable, 's1_make_geo_files.py', '--config', RECON_CONFIG, state])
+    cmd = [sys.executable, 's1_make_geo_files.py', '--j1', S1_J1, '--config', RECON_CONFIG]
+    if force:
+        cmd.append("--force")
+    cmd.append(state)
+    run(cmd)
 
 def do_step2(auth, reident, state):
     print(f"Step 2 - s2_nbuild_state_stats.py")
-    run([sys.executable, 's2_nbuild_state_stats.py', '--config', RECON_CONFIG, state])
+    run([sys.executable, 's2_nbuild_state_stats.py', '--j1', S2_J1, '--config', RECON_CONFIG, state])
 
 def do_step3(auth, reident, state, county, tract):
     print(f"Step 3 - s3_pandas_synth_lp_files.py")
@@ -355,9 +365,11 @@ if __name__ == "__main__":
 
     if args.register:
         do_register(auth, args.reident)
+        print(f"\n{args.reident} registered")
         exit(0)
     elif args.drop:
         do_drop(auth, args.reident)
+        print(f"\n{args.reident} dropped")
         exit(0)
     elif args.ls:
         root = os.path.join(os.getenv('DAS_S3ROOT'),'2010-re',args.reident,'work',args.stusab)
@@ -387,7 +399,7 @@ if __name__ == "__main__":
             exit(1)
 
     if args.step1:
-        do_step1(auth, args.reident, args.stusab)
+        do_step1(auth, args.reident, args.stusab, force=args.force)
 
     if args.step2:
         do_step2(auth, args.reident, args.stusab)

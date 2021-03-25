@@ -365,7 +365,7 @@ if __name__ == "__main__":
     elif args.run:
         cmd = [sys.executable,'scheduler.py']
         if args.stusab:
-            cmd.extend(['--state',args.stusab])
+            cmd.extend(['--stusab',args.stusab])
         if args.county:
             cmd.extend(['--county',args.county])
         run(cmd)

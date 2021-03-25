@@ -714,6 +714,7 @@ if __name__=="__main__":
     DB.quiet = True
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03pan")
+    args.state = args.state.lower()
 
     assert dbrecon.dfxml_writer is not None
 

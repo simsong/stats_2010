@@ -126,7 +126,6 @@ def process_state(stusab):
         # mods due to access limitations.  It's read as a ordered dict to preserve
         # the order of the layouts to read the csv.
 
-        stusab_upper = stusab.upper()
         layouts          = json.load(dopen('$SRC/layouts/layouts.json'), object_pairs_hook=OrderedDict)
         geo_filename     = GEOFILE_FILENAME_TEMPLATE.format(stusab=stusab)
 

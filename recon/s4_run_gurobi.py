@@ -230,12 +230,12 @@ def run_gurobi_for_county_tract(stusab, county, tract):
             dbrecon.dpath_unlink(lpgz_filename)
             dbrecon.rescan_files(stusab, county, tract)
         else:
-            dbrecon.DB.csfr(f'INSERT INTO {REIDENT}errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
+            dbrecon.DB.csfr(f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                             (str(e),stusab,county,tract))
             raise e;
     except InfeasibleError as e:
         logging.error(f"Infeasible in {stusab} {county} {tract}")
-        dbrecon.DB.csfr(f'INSERT INTO {REIDENT}errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
+        dbrecon.DB.csfr(f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                         (str(e),stusab,county,tract))
         raise e
     #except Exception as e:

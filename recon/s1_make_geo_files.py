@@ -29,7 +29,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 import ctools.s3
 from ctools.timer import Timer
-from dbrecon import dopen,dpath_exists,dpath_expand,dmakedirs,DB,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE,REIDENT,DB
+from dbrecon import dopen,dpath_exists,dpath_expand,dmakedirs,DB,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE,REIDENT,DB,sf1_zipfilename
 
 GEO_LAYOUT_FILENAME = "$SRC/layouts/geo_layout.txt"
 TRANSACTION_RECORDS = 20
@@ -52,15 +52,11 @@ def make_county_list(stusab:str):
     state_code       = dbrecon.state_fips(stusab)
 
     # Input files
-    sf1_zipfilename  = dbrecon.dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
     sf1_geofilename  = f"{stusab}geo2010.sf1"
 
     # Open the SF1 zipfile
-    if sf1_zipfilename.startswith("s3://"):
-        zf = zipfile.ZipFile(ctools.s3.S3File(sf1_zipfilename))
-    else:
-        zf = zipfile.ZipFile(sf1_zipfilename)
-    sf1_geofile = io.TextIOWrapper(zf.open(sf1_geofilename))
+    zf = zipfile.ZipFile(sf1_zipfilename(stusab))
+    sf1_geofile = io.TextIOWrapper(zf.open(sf1_geofilename), encoding='latin1')
 
     #
     # Input Reader --- Get layout for geofile. This uses the hard-coded information in the geo_layout.txt file.
@@ -138,8 +134,8 @@ def make_county_list(stusab:str):
     DBMySQL.csfr(auth,
                  f"""
                  INSERT INTO {REIDENT}tracts (stusab,state,county,tract)
-                 SELECT stusab,state,county,tract FROM {REIDENT}geo where sumlev=140
-                 """)
+                 SELECT stusab,state,county,tract FROM {REIDENT}geo where sumlev=140 and stusab=%s
+                 """,(stusab,))
 
     if args.csv:
         csvfile.close()

@@ -483,6 +483,23 @@ def extract_state_county_tract(fname):
         return( stusab(m.group('state')), m.group('county'), m.group('tract'))
     return None
 
+def sf1_zipfilename(stusab):
+    """If the SF1 is on S3, download it to a known location and work from there.
+    This has a race condition if it is run in two different processs. Howeve, it's only done in steps1 and step2,
+    and they are threaded on state, not on county.
+    """
+    sf1_path = dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
+    if sf1_path.startswith("s3://"):
+        local_path = "/tmp/" + sf1_path.replace("/","_")
+        if not os.path.exists(local_path):
+            (bucket,key) = s3.get_bucket_key(sf1_path)
+            logging.warning(f"Downloading {sf1_path} to {local_path}")
+            s3.get_object(bucket, key, local_path)
+        return local_path
+    return sf1_path
+
+
+
 # https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
 class Singleton(type):
     _instances = {}

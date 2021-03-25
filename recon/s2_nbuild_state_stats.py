@@ -25,7 +25,7 @@ sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 from total_size import total_size
 import dbrecon
-from dbrecon import dopen,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE
+from dbrecon import dopen,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE,sf1_zipfilename
 from ctools.timer import Timer
 import ctools.s3 as s3
 
@@ -33,18 +33,6 @@ import ctools.s3 as s3
 SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
 
 ANY="any"
-
-def sf1_zipfilename(stusab):
-    """If the SF1 is on S3, download it to a known location and work from there"""
-    sf1_path = dbrecon.dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
-    if sf1_path.startswith("s3://"):
-        local_path = "/tmp/" + sf1_path.replace("/","_")
-        if not os.path.exists(local_path):
-            (bucket,key) = s3.get_bucket_key(sf1_path)
-            print(f"Downloading {sf1_path} to {local_path}")
-            s3.get_object(bucket, key, local_path)
-        return local_path
-    return sf1_path
 
 class ReaderException(Exception):
     pass

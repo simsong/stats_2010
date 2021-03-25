@@ -32,7 +32,8 @@ except ImportError:
     You are running on a cluster that hasn't been updated to include pymysql.
     Execute this command:
 
-    $ cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh
+    (cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh)
+
     """,file=sys.stderr)
     exit(1)
 
@@ -296,6 +297,7 @@ if __name__ == "__main__":
     g.add_argument("--show", action='store_true', help="Show all reidents in database")
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
+    g.add_argument("--run", help="Run the scheduler",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -360,6 +362,14 @@ if __name__ == "__main__":
     elif args.ls:
         root = os.path.join(os.getenv('DAS_S3ROOT'),'2010-re',args.reident,'work',args.stusab)
         run(['aws','s3','ls','--recursive',root])
+    elif args.run:
+        cmd = [sys.executable,'scheduler.py']
+        if args.stusab:
+            cmd.extend(['--state',args.stusab])
+        if args.county:
+            cmd.extend(['--county',args.county])
+        run(cmd)
+
 
     ################################################################
     # We can run multiple steps if we want! For testing, of course

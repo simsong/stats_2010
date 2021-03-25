@@ -28,22 +28,24 @@ from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
 
 HOSTNAME = dbrecon.hostname()
 
-
 # Tuning parameters
 
 SCHEMA_FILENAME="schema.sql"
-MAX_LOAD     = 32
-MAX_CHILDREN = 10
 PYTHON_START_TIME = 1
 MIN_LP_WAIT  = 60
 MIN_SOL_WAIT  = 60
+
+# Failsafes: don't start an LP or SOL unless we have this much free
 MIN_FREE_MEM_FOR_LP  = 100*GiB
 MIN_FREE_MEM_FOR_SOL = 100*GiB
+
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
-REPORT_FREQUENCY = 60           # report this often
-PROCESS_DIE_TIME = 5
-LONG_SLEEP_MINUTES = 5
-PS_LIST_FREQUENCY = 60
+
+REPORT_FREQUENCY = 60           # report this often into sysload table
+
+PROCESS_DIE_TIME = 5            # how long to wait for a process to die
+LONG_SLEEP= 300          # sleep for this long (seconds) when there are no resources
+PS_LIST_FREQUENCY = 60   #
 
 S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
@@ -229,7 +231,7 @@ def run():
         dbrecon.db_clean()
 
         # Report system usage if necessary
-        dbrecon.config_reload()
+        dbrecon.GetConfig().config_reload()
         free_mem = report_load_memory()
 
         # Are we done yet?
@@ -267,8 +269,9 @@ def run():
                 logging.error("%%%")
                 subprocess.call(['./pps'])
                 if len(running)==0:
-                    logging.error("No more processes to kill. Waiting for {} minutes and restarting".format(LONG_SLEEP_MINUTES))
-                    time.sleep(LONG_SLEEP_MINUTES*60)
+                    logging.error("No more processes to kill. Waiting for %s seconds and restarting",
+                                  LONG_SLEEP)
+                    time.sleep(LONG_SLEEP)
                     continue
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))

@@ -316,6 +316,13 @@ def get_final_pop_from_sol(stusab, county, tract, delete=True):
         return None
     return count
 
+################################################################
+##
+## This implements the hostlock system.
+## The hostlock is used by the scheduler to make sure that the same LP or SOL isn't scheduled
+## simulatenously on two different nodes.
+
+
 def db_lock(stusab, county, tract):
     DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),os.getpid(),stusab,county,tract),

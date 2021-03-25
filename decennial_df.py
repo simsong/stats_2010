@@ -154,8 +154,6 @@ class DecennialDF:
         # Find the files
         paths = [ obj[PATH] for obj in files if
                   (obj[YEAR]==self.year and obj[PRODUCT]==self.product) and obj[CIFSN]==cifsn]
-        for p in paths:
-            print("path:",p)
 
         if len(paths)==0:
             print("No file found. Available data files:")

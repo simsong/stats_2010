@@ -1,0 +1,5 @@
+PRAGMA cache_size = 2000000;
+.headers on
+.mode column
+.mode csv
+select printf('%02d',state) as STATE,printf('%03d',county) as COUNTY,printf('%06d',tract) as TRACT,substr(block,1,1) as BLKGRP,printf('%04d',block) as BLOCK,pop as POPULATION,houses as HOUSING_UNITS from blocks ;

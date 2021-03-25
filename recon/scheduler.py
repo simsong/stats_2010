@@ -265,7 +265,7 @@ def run():
                 logging.error("%%%")
                 logging.error("%%% Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
                 logging.error("%%%")
-                subprocess.call(['./pps'])
+                subprocess.call(['./pps.sh'])
                 if len(running)==0:
                     logging.error("No more processes to kill. Waiting for {} minutes and restarting".format(LONG_SLEEP_MINUTES))
                     time.sleep(LONG_SLEEP_MINUTES*60)

@@ -67,9 +67,7 @@ def rescan():
                 dbrecon.rescan_files(stusab,county,tract,quiet=False)
         print()
 
-def clean():
-    db = dbrecon.DB()
-    c  = db.cursor()
+def clean(auth):
     for root, dirs, files in os.walk( dbrecon.dpath_expand("$ROOT") ):
         for fname in files:
             # Do not clean the CSVs
@@ -86,7 +84,7 @@ def clean():
                     continue
                 (stusab,county,tract) = m
                 what = "sol" if "sol" in path else "lp"
-                DB.csfr(f"UPDATE {REIDENT}tracts SET {what}_start=NULL,{what}_end=NULL "
+                DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET {what}_start=NULL,{what}_end=NULL "
                         "where stusab=%s and county=%s and tract=%s",
                         (stusab, county, tract))
                 os.unlink(path)
@@ -114,7 +112,7 @@ def get_free_mem():
     return psutil.virtual_memory().available
 
 last_report = 0
-def report_load_memory():
+def report_load_memory(auth):
     """Report and print the load and free memory; return free memory"""
     global last_report
     free_mem = get_free_mem()
@@ -125,7 +123,7 @@ def report_load_memory():
     mins     = int((total_seconds % 3600) // 60)
     secs     = int(total_seconds % 60)
     if time.time() > last_report + REPORT_FREQUENCY:
-        dbrecon.DB.csfr(
+        DBMySQL.csfr(auth,
             """
             INSERT INTO sysload (t, host, min1, min5, min15, freegb)
             VALUES (NOW(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1
@@ -232,7 +230,7 @@ def run(auth):
                 print(f"UNKNOWN COMMAND: '{command}'.  TRY HALT, STOP, PS, LIST, UPTIME, NOISY, QUIET")
 
         # Clean database if necessary
-        dbrecon.db_clean()
+        dbrecon.db_clean(auth)
 
         # Report system usage if necessary
         dbrecon.GetConfig().config_reload()
@@ -300,6 +298,7 @@ def run(auth):
 
         # Figure out how many we need to launch
         #
+        print("RUNNING LP: ",running_lp())
         needed_lp =  get_config_int('run','max_lp') - len(running_lp())
         needed_lp = max(args.maxlp, needed_lp)
         if args.nolp:
@@ -378,6 +377,7 @@ def run(auth):
 SHOW_RUNNING=False
 def none_running(auth, hostname):
     """Tell the database that there are no processes running, either on this host or on all hosts"""
+
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
 
     if SHOW_RUNNING:
@@ -476,7 +476,7 @@ if __name__=="__main__":
     elif args.rescan:
         rescan()
     elif args.clean:
-        clean()
+        clean(auth)
     elif args.none_running:
         get_lock()
         none_running(auth,HOSTNAME)

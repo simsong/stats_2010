@@ -315,6 +315,7 @@ if __name__ == "__main__":
     g.add_argument("--run", help="Run the scheduler",action='store_true')
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
+    g.add_argument("--run_desc", help="Run the scheduler, largest tracts first",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -362,8 +363,12 @@ if __name__ == "__main__":
 
     if 'MYSQL_HOST' not in os.environ:
         logging.warning('MYSQL_HOST is not in your environment!')
-        logging.warning('Please run $(./dbrtool.py --env) to create the environment variables')
-        exit(1)
+        logging.warning('Next time, please  run $(./dbrtool.py --env) to create the environment variables')
+        logging.warning('starting sub-shell with environment variables set')
+        for(k,v) in get_mysql_env().items():
+            os.environ[k] = v
+        os.execlp(os.getenv('SHELL'))
+
 
     if args.mysql:
         do_mysql()
@@ -403,12 +408,14 @@ if __name__ == "__main__":
     elif args.ls:
         root = os.path.join(os.getenv('DAS_S3ROOT'),'2010-re',args.reident,'work',args.stusab)
         run(['aws','s3','ls','--recursive',root])
-    elif args.run:
+    elif (args.run or args.run_desc):
         cmd = [sys.executable,'scheduler.py']
         if args.stusab:
             cmd.extend(['--stusab',args.stusab])
         if args.county:
             cmd.extend(['--county',args.county])
+        if args.run_desc:
+            cmd.extend(['--desc','--maxlp','1','--nosol'])
         run(cmd)
 
 

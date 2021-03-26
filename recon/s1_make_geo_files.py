@@ -43,7 +43,7 @@ def make_county_list(stusab:str):
     """Given a state abbreviation, find the geo file, extract information, and store in the CSV files
     and in the SQL database."""
 
-    auth = DBMySQLAuth.FromConfig(os.environ)
+    auth = dbrecon.auth()
 
     print(f"make_county_list({stusab})")
 

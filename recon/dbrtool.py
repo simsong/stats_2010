@@ -37,9 +37,7 @@ except ImportError:
     """,file=sys.stderr)
     exit(1)
 
-PARENT_DIR = dirname(dirname(abspath(__file__)))
-if PARENT_DIR not in sys.path:
-    sys.path.append(PARENT_DIR)
+import dbrecon
 
 DAS_ROOT   = dirname(dirname(dirname(dirname(abspath(__file__)))))
 if DAS_ROOT not in sys.path:
@@ -57,6 +55,7 @@ import ctools.dbfile as dbfile
 
 # pylint: disable=E0401
 import kms as kms
+import ssh_remote
 
 # Step1 Parallelism
 S1_J1 = '50'
@@ -211,7 +210,7 @@ def do_register(auth, reident):
 
 def run(cmd):
     print()
-    print(" ".join(cmd))
+    print("$ " + " ".join(cmd))
     subprocess.run(cmd, cwd=RECON_DIR, check=True)
 
 def do_step1(auth, reident, state, *, force=False):
@@ -294,6 +293,12 @@ def do_info(path):
         print(f"Don't know how to info: {path}",file=sys.stderr)
         exit(1)
 
+def do_setup(host):
+    print("setup ",host)
+    p = ssh_remote.run_command_on_host( host,'git clone --recursive https://github.ti.census.gov/CB-DAS/das-vm-config.git ; cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ', pipeerror=True)
+    print(p)
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description=HELP,
@@ -308,6 +313,9 @@ if __name__ == "__main__":
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
     g.add_argument("--run", help="Run the scheduler",action='store_true')
+    g.add_argument("--setup", help="Setup a driver machine to run recon")
+    g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
+    g.add_argument("--run_desc", help="Run the scheduler, largest tracts first",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -320,6 +328,8 @@ if __name__ == "__main__":
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
     parser.add_argument('--debug', action='store_true', help='debug all SQL')
     parser.add_argument('--force', action='store_true', help='delete output files if they exist')
+    parser.add_argument('--nodes', help='Show YARN nodes', action='store_true')
+    parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
     args = parser.parse_args()
 
     if args.env:
@@ -331,10 +341,34 @@ if __name__ == "__main__":
         do_info(args.info)
         exit(0)
 
+    if args.nodes:
+        run(['yarn','node','--list'])
+        exit(0)
+
+    if args.setup:
+        do_setup(args.setup)
+        exit(0)
+
+    if args.setup_all:
+        pat = re.compile("(ip-[^ :]+)")
+        for line in subprocess.check_output(['yarn','node','--list'],
+                                            stderr=open('/dev/null','w'),encoding='utf-8').split('\n'):
+            m = pat.search(line)
+            if m:
+                do_setup(m.group(1))
+        exit(0)
+
+    ################################################################
+    # Everything after here needs mysql
+
     if 'MYSQL_HOST' not in os.environ:
         logging.warning('MYSQL_HOST is not in your environment!')
-        logging.warning('Please run $(./dbrtool.py --env) to create the environment variables')
-        exit(1)
+        logging.warning('Next time, please  run $(./dbrtool.py --env) to create the environment variables')
+        logging.warning('starting sub-shell with environment variables set')
+        for(k,v) in get_mysql_env().items():
+            os.environ[k] = v
+        os.execlp(os.getenv('SHELL'))
+
 
     if args.mysql:
         do_mysql()
@@ -374,12 +408,14 @@ if __name__ == "__main__":
     elif args.ls:
         root = os.path.join(os.getenv('DAS_S3ROOT'),'2010-re',args.reident,'work',args.stusab)
         run(['aws','s3','ls','--recursive',root])
-    elif args.run:
+    elif (args.run or args.run_desc):
         cmd = [sys.executable,'scheduler.py']
         if args.stusab:
             cmd.extend(['--stusab',args.stusab])
         if args.county:
             cmd.extend(['--county',args.county])
+        if args.run_desc:
+            cmd.extend(['--desc','--maxlp','1','--nosol'])
         run(cmd)
 
 

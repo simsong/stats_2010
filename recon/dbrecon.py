@@ -42,7 +42,7 @@ if PARENT_DIR not in sys.path:
 
 import ctools.s3 as s3
 import ctools.clogging as clogging
-import ctools.dbfile as dbfile
+import ctools.dbfile   as dbfile
 from ctools.gzfile import GZFile
 from total_size import total_size
 
@@ -327,13 +327,13 @@ def get_final_pop_from_sol(stusab, county, tract, delete=True):
 def db_lock(stusab, county, tract):
     DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),os.getpid(),stusab,county,tract),
-            rowcount=1 )
+            rowcount=1)
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {stusab} {county} {tract} ")
 
 def db_unlock(stusab, county, tract):
     DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
             (stusab,county,tract),
-            rowcount = 1 )
+            rowcount = 1)
 
 def db_start(what,stusab, county, tract):
     assert what in [LP, SOL, CSV]
@@ -355,7 +355,7 @@ def is_db_done(what, stusab, county, tract):
     return len(row)==1
 
 def db_clean():
-    """Clear hostlock if PID is gone"""
+    """Clear hostlock if PID is gone. PID is the PID of the scheduler"""
     rows = DB.csfr(f"SELECT pid,stusab,county,tract FROM {REIDENT}tracts WHERE hostlock=%s",(hostname(),),quiet=True)
     for (pid,stusab,county,tract) in rows:
         if not pid:
@@ -499,6 +499,9 @@ def sf1_zipfilename(stusab):
     return sf1_path
 
 
+def auth():
+    return dbfile.DBMySQLAuth.FromConfig(os.environ)
+
 
 # https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
 class Singleton(type):
@@ -507,6 +510,7 @@ class Singleton(type):
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
+
 
 class GetConfig(metaclass=Singleton):
     def __init__(self):

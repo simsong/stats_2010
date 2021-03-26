@@ -475,6 +475,8 @@ class LPTractBuilder:
         # If running on S3, make sure the object exists
         dbrecon.dwait_exists(outfilename)
         dbrecon.drename(outfilename, lpfilenamegz)
+        # And wait for the lpfilenamegz to exist
+        dbrecon.dwait_exists(lpfilenamegz)
 
 
 # Make the tract LP files.

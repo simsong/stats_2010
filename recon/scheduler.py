@@ -234,7 +234,7 @@ def run(auth):
 
         # Report system usage if necessary
         dbrecon.GetConfig().config_reload()
-        free_mem = report_load_memory()
+        free_mem = report_load_memory(auth)
 
         # Are we done yet?
         remain = DBMySQL.csfr(auth,f"SELECT count(*) from {REIDENT}tracts where sol_end is null",quiet=True)
@@ -299,10 +299,10 @@ def run(auth):
         # Figure out how many we need to launch
         #
         print("RUNNING LP: ",running_lp())
-        needed_lp =  get_config_int('run','max_lp') - len(running_lp())
-        needed_lp = max(args.maxlp, needed_lp)
         if args.nolp:
             needed_lp = 0
+        else:
+            needed_lp =  min(get_config_int('run','max_lp'),args.maxlp) - len(running_lp())
 
         # If we can run another launch in, do it.
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):

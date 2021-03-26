@@ -26,11 +26,16 @@ begin with a letter and contain only letters, numbers, and underbars.
 All of the database reconstruction tools in stats_2010/recon have been modified so that they read REIDENT from the Unix environment and then use this as a prefix on every SQL table.
 
 Database registration creates and initializes the `REIDENT_tracts`
-table from original `tracts` table. It also runs two steps on the EMR DRIVER mode:
+table from original `tracts` table.
 
-  - STEP 1b - makes the geofiles underneath the prefix
+  - (step0 - downloads from the WWW server. This only needs to be done once, and doesn't need to be run in our EMR environment.)
 
-  - STEP 2  - outputs the CSV files for each county with block-level measurements
+These can be run on either the DRIVER or the WORKER node:
+
+  - step1 - makes the geofiles underneath the prefix. We make a separate set of geofiles for every REIDENT, because it might change. When run from dbrtool, it takes 1.5 hours. It would go faster if the database server were faster.
+
+  - step2 - outputs the CSV files for each county with block-level measurements. Basically, this combines all of the segments and selects out the LOGRECNOs corresponding to block and tract measurements. It took 1 hour, 5 minutes to run.
+
 
 3. A scheduler.py process is started on the EMR WORKER nodes. The scheduler can be provided with a specific REIDENT to work, or it can work on any REIDENT that has work to do.
 

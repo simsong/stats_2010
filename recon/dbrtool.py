@@ -293,9 +293,26 @@ def do_info(path):
         print(f"Don't know how to info: {path}",file=sys.stderr)
         exit(1)
 
+def all_hosts():
+    pat = re.compile("(ip-[^ :]+)")
+    ret = []
+    for line in subprocess.check_output(['yarn','node','--list'],
+                                        stderr=open('/dev/null','w'),encoding='utf-8').split('\n'):
+            m = pat.search(line)
+            if m:
+                ret.append(m.group(1))
+    return ret
+
+
+
 def do_setup(host):
     print("setup ",host)
-    p = ssh_remote.run_command_on_host( host,'git clone --recursive https://github.ti.census.gov/CB-DAS/das-vm-config.git ; cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ', pipeerror=True)
+    p = ssh_remote.run_command_on_host(
+        host,
+        'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; '
+        'git clone --recursive https://github.ti.census.gov/CB-DAS/das-vm-config.git ; '
+        'cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ',
+        pipeerror=True)
     print(p)
 
 
@@ -316,6 +333,7 @@ if __name__ == "__main__":
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
     g.add_argument("--run_desc", help="Run the scheduler, largest tracts first",action='store_true')
+    g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -350,12 +368,18 @@ if __name__ == "__main__":
         exit(0)
 
     if args.setup_all:
-        pat = re.compile("(ip-[^ :]+)")
-        for line in subprocess.check_output(['yarn','node','--list'],
-                                            stderr=open('/dev/null','w'),encoding='utf-8').split('\n'):
-            m = pat.search(line)
-            if m:
-                do_setup(m.group(1))
+        for host in all_hosts():
+            do_setup( host )
+        exit(0)
+
+    if args.uptime_all:
+        for host in all_hosts():
+            lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
+            uptime = [line for line in lines if 'load average' in line]
+            if uptime:
+                print(host, uptime[0])
+            else:
+                print(host, "NO OBVIOUS UPTIME")
         exit(0)
 
     ################################################################
@@ -367,7 +391,7 @@ if __name__ == "__main__":
         logging.warning('starting sub-shell with environment variables set')
         for(k,v) in get_mysql_env().items():
             os.environ[k] = v
-        os.execlp(os.getenv('SHELL'))
+        os.execlp(os.getenv('SHELL'),os.getenv('SHELL'))
 
 
     if args.mysql:

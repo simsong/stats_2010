@@ -25,9 +25,9 @@ import tempfile
 import subprocess
 import atexit
 
-from total_size import total_size
-
 import dbrecon
+
+from total_size import total_size
 from dbrecon import DB,GB,MB
 from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
 from ctools.dbfile import DBMySQL,DBMySQLAuth
@@ -197,8 +197,7 @@ class LPTractBuilder:
         self.tract      = tract
         self.sf1_tract_data = sf1_tract_data
         self.sf1_block_data = sf1_block_data
-        self.auth = DBMySQLAuth.FromConfig(os.environ)
-
+        self.auth       = dbrecon.auth()
 
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly

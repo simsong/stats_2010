@@ -308,6 +308,7 @@ if __name__ == "__main__":
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
     g.add_argument("--run", help="Run the scheduler",action='store_true')
+    g.add_argument("--run_desc", help="Run the scheduler, largest tracts first",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -382,12 +383,14 @@ if __name__ == "__main__":
     elif args.ls:
         root = os.path.join(os.getenv('DAS_S3ROOT'),'2010-re',args.reident,'work',args.stusab)
         run(['aws','s3','ls','--recursive',root])
-    elif args.run:
+    elif (args.run or args.run_desc):
         cmd = [sys.executable,'scheduler.py']
         if args.stusab:
             cmd.extend(['--stusab',args.stusab])
         if args.county:
             cmd.extend(['--county',args.county])
+        if args.run_desc:
+            cmd.extend(['--desc','--maxlp','1','--nosol'])
         run(cmd)
 
 

@@ -42,7 +42,7 @@ if PARENT_DIR not in sys.path:
 
 import ctools.s3 as s3
 import ctools.clogging as clogging
-import ctools.dbfile as dbfile
+import ctools.dbfile   as dbfile
 from ctools.gzfile import GZFile
 from total_size import total_size
 
@@ -499,6 +499,9 @@ def sf1_zipfilename(stusab):
     return sf1_path
 
 
+def auth():
+    return dbfile.DBMySQLAuth.FromConfig(os.environ)
+
 
 # https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
 class Singleton(type):
@@ -507,6 +510,7 @@ class Singleton(type):
         if cls not in cls._instances:
             cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
+
 
 class GetConfig(metaclass=Singleton):
     def __init__(self):

@@ -19,12 +19,15 @@ import time
 import psutil
 import socket
 import fcntl
+from os.path import dirname,basename,abspath
 
-sys.path.append( os.path.join(os.path.dirname(__file__),".."))
+# Set up path, among other things
+import dbrecon
 
 from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
 from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
+from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 HOSTNAME = dbrecon.hostname()
 
@@ -32,8 +35,8 @@ HOSTNAME = dbrecon.hostname()
 
 SCHEMA_FILENAME="schema.sql"
 PYTHON_START_TIME = 1
-MIN_LP_WAIT  = 60
-MIN_SOL_WAIT  = 60
+MIN_LP_WAIT   = 120             # wait two minutes between launches
+MIN_SOL_WAIT  = 60              # wait one minute between launch
 
 # Failsafes: don't start an LP or SOL unless we have this much free
 MIN_FREE_MEM_FOR_LP  = 200*GiB
@@ -189,13 +192,14 @@ class PSTree():
 # Then report for each job how long it has been running.
 # Modify this to track the total number of bytes by all child processes
 
-def run():
+def run(auth):
     os.set_blocking(sys.stdin.fileno(), False)
     running     = set()
     last_ps_list     = 0
     quiet       = True
     last_lp_launch = 0
     last_sol_launch = 0
+
 
     def running_lp():
         """Return a list of the runn LP makers"""
@@ -235,7 +239,7 @@ def run():
         free_mem = report_load_memory()
 
         # Are we done yet?
-        remain = dbrecon.DB.csfr(f"SELECT count(*) from {REIDENT}tracts where sol_end is null",quiet=True)
+        remain = DBMySQL.csfr(auth,f"SELECT count(*) from {REIDENT}tracts where sol_end is null",quiet=True)
         if remain[0][0]==0:
             print("All done!")
             break
@@ -275,7 +279,7 @@ def run():
                     continue
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))
-                dbrecon.DB.csfr(f"INSERT INTO errors (host,file,error) VALUES (%s,%s,%s)",
+                DBMySQL.csfr(auth,f"INSERT INTO errors (host,file,error) VALUES (%s,%s,%s)",
                                 (HOSTNAME,__file__,"Free memory down to {}".format(get_free_mem())))
                 kill_tree(p)
                 running.remove(p)
@@ -294,25 +298,28 @@ def run():
         # See if we can create another process.
         # For stability, we create a max of one LP and one SOL each time through.
 
-        # The LP makers take a lot of memory, so if we aren't running less than two, run up to two.
-        # Order by lp_start to make it least likely to start where there is another process running
+        # Figure out how many we need to launch
+        #
+        needed_lp =  get_config_int('run','max_lp') - len(running_lp())
+        needed_lp = max(args.maxlp, needed_lp)
         if args.nolp:
             needed_lp = 0
-        else:
-            needed_lp =  get_config_int('run','max_lp') - len(running_lp())
+
+        # If we can run another launch in, do it.
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
-            # For now, only start one lp at a time
+
+            # We only launch one LP at a time because they take a few minutes to eat up a lot of memory.
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
-            lp_limit = 1
-            make_lps = DB.csfr(
-                f"""
-                SELECT stusab,county,count(*)
-                FROM {REIDENT}tracts
-                WHERE (lp_end IS NULL) AND (hostlock IS NULL)
-                GROUP BY state,county
-                ORDER BY RAND() DESC LIMIT %s
-                """, (lp_limit,))
+            direction = 'DESC' if args.desc else ''
+            cmd = f"""
+                SELECT t.stusab,t.county,count(*) as tracts,sum(g.pop100) as pop
+                FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON t.logrecno = g.logrecno
+                WHERE (t.lp_end IS NULL) AND (hostlock IS NULL)
+                GROUP BY t.state,t.county
+                ORDER BY pop {direction} LIMIT 1
+                """.format()
+            make_lps = DBMySQL.csfr(auth, cmd)
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
@@ -340,17 +347,17 @@ def run():
                 needed_sol = max_sol
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
-            # For now, only launch one solver at a time
+            # As before, we only launch one at a time
             max_sol_launch = get_config_int('run','max_sol_launch')
-            limit_sol = max(needed_sol, max_sol_launch)
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 continue
-            solve_lps = DB.csfr(
-                f"""
+            cmd = f"""
                 SELECT stusab,county,tract FROM {REIDENT}tracts
                 WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)
-                ORDER BY RAND() LIMIT %s
-                """,(limit_sol,))
+                ORDER BY RAND() LIMIT 1
+                """
+
+            solve_lps = DBMySQL.csfr(auth,cmd)
             if (len(solve_lps)==0 and needed_sol>0) or not quiet:
                 print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
             for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
@@ -367,17 +374,18 @@ def run():
         # and repeat
     # Should never get here
 
-def none_running(hostname=None):
+def none_running(auth, hostname):
+    """Tell the database that there are no processes running, either on this host or on all hosts"""
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
     print("LP in progress:")
-    for (stusab,county,tract) in  DB.csfr(
+    for (stusab,county,tract) in  DBMySQL.csfr(auth,
             f"""
             SELECT stusab,county,tract
             FROM {REIDENT}tracts
             WHERE lp_start IS NOT NULL AND lp_end IS NULL
             """ + hostlock):
         print(stusab,county,tract)
-    DB.csfr(
+    DBMySQL.csfr(auth,
         f"""
         UPDATE {REIDENT}tracts
         SET lp_start=NULL
@@ -385,14 +393,14 @@ def none_running(hostname=None):
         """ + hostlock)
 
     print("SOL in progress:")
-    for (stusab,county,tract) in DB.csfr(
+    for (stusab,county,tract) in DBMySQL.csfr(auth,
             f"""
             SELECT stusab,county,tract
             FROM {REIDENT}tracts
             WHERE sol_start IS NOT NULL AND sol_end IS NULL
             """ + hostlock):
         print(stusab,county,tract)
-    DB.csfr(
+    DBMySQL.csfr(auth,
         f"""
         UPDATE {REIDENT}tracts
         SET sol_start=NULL
@@ -441,6 +449,7 @@ if __name__=="__main__":
                         action='store_true')
     parser.add_argument("--clean",   help="Look for .lp and .sol files that are too slow and delete them, then remove them from the database", action='store_true')
     parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
+    parser.add_argument("--maxlp",  help="Never run more than this many LP makers", type=int, default=999)
     parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
     parser.add_argument("--none_running", help="Run if there are no outstanding LP files being built or Solutions being solved; clears them from database",
                         action='store_true')
@@ -449,14 +458,16 @@ if __name__=="__main__":
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
     parser.add_argument("--stusab", help="stusab for rescanning")
     parser.add_argument("--county", help="county for rescanning")
+    parser.add_argument("--desc", help="Run most populus tracts first, otherwise do least populus tracts first")
 
     args   = parser.parse_args()
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
+    auth = dbrecon.auth()
     DB.quiet = True
 
     if args.testdb:
         print("Tables:")
-        rows = DB.csfr(f"show tables")
+        rows = DBMySQL.csfr(auth,f"show tables")
         for row in rows:
             print(row)
     elif args.rescan:
@@ -465,12 +476,12 @@ if __name__=="__main__":
         clean()
     elif args.none_running:
         get_lock()
-        none_running(HOSTNAME)
+        none_running(auth,HOSTNAME)
     elif args.none_running_anywhere:
         get_lock()
-        none_running()
+        none_running(auth, None)
     else:
         get_lock()
         scan_s3_s4()
-        none_running(HOSTNAME)
-        run()
+        none_running(auth,HOSTNAME)
+        run(auth)

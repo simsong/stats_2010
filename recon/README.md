@@ -61,7 +61,14 @@ Configuration information is kept in the file config.ini. The following sections
 * `[gurobi]` --- configuration informaton for the Gurobi optimizer
 * `[mysql]` --- configuration information for the database used to track progress of steps 3 (`.lp.gz` file creation) and 4 (`.sol.gz` creation). To avoid embedding usernames and passwords in this file, you can just say `$MYSQL_PASSWORD` and then set an environment variable `MYSQL_PASSWORD` to be the password: our special code for reading configuration variables automatically does variable expansion.
 
-The configuration file is used by every python program. The `scheduler.py` program re-reads the config file each time through the main event loop, so you can actually change configuration parameters on the fly, without interrupting and restarting the program. Indeed, you can also type commands at the scheduler while it is running, like `ps` and `uptime`.
+The configuration file is used by every python program. The `scheduler.py` program re-reads the config file each time through the main event loop, so you can actually change configuration parameters on the fly, without interrupting and restarting the program. Indeed, you can also type commands at the scheduler while it is running, like `ps` and `uptime`.  Currently the following commands are implemented:
+
+* stop - clean shutdown. Waits for current jobs to finish.
+* halt - immediate shutdown. Kills current jobs.
+* list - list current jobs
+* uptime - runs uptime command
+* noisy - reports each new command as launched.
+* quiet - Do not report commands
 
 As indicated above, we've made substantial modification to the normal Python procedure for reading configuration files. Specifically:
 

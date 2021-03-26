@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Tools for accessing the decennial data from Spark. Creates a data
+Tools for accessing the decennial data from Spark and Pandas.
+Inventories the files available from the various roots.
 frame with all of the decennial data that you can then process with
 SQL.
 
@@ -20,14 +21,14 @@ DECENNIAL_ROOT='DECENNIAL_ROOT'
 
 # Hard-code where the DAS keeps its PL94 and SF1 data
 DAS_S3ROOT='DAS_S3ROOT'
-DAS_ROOTS=  ["$DAS_S3ROOT/2000/pl94",
-             "$DAS_S3ROOT/2000/sf1",
-             "$DAS_S3ROOT/2010/pl94",
-             "$DAS_S3ROOT/2010/sf1"]
+DAS_ROOTS = [{'year':2000,'product':PL94,'root':"$DAS_S3ROOT/2000/pl94"},
+             {'year':2000,'product':SF1, 'root':"$DAS_S3ROOT/2000/sf1"},
+             {'year':2010,'product':PL94,'root':"$DAS_S3ROOT/2010/pl94"},
+             {'year':2010,'product':PL94,'root':"$DAS_S3ROOT/2010/sf1"}]
 
 files = list()                  # database of files
 registered_paths = set()        # paths that have been registered
-def find_files():
+def find_files(*,year,product):
     """Returns an iterator of all files under SF1_ROOT. Allows multiple paths if separated by semicolons"""
 
     if DAS_S3ROOT in os.environ:
@@ -37,23 +38,20 @@ def find_files():
             roots=os.environ[DECENNIAL_ROOT].split(';')
         except KeyError:
             raise RuntimeError("Environment variable DECENNIAL_ROOT must be defined with location of unzipped Decennial data files")
-    for root in roots:
-        root = os.path.expandvars(root) # expand dollar signs
-        (bucket,prefix)  =  s3.get_bucket_key(root)
-        print("Searching for published data in ",root)
-        if root.startswith('s3:'):
-            for obj in s3.list_objects(root):
-                yield f's3://{bucket}/{obj[s3._Key]}'
-        elif root.startswith('hdfs:'):
-            raise RuntimeError('hdfs SF1_ROOT not implemented')
-        else:
-            for (dirpath,dirnames,filenames) in os.walk(root):
-                for filename in filenames:
-                    yield os.path.join(dirpath,filename)
-
-def register_files(verbose=False):
-    for path in find_files():
-        register_file(path,verbose=verbose)
+    for entry in roots:
+        if entry['year']==year and entry['product']==product:
+            root = os.path.expandvars( entry['root']) # expand dollar signs
+            (bucket,prefix)  =  s3.get_bucket_key(root)
+            print("Searching for published data in ",root)
+            if root.startswith('s3:'):
+                for obj in s3.list_objects(root):
+                    yield f's3://{bucket}/{obj[s3._Key]}'
+            elif root.startswith('hdfs:'):
+                raise RuntimeError('hdfs SF1_ROOT not implemented')
+            else:
+                for (dirpath,dirnames,filenames) in os.walk(root):
+                    for filename in filenames:
+                        yield os.path.join(dirpath,filename)
 
 def unique_selector(selector):
     """Return the unique values for a given selector"""
@@ -106,6 +104,11 @@ def register_file(path, verbose=False):
     if verbose:
         print("Unrecognized filename:",filename)
 
+def register_files(*,year,product,verbose=False):
+    for path in find_files(year=year,product=product):
+        register_file(path,verbose=verbose)
+
+
 # pylint: disable=E0401
 class DecennialDF:
     """Create a set of dataframes associated with a decennial product."""
@@ -130,7 +133,7 @@ class DecennialDF:
         self.schema = cb_spec_decoder.schema_for_spec(ch6file, year=self.year, product=self.product )
 
         # Find the data files
-        register_files()
+        register_files(year=year, product=product)
         if len(files)==0:
             raise RuntimeError("No product files found")
 

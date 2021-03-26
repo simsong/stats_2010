@@ -7,6 +7,10 @@ Outputs: SF1 geofile as a CSV with a file header and list of counties in the sta
 Output location: $ROOT/{stusab}/
 """
 
+HELP="""
+Read SF1 geography files, creates the counties geography files, and loads the MySQL database.
+This is pretty fast and DB heavy, so it is not parallelized
+"""
 import json
 import csv
 import collections
@@ -18,18 +22,16 @@ import os
 import io
 import multiprocessing
 import zipfile
+import random
+from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
 
 import ctools.s3
 from ctools.timer import Timer
+from dbrecon import dopen,dpath_exists,dpath_expand,dmakedirs,DB,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE,REIDENT,DB,sf1_zipfilename
 
-from dbrecon import dopen,dpath_expand,dmakedirs,DB,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE,REIDENT
-
-
-
-GEO_LAYOUT_FILENAME="$SRC/layouts/geo_layout.txt"
-
+GEO_LAYOUT_FILENAME = "$SRC/layouts/geo_layout.txt"
 TRANSACTION_RECORDS = 20
 
 def fields_str(field_count,record_count=1):
@@ -41,26 +43,28 @@ def make_county_list(stusab:str):
     """Given a state abbreviation, find the geo file, extract information, and store in the CSV files
     and in the SQL database."""
 
+    auth = DBMySQLAuth.FromConfig(os.environ)
+
     print(f"make_county_list({stusab})")
 
+    # Random wait of 0-10 seconds so all of the threads don't hit aws at the same time.
+    time.sleep(random.uniform(0,10))
     state_code       = dbrecon.state_fips(stusab)
 
     # Input files
-
-    sf1_zipfilename  = dbrecon.dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
     sf1_geofilename  = f"{stusab}geo2010.sf1"
 
     # Open the SF1 zipfile
-    if sf1_zipfilename.startswith("s3://"):
-        zf = zipfile.ZipFile(ctools.s3.S3File(sf1_zipfilename))
-    else:
-        zf = zipfile.ZipFile(sf1_zipfilename)
-    sf1_geofile = io.TextIOWrapper(zf.open(sf1_geofilename))
+    zf = zipfile.ZipFile(sf1_zipfilename(stusab))
+    sf1_geofile = io.TextIOWrapper(zf.open(sf1_geofilename), encoding='latin1')
 
-
+    #
     # Input Reader --- Get layout for geofile. This uses the hard-coded information in the geo_layout.txt file.
     names    = []
     colspecs = []
+
+    #
+    # Yes, SF1 in 2010 used latin1.
     for g in csv.DictReader(dopen(GEO_LAYOUT_FILENAME,'r', encoding='latin1'), delimiter=' '):
         names.append(g['field_name'])
         colspecs.append((int(g['start_pos'])-1, int(g['start_pos'])+int(g['length'])-1))
@@ -72,7 +76,7 @@ def make_county_list(stusab:str):
         state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(stusab=stusab, state_code=state_code)
 
         logging.info(f"Creating {geofile_csv_filename}")
-        dbrecon.dmakedirs( os.path.dirname(geofile_csv_filename) ) # make sure we can create the output file
+        dmakedirs( os.path.dirname(geofile_csv_filename) ) # make sure we can create the output file
 
         csvfile = dopen(geofile_csv_filename, 'w')
         writer  = csv.DictWriter(csvfile, fieldnames=names)
@@ -81,16 +85,13 @@ def make_county_list(stusab:str):
         writer2 = csv.writer(f)
 
     # Get our own database connection
-    db = DB()
-    db.connect()
-    c = db.cursor()
-    c.execute(f"DELETE from {REIDENT}geo where STUSAB=%s",(stusab,))
+    DBMySQL.csfr(auth,f"DELETE from {REIDENT}geo where STUSAB=%s",(stusab,))
 
     # extract fields from the geofile and write them to the geofile_csv_file and/or the database
     # We do this because the geofile is position-specified and it was harder to use that.
     # We also extract the county list
-
-    DB_FIELDS="STUSAB,SUMLEV,LOGRECNO,STATE,COUNTY,TRACT,BLOCK,NAME,POP100"
+    #
+    DB_FIELDS = "STUSAB,SUMLEV,LOGRECNO,STATE,COUNTY,TRACT,BLOCK,NAME,POP100"
     DB_FIELDS_ARRAY = DB_FIELDS.split(",")
 
     vals = []
@@ -114,22 +115,27 @@ def make_county_list(stusab:str):
             count  += 1
             total_count += 1
             if count >= TRANSACTION_RECORDS:
-                c.execute(f"INSERT INTO {REIDENT}geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+                DBMySQL.csfr(auth,f"INSERT INTO {REIDENT}geo ({DB_FIELDS}) VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
                 vals = []
                 count = 0
 
+        if total_count % 100000==0:
+            print(f"{stusab} {total_count} ... ")
+
     # Finish up database transaction
     if count>0:
-        c.execute(f"INSERT INTO {REIDENT}geo (" + DB_FIELDS + ") VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
+        DBMySQL.csfr(auth,f"INSERT INTO {REIDENT}geo ({DB_FIELDS}) VALUES " + fields_str(len(DB_FIELDS_ARRAY),count), vals)
         total_count += count
-    db.commit()
-    print("Total: {}".format(total_count))
+    print(f"{stusab} Total: {total_count}")
     assert total_count>0
     sf1_geofile.close()
 
     # Select georecords into the tracts
-    c.execute(f"INSERT INTO {REIDENT}tracts (stusab,state,county,tract) SELECT stusab,state,county,tract from {REIDENT}geo where sumlev=140")
-    db.commit()
+    DBMySQL.csfr(auth,
+                 f"""
+                 INSERT INTO {REIDENT}tracts (stusab,state,county,tract)
+                 SELECT stusab,state,county,tract FROM {REIDENT}geo where sumlev=140 and stusab=%s
+                 """,(stusab,))
 
     if args.csv:
         csvfile.close()
@@ -139,11 +145,14 @@ def make_county_list(stusab:str):
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
-                             description="Read SF1 geography files, creates the counties geography files, and loads the MySQL database."
-                             "This is pretty fast and DB heavy, so it is not parallelized" )
+                             description = HELP )
     parser.add_argument("--showcounties",
-                        help="Display all counties for state from files that were created", action='store_true')
-    parser.add_argument("--nocsv", help="Do not make the CSV files", action='store_true')
+                        help = "Display all counties for state from files that were created", action='store_true')
+    parser.add_argument("--nocsv",
+                        help = "Do not make the CSV files", action='store_true')
+    parser.add_argument("--j1",
+                        help = 'number of threads to run in parallel', default=10,type=int)
+    parser.add_argument('--force', help='make files even if they already exist', action='store_true')
     parser.add_argument("stusab", help="States to process. Say 'all' for all", nargs='*')
     dbrecon.argparse_add_logging(parser)
     args     = parser.parse_args()
@@ -159,18 +168,32 @@ if __name__=="__main__":
             raise FileNotFoundError(fn)
 
     if args.stusab==[] or args.stusab[0]=='all':
-        states = dbrecon.all_stusabs()
+        stusabs = dbrecon.all_stusabs()
     else:
-        states = args.stusab
+        stusabs = args.stusab
 
     # Are we just printing status reports?
     if args.showcounties:
-        for stusab in states:
+        for stusab in stusabs:
             print(dbrecon.counties_for_state(stusab))
         exit(0)
 
-    # Generate the CSV files. Do this in parallel
-    with multiprocessing.Pool(10) as p:
-        p.map(make_county_list, states)
+    # If we are not forcing, remove the counties already done
+    if not args.force:
+        nstusabs = []
+        for stusab in stusabs:
+            state_code       = dbrecon.state_fips(stusab)
+            geofile_csv_filename       = GEOFILE_FILENAME_TEMPLATE.format(stusab=stusab)
+            state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(stusab=stusab, state_code=state_code)
+            if dpath_exists(geofile_csv_filename) and dpath_exists(state_county_list_filename):
+                print(stusab,"already exists. Skipping")
+            else:
+                nstusabs.append(stusab)
+        stusabs = nstusabs
 
-    print("Made geofiles for: {}".format(" ".join(states)))
+    # Generate the CSV files. Do this in parallel
+    args.j1 = min(args.j1, len(stusabs))
+    with multiprocessing.Pool(args.j1) as p:
+        p.map(make_county_list, stusabs)
+
+    print("Made geofiles for: {}".format(" ".join(stusabs)))

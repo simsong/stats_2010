@@ -28,22 +28,24 @@ from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
 
 HOSTNAME = dbrecon.hostname()
 
-
 # Tuning parameters
 
 SCHEMA_FILENAME="schema.sql"
-MAX_LOAD     = 32
-MAX_CHILDREN = 10
 PYTHON_START_TIME = 1
 MIN_LP_WAIT  = 60
 MIN_SOL_WAIT  = 60
-MIN_FREE_MEM_FOR_LP  = 100*GiB
+
+# Failsafes: don't start an LP or SOL unless we have this much free
+MIN_FREE_MEM_FOR_LP  = 200*GiB
 MIN_FREE_MEM_FOR_SOL = 100*GiB
+
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
-REPORT_FREQUENCY = 60           # report this often
-PROCESS_DIE_TIME = 5
-LONG_SLEEP_MINUTES = 5
-PS_LIST_FREQUENCY = 60
+
+REPORT_FREQUENCY = 60           # report this often into sysload table
+
+PROCESS_DIE_TIME = 5            # how long to wait for a process to die
+LONG_SLEEP= 300          # sleep for this long (seconds) when there are no resources
+PS_LIST_FREQUENCY = 60   #
 
 S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
@@ -53,8 +55,8 @@ LP_J1    = 1                    # let this program schedule
 ## These are Memoized because they are only used for init() and rescan()
 
 def rescan():
-    states = [args.state] if args.state else dbrecon.all_stusabs()
-    for stusab in states:
+    stusabs = [args.stusab] if args.stusab else dbrecon.all_stusabs()
+    for stusab in stusabs:
         counties = [args.county] if args.county else dbrecon.counties_for_state(stusab=stusab)
         for county in counties:
             print(f"RESCAN {stusab} {county}")
@@ -88,8 +90,8 @@ def clean():
 
 
 class SCT:
-    def __init__(self,state,county,tract):
-        self.state = state
+    def __init__(self,stusab,county,tract):
+        self.stusab = stusab
         self.county = county
         self.tract  = tract
 
@@ -229,11 +231,11 @@ def run():
         dbrecon.db_clean()
 
         # Report system usage if necessary
-        dbrecon.config_reload()
+        dbrecon.GetConfig().config_reload()
         free_mem = report_load_memory()
 
         # Are we done yet?
-        remain = dbrecon.DB.csfr(f"select count(*) from tracts where sol_end is null",quiet=True)
+        remain = dbrecon.DB.csfr(f"SELECT count(*) from {REIDENT}tracts where sol_end is null",quiet=True)
         if remain[0][0]==0:
             print("All done!")
             break
@@ -265,14 +267,15 @@ def run():
                 logging.error("%%%")
                 logging.error("%%% Free memory down to {:,} -- will start killing processes.".format(get_free_mem()))
                 logging.error("%%%")
-                subprocess.call(['./pps'])
+                subprocess.call(['./pps.sh'])
                 if len(running)==0:
-                    logging.error("No more processes to kill. Waiting for {} minutes and restarting".format(LONG_SLEEP_MINUTES))
-                    time.sleep(LONG_SLEEP_MINUTES*60)
+                    logging.error("No more processes to kill. Waiting for %s seconds and restarting",
+                                  LONG_SLEEP)
+                    time.sleep(LONG_SLEEP)
                     continue
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))
-                dbrecon.DB.csfr(f"INSERT INTO errors (host,file,error) values (%s,%s,%s)",
+                dbrecon.DB.csfr(f"INSERT INTO errors (host,file,error) VALUES (%s,%s,%s)",
                                 (HOSTNAME,__file__,"Free memory down to {}".format(get_free_mem())))
                 kill_tree(p)
                 running.remove(p)
@@ -313,13 +316,13 @@ def run():
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
-            for (state,county,tract_count) in make_lps:
+            for (stusab,county,tract_count) in make_lps:
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
-                print("WILL MAKE LP",S3_SYNTH,
-                      state,county,"TRACTS:",tract_count)
-                p = prun([sys.executable,'s3_pandas_synth_lp_files.py',
-                          '--j1', str(LP_J1), '--j2', str(lp_j2), state, county])
+                print("WILL MAKE LP",S3_SYNTH, stusab,county,"TRACTS:",tract_count)
+
+                stusab = stusab.lower()
+                p = prun([sys.executable,'s3_pandas_synth_lp_files.py', '--j1', str(LP_J1), '--j2', str(lp_j2), stusab, county])
                 running.add(p)
                 last_lp_launch = time.time()
 
@@ -344,17 +347,18 @@ def run():
                 continue
             solve_lps = DB.csfr(
                 f"""
-                SELECT stusab,county,tract FROM tracts
+                SELECT stusab,county,tract FROM {REIDENT}tracts
                 WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)
                 ORDER BY RAND() LIMIT %s
                 """,(limit_sol,))
             if (len(solve_lps)==0 and needed_sol>0) or not quiet:
                 print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
-            for (ct,(state,county,tract)) in enumerate(solve_lps,1):
-                print("WILL SOLVE {} {} {} ({}/{}) {}".format(state,county,tract,ct,len(solve_lps),time.asctime()))
+            for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
+                print("WILL SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
                 gurobi_threads = get_config_int('gurobi','threads')
-                dbrecon.db_lock(state,county,tract)
-                p = prun([sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),state,county,tract])
+                dbrecon.db_lock(stusab,county,tract)
+                stusab = stusab.lower()
+                p = prun([sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract])
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
                 last_sol_launch = time.time()
@@ -366,13 +370,13 @@ def run():
 def none_running(hostname=None):
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
     print("LP in progress:")
-    for (state,county,tract) in  DB.csfr(
+    for (stusab,county,tract) in  DB.csfr(
             f"""
             SELECT stusab,county,tract
             FROM {REIDENT}tracts
             WHERE lp_start IS NOT NULL AND lp_end IS NULL
             """ + hostlock):
-        print(state,county,tract)
+        print(stusab,county,tract)
     DB.csfr(
         f"""
         UPDATE {REIDENT}tracts
@@ -381,13 +385,13 @@ def none_running(hostname=None):
         """ + hostlock)
 
     print("SOL in progress:")
-    for (state,county,tract) in DB.csfr(
+    for (stusab,county,tract) in DB.csfr(
             f"""
             SELECT stusab,county,tract
             FROM {REIDENT}tracts
             WHERE sol_start IS NOT NULL AND sol_end IS NULL
             """ + hostlock):
-        print(state,county,tract)
+        print(stusab,county,tract)
     DB.csfr(
         f"""
         UPDATE {REIDENT}tracts
@@ -443,7 +447,7 @@ if __name__=="__main__":
     parser.add_argument("--none_running-anywhere", help="Run if there are no outstanding LP files being built or Solutions being solved anywhere.",
                         action='store_true')
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
-    parser.add_argument("--state", help="state for rescanning")
+    parser.add_argument("--stusab", help="stusab for rescanning")
     parser.add_argument("--county", help="county for rescanning")
 
     args   = parser.parse_args()

@@ -12,7 +12,7 @@ import geocode
 import decennial_df
 from constants import *
 
-def custom_report_42():
+def custom_report_42(use_pandas):
     "State FIPS | County FIPS | Tract | Block group | Block | total group quarters population (first table item)"
 
     ddf = decennial_df.DecennialDF(year=2010, product=SF1)
@@ -81,6 +81,7 @@ if __name__ == "__main__":
     parser.add_argument("--cr42",action='store_true', help="custom report from Table P42")
     parser.add_argument("--cr44",action='store_true', help="custom report from Table P44")
     parser.add_argument("--tables",action='store_true', help='show tables')
+    parser.add_argument("--pandas", action='store_true', help='use pandas instead of spark')
     args = parser.parse_args()
 
     if args.tables:
@@ -89,6 +90,5 @@ if __name__ == "__main__":
         for table in ddf.schema.tables():
             print(table)
 
-
     if args.cr42:
-        custom_report_42()
+        custom_report_42(pandas=args.pandas)

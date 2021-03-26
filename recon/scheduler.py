@@ -36,7 +36,7 @@ MIN_LP_WAIT  = 60
 MIN_SOL_WAIT  = 60
 
 # Failsafes: don't start an LP or SOL unless we have this much free
-MIN_FREE_MEM_FOR_LP  = 100*GiB
+MIN_FREE_MEM_FOR_LP  = 200*GiB
 MIN_FREE_MEM_FOR_SOL = 100*GiB
 
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes

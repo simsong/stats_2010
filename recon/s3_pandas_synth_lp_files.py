@@ -495,7 +495,7 @@ def build_tract_lp_tuple(tracttuple):
             print(e)
             cmd = f"""
             UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
-            WHERE stusab=%s and county=%s and tract=%s"
+            WHERE stusab=%s and county=%s and tract=%s
             """
             print(cmd)
             auth = DBMySQLAuth.FromConfig(os.environ)

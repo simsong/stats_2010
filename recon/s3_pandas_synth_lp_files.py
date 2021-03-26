@@ -30,6 +30,7 @@ from total_size import total_size
 import dbrecon
 from dbrecon import DB,GB,MB
 from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
+from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 assert pd.__version__ > '0.19'
 
@@ -196,12 +197,15 @@ class LPTractBuilder:
         self.tract      = tract
         self.sf1_tract_data = sf1_tract_data
         self.sf1_block_data = sf1_block_data
+        self.auth = DBMySQLAuth.FromConfig(os.environ)
+
 
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         if not args.debug:
-            DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
-                    (self.stusab,self.county,self.tract),rowcount=1)
+            DBMySQL.csfr(self.auth,
+                         f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
+                         (self.stusab,self.county,self.tract),rowcount=1)
 
     def get_constraint_summary(self, level, p01_data, data_dict, summary_nums):
         """
@@ -455,8 +459,9 @@ class LPTractBuilder:
         f.close()
         if not args.debug:
             dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-            dbrecon.DB.csfr(f"UPDATE {REIDENT}tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
-                            (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract), rowcount=1)
+            DBMySQL.csfr(self.auth,
+                         f"UPDATE {REIDENT}tracts SET lp_gb=%s,hostlock=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+                         (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract), rowcount=1)
             atexit.unregister(self.db_fail)
 
         if args.debug:
@@ -470,6 +475,8 @@ class LPTractBuilder:
         # If running on S3, make sure the object exists
         dbrecon.dwait_exists(outfilename)
         dbrecon.drename(outfilename, lpfilenamegz)
+        # And wait for the lpfilenamegz to exist
+        dbrecon.dwait_exists(lpfilenamegz)
 
 
 # Make the tract LP files.
@@ -486,16 +493,19 @@ def build_tract_lp_tuple(tracttuple):
         lptb.build_tract_lp()
     except MemoryError as e:
         if not args.debug:
-            dbrecon.DB.csfr(
-                f"""
-                UPDATE {REIDENT}tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL
-                WHERE stusab=%s and county=%s and tract=%s"
-                """,
-                (stusab, county, tract))
+            print("MEMORY ERROR!!!")
+            print(e)
+            cmd = f"""
+            UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
+            WHERE stusab=%s and county=%s and tract=%s
+            """
+            print(cmd)
+            auth = DBMySQLAuth.FromConfig(os.environ)
+            DBMySQL.csfr(auth,cmd, (stusab, county, tract), debug=1)
         logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
 
 """Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
-def make_state_county_files(stusab, county, tractgen='all'):
+def make_state_county_files(auth, stusab, county, tractgen='all'):
     """
     Reads the data files for the state and county, then call build_tract_lp to build the LP files for each tract.
     All of the tract LP files are built from the same data model, so they can be built in parallel with shared memory.
@@ -509,7 +519,7 @@ def make_state_county_files(stusab, county, tractgen='all'):
     if args.debug:
         tracts = [tractgen]
     else:
-        rows = DB.csfr(f"SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(stusab,county))
+        rows = DBMySQL.csfr(auth,f"SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(stusab,county))
         tracts_needing_lp_files = [row[0] for row in rows]
         if tractgen=='all':
             if len(tracts_needing_lp_files)==0:
@@ -677,12 +687,17 @@ def make_state_county_files(stusab, county, tractgen='all'):
         logging.info("sf1_tract_dict has data for {} tracts.".format(len(sf1_tract_dict)))
         logging.info("sf1_tract_dict total memory: {:,} bytes".format(total_size(sf1_tract_dict)))
 
+
     ################################################################
     ###
     ### We have now made the data for this county.
     ### We now make LP files for a specific set of tracts, or all the tracts.
 
-    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract]) for tract in tracts]
+    ### 2021-03-25 patch:
+    ### Remove tracts not in the sf1_tract_dict and in the sf1_block_dict.
+    ### This appears to be tract 990001 and 990000 which are all water
+
+    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract]) for tract in tracts if (tract in sf1_tract_dict) and (tract in sf1_block_dict)]
 
     if args.j2>1:
         with multiprocessing.Pool( args.j2 ) as p:
@@ -714,6 +729,7 @@ if __name__=="__main__":
     DB.quiet = True
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03pan")
+    args.state = args.state.lower()
 
     assert dbrecon.dfxml_writer is not None
 
@@ -725,14 +741,16 @@ if __name__=="__main__":
         args.j1 = 1
         args.j2 = 1
 
+    auth = DBMySQLAuth.FromConfig(os.environ)
+
     # If we are doing a specific tract
     if args.tract:
         if not args.debug:
             dbrecon.db_lock(args.state, args.county, args.tract)
-        make_state_county_files(args.state, args.county, args.tract)
+        make_state_county_files(auth, args.state, args.county, args.tract)
 
     else:
         # We are doing a single state/county pair. We may do each tract multithreaded. Lock the tracts...
-        DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
                 (dbrecon.hostname(),os.getpid(),args.state,args.county))
-        make_state_county_files(args.state, args.county)
+        make_state_county_files(auth, args.state, args.county)

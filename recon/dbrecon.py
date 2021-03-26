@@ -204,6 +204,7 @@ def get_pw():
 
 class DB:
     """DB class connection class. Note that this is now in ctools.dbfile and should be removed."""
+
     @staticmethod
     def csfr(cmd,vals=None,quiet=False,rowcount=None):
         """Connect, select, fetchall, and retry as necessary"""
@@ -229,8 +230,8 @@ class DB:
                     if (rowcount is not None) and ( c.rowcount!=rowcount):
                         logging.error(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
                 except ProgrammingError as e:
-                    logging.error("cmd: "+str(cmd))
-                    logging.error("vals: "+str(vals))
+                    logging.error(f" cmd: {cmd}")
+                    logging.error(f"vals: {vals}")
                     logging.error(str(e))
                     raise e
                 if cmd.strip().upper().startswith("SELECT"):
@@ -315,6 +316,13 @@ def get_final_pop_from_sol(stusab, county, tract, delete=True):
                 (stusab,county,tract))
         return None
     return count
+
+################################################################
+##
+## This implements the hostlock system.
+## The hostlock is used by the scheduler to make sure that the same LP or SOL isn't scheduled
+## simulatenously on two different nodes.
+
 
 def db_lock(stusab, county, tract):
     DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
@@ -474,6 +482,23 @@ def extract_state_county_tract(fname):
     if m:
         return( stusab(m.group('state')), m.group('county'), m.group('tract'))
     return None
+
+def sf1_zipfilename(stusab):
+    """If the SF1 is on S3, download it to a known location and work from there.
+    This has a race condition if it is run in two different processs. Howeve, it's only done in steps1 and step2,
+    and they are threaded on state, not on county.
+    """
+    sf1_path = dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
+    if sf1_path.startswith("s3://"):
+        local_path = "/tmp/" + sf1_path.replace("/","_")
+        if not os.path.exists(local_path):
+            (bucket,key) = s3.get_bucket_key(sf1_path)
+            logging.warning(f"Downloading {sf1_path} to {local_path}")
+            s3.get_object(bucket, key, local_path)
+        return local_path
+    return sf1_path
+
+
 
 # https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
 class Singleton(type):
@@ -710,8 +735,9 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    DB.csfr(f"INSERT INTO {REIDENT}errors (`host`,`error`,`argv0`,`file`,`last_value`) VALUES (%s,%s,%s,%s,%s)",
-            (hostname(), error, sys.argv[0], filename, last_value), quiet=True)
+    reident = os.getenv('REIDENT').replace('_','')
+    DB.csfr(f"INSERT INTO errors (`host`,`error`,`argv0`,`reident`,`file`,`last_value`) VALUES (%s,%s,%s,%s,%s,%s)",
+            (hostname(), error, sys.argv[0], reident, filename, last_value), quiet=True)
     print("LOG ERROR:",error,file=sys.stderr)
 
 def logging_exit():

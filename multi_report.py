@@ -12,9 +12,10 @@ import geocode
 import decennial_df
 from constants import *
 
-def custom_report_42(ddf):
+def custom_report_42(use_pandas):
     "State FIPS | County FIPS | Tract | Block group | Block | total group quarters population (first table item)"
 
+    ddf = decennial_df.DecennialDF(year=2010, product=SF1)
     geo = ddf.get_table('geo')
     print("Geo first 10 available variables")
     for v in list(geo.vars())[0:10]:
@@ -36,6 +37,8 @@ def custom_report_42(ddf):
     from pyspark.sql import SparkSession
     from pyspark.sql.functions import col
     spark = SparkSession.builder.getOrCreate()
+    spark.sparkContext.setLogLevel("ERROR") # suppress all the output
+
     geo_df = ddf.get_df(tableName='geo', sqlName='geo').persist()
     p1_df  = ddf.get_df(tableName='P1', sqlName='p1').persist()
     p42_df = ddf.get_df(tableName='P42', sqlName='p42').persist()
@@ -45,7 +48,6 @@ def custom_report_42(ddf):
 
     print("First 10 lines of p1_df:")
     p1_df.show(n=10)
-    exit(1)
 
     print("Total population of 2010 Census:")
     spark.sql(
@@ -79,14 +81,14 @@ if __name__ == "__main__":
     parser.add_argument("--cr42",action='store_true', help="custom report from Table P42")
     parser.add_argument("--cr44",action='store_true', help="custom report from Table P44")
     parser.add_argument("--tables",action='store_true', help='show tables')
+    parser.add_argument("--pandas", action='store_true', help='use pandas instead of spark')
     args = parser.parse_args()
-    ddf = decennial_df.DecennialDF(year=2010, product=SF1)
 
     if args.tables:
         print("available tables:")
+        ddf = decennial_df.DecennialDF(year=2010, product=SF1)
         for table in ddf.schema.tables():
             print(table)
 
-
     if args.cr42:
-        custom_report_42(ddf)
+        custom_report_42(pandas=args.pandas)

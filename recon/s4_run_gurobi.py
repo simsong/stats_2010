@@ -80,8 +80,15 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
     # Make sure output does not exist. If it exists, delete it, otherwise give an error
     for fn in [sol_filename,solgz_filename]:
         if dbrecon.dpath_exists(fn):
-            logging.warning("File {} exists. Removing.".format(fn,dbrecon.dgetsize(fn)))
-            dbrecon.dpath_unlink(fn)
+            try:
+                logging.warning(f"File {fn} exists. size={dbrecon.dgetsize(fn)} Removing.")
+            except FileNotFoundError as e:
+                pass
+            try:
+                dbrecon.dpath_unlink(fn)
+            except FileNotFoundError as e:
+                pass
+
 
     # make sure output directory exists
     dbrecon.dmakedirs( dirname( sol_filename))
@@ -204,8 +211,12 @@ def run_gurobi_for_county_tract(stusab, county, tract):
     assert len(tract)==6
     lpgz_filename  = dbrecon.LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     if dbrecon.dpath_exists(lpgz_filename) is None:
-        logging.info(f"lpgz_filename does not exist")
-        dbrecon.rescan_files(stusab, county, tract)
+        logging.warning(f"lpgz_filename does not exist. Waiting for 5 seconds for S3 to stabalize")
+        time.sleep(5)
+
+    if dbrecon.dpath_exists(lpgz_filename) is None:
+        logging.error(f"lpgz_filename does not exist. updating database")
+        dbrecon.remove_lpfile(stusab=stusab, county=county, tract=tract)
         return
 
     sol_filename= dbrecon.SOLFILENAME(stusab=stusab, county=county, tract=tract)
@@ -216,30 +227,31 @@ def run_gurobi_for_county_tract(stusab, county, tract):
 
     try:
         run_gurobi(stusab, county, tract, lpgz_filename, args.dry_run)
+
     except FileExistsError as e:
-        logging.warning(f"solution file exists for {stusab}{county}{tract}; rescan_files 1")
-        dbrecon.rescan_files(stusab, county,tract)
+        logging.warning(f"solution file exists for {stusab}{county}{tract}?")
+        return
+
     except FileNotFoundError as e:
-        logging.warning(f"LP file not found for {stusab}{county}{tract}; rescan_files 2")
-        dbrecon.rescan_files(stusab, county,tract)
+        logging.error(f"LP file not found for {stusab}{county}{tract}. Updating database")
+        dbrecon.remove_lpfile(stusab=stusab, county=county, tract=tract)
+        return
+
     except gurobipy.GurobiError as e:
         logging.error(f"GurobiError in {stusab} {county} {tract}")
         dbrecon.log_error(error=str(e), filename=__file__)
         if str(e)=='Unable to read model':
             logging.error("Unable to read model. Deleting lp file")
-            dbrecon.dpath_unlink(lpgz_filename)
-            dbrecon.rescan_files(stusab, county, tract)
+            dbrecon.remove_lpfile(stusab=stusab, county=county, tract=tract)
+            return
         else:
-            dbrecon.DB.csfr(f'INSERT INTO {REIDENT}errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
+            dbrecon.DB.csfr(f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                             (str(e),stusab,county,tract))
             raise e;
     except InfeasibleError as e:
         logging.error(f"Infeasible in {stusab} {county} {tract}")
-        dbrecon.DB.csfr(f'INSERT INTO {REIDENT}errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
+        dbrecon.DB.csfr(f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                         (str(e),stusab,county,tract))
-        raise e
-    #except Exception as e:
-    #    logging.error(f"Unknown error: {e}")
 
     logging.info(f"Ran Gurobi for {stusab} {county} {tract}")
     if args.exit1:

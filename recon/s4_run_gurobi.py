@@ -81,7 +81,7 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
     for fn in [sol_filename,solgz_filename]:
         if dbrecon.dpath_exists(fn):
             try:
-                logging.warning("File {fn} exists. size={dbrecon.dgetsize(fn)} Removing.".format(fn,))
+                logging.warning(f"File {fn} exists. size={dbrecon.dgetsize(fn)} Removing.")
             except FileNotFoundError as e:
                 pass
             try:

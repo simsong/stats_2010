@@ -204,7 +204,7 @@ def do_register(auth, reident):
 
 def run(cmd):
     print()
-    print(" ".join(cmd))
+    print("$ " + " ".join(cmd))
     subprocess.run(cmd, cwd=RECON_DIR, check=True)
 
 def do_step1(auth, reident, state):
@@ -308,6 +308,7 @@ if __name__ == "__main__":
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
     parser.add_argument('--debug', action='store_true', help='debug all SQL')
     parser.add_argument('--force', action='store_true', help='delete output files if they exist')
+    parser.add_argument('--nodes', help='Show YARN nodes', action='store_true')
     args = parser.parse_args()
 
     if args.env:
@@ -319,10 +320,17 @@ if __name__ == "__main__":
         do_info(args.info)
         exit(0)
 
+    if args.nodes:
+        run(['yarn','node','--list'])
+        exit(0)
+
     if 'MYSQL_HOST' not in os.environ:
         logging.warning('MYSQL_HOST is not in your environment!')
         logging.warning('Please run $(./dbrtool.py --env) to create the environment variables')
         exit(1)
+
+    ################################################################
+    # Everything after here needs mysql
 
     if args.mysql:
         do_mysql()

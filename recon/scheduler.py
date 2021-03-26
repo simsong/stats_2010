@@ -314,7 +314,7 @@ def run(auth):
             cmd = f"""
                 SELECT t.stusab,t.county,count(*) as tracts,sum(g.pop100) as pop
                 FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (g.sumlev='140')
+                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (g.sumlev='140') and (pop>0)
                 GROUP BY t.state,t.county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
@@ -332,7 +332,8 @@ def run(auth):
                 running.add(p)
                 last_lp_launch = time.time()
 
-        ## Evaluate Launching SOLs
+        ## Evaluate Launching SOLs.
+        ## Only evaluate solutions where we have a LP file
 
         if args.nosol:
             needed_sol = 0

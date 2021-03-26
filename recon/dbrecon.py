@@ -349,7 +349,11 @@ def db_done(what, stusab, county, tract):
 
 def is_db_done(what, stusab, county, tract):
     assert what in [LP,SOL, CSV]
-    row = DB.csfr(f"SELECT {what}_end FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1",
+    row = DB.csfr(
+        f"""
+        SELECT {what}_end FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
+        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (g.sumlev='140') AND (g.pop100>0) LIMIT 1
+        """,
                   (stusab,county,tract))
     return len(row)==1
 
@@ -577,8 +581,14 @@ def counties_for_state(stusab):
     return [row[0] for row in rows]
 
 def tracts_for_state_county(*,stusab,county):
-    """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr(f"SELECT tract from {REIDENT}tracts where stusab=%s and county=%s",(stusab,county))
+    """Accessing the database, return the tracts for a given state/county.
+    Only return tracts with non-zero population
+    """
+    rows = DB.csfr(
+        f"""
+        SELECT tract from {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract)
+        WHERE (t.stusab=%s) and (t.county=%s) AND (g.sumlev='140') AND (g.pop100>0)
+        """,(stusab,county))
     return [row[0] for row in rows]
 
 ################################################################

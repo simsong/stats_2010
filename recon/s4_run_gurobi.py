@@ -80,8 +80,15 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
     # Make sure output does not exist. If it exists, delete it, otherwise give an error
     for fn in [sol_filename,solgz_filename]:
         if dbrecon.dpath_exists(fn):
-            logging.warning("File {} exists. Removing.".format(fn,dbrecon.dgetsize(fn)))
-            dbrecon.dpath_unlink(fn)
+            try:
+                logging.warning("File {fn} exists. size={dbrecon.dgetsize(fn)} Removing.".format(fn,))
+            except FileNotFoundError as e:
+                pass
+            try:
+                dbrecon.dpath_unlink(fn)
+            except FileNotFoundError as e:
+                pass
+
 
     # make sure output directory exists
     dbrecon.dmakedirs( dirname( sol_filename))

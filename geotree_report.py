@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #
 # geotree report tools
+# https://stackoverflow.com/questions/60824183/how-to-get-each-char-format-from-xlsx-cell-with-xlrd?noredirect=1#comment107615377_60824183  
 import datetime
 import json
 import os

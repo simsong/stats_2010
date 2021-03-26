@@ -476,7 +476,11 @@ class LPTractBuilder:
         dbrecon.dwait_exists(outfilename)
         dbrecon.drename(outfilename, lpfilenamegz)
         # And wait for the lpfilenamegz to exist
-        dbrecon.dwait_exists(lpfilenamegz)
+        try:
+            dbrecon.dwait_exists(lpfilenamegz)
+        except RuntimeError as e:
+            print(e)
+            logging.warning("Will not fix database. Let s4_ discover the lp file isn't there.")
 
 
 # Make the tract LP files.

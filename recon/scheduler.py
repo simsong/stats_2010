@@ -309,13 +309,14 @@ def run(auth):
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
 
             # We only launch one LP at a time because they take a few minutes to eat up a lot of memory.
+            # We make the entire county at a time
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
                 SELECT t.stusab,t.county,count(*) as tracts,sum(g.pop100) as pop
-                FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON t.logrecno = g.logrecno
-                WHERE (t.lp_end IS NULL) AND (hostlock IS NULL)
+                FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
+                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (g.sumlev='140')
                 GROUP BY t.state,t.county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
@@ -323,10 +324,10 @@ def run(auth):
             if (len(make_lps)==0 and needed_lp>0) or not quiet:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
-            for (stusab,county,tract_count) in make_lps:
+            for (stusab,county,tract_count,pop) in make_lps:
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
-                print("WILL MAKE LP",S3_SYNTH, stusab,county,"TRACTS:",tract_count)
+                print(f"\nLAUNCHING LP {S3_SYNTH} {stusab} {county} TRACTS: {tract_count:,} POP: {pop:,}")
 
                 stusab = stusab.lower()
                 p = prun([sys.executable,'s3_pandas_synth_lp_files.py', '--j1', str(LP_J1), '--j2', str(lp_j2), stusab, county])
@@ -374,17 +375,19 @@ def run(auth):
         # and repeat
     # Should never get here
 
+SHOW_RUNNING=False
 def none_running(auth, hostname):
     """Tell the database that there are no processes running, either on this host or on all hosts"""
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
-    print("LP in progress:")
-    for (stusab,county,tract) in  DBMySQL.csfr(auth,
-            f"""
-            SELECT stusab,county,tract
-            FROM {REIDENT}tracts
-            WHERE lp_start IS NOT NULL AND lp_end IS NULL
-            """ + hostlock):
-        print(stusab,county,tract)
+
+    if SHOW_RUNNING:
+        for (stusab,county,tract) in  DBMySQL.csfr(auth,
+                f"""
+                SELECT stusab,county,tract
+                FROM {REIDENT}tracts
+                WHERE lp_start IS NOT NULL AND lp_end IS NULL
+                """ + hostlock):
+            print("CLEARINING LP MAKING ",stusab,county,tract)
     DBMySQL.csfr(auth,
         f"""
         UPDATE {REIDENT}tracts
@@ -392,14 +395,14 @@ def none_running(auth, hostname):
         WHERE lp_start IS NOT NULL AND lp_end IS NULL
         """ + hostlock)
 
-    print("SOL in progress:")
-    for (stusab,county,tract) in DBMySQL.csfr(auth,
-            f"""
-            SELECT stusab,county,tract
-            FROM {REIDENT}tracts
-            WHERE sol_start IS NOT NULL AND sol_end IS NULL
-            """ + hostlock):
-        print(stusab,county,tract)
+    if SHOW_RUNNING:
+        for (stusab,county,tract) in DBMySQL.csfr(auth,
+                f"""
+                SELECT stusab,county,tract
+                FROM {REIDENT}tracts
+                WHERE sol_start IS NOT NULL AND sol_end IS NULL
+                """ + hostlock):
+            print("CLEARING SOL MAKING",stusab,county,tract)
     DBMySQL.csfr(auth,
         f"""
         UPDATE {REIDENT}tracts
@@ -458,7 +461,7 @@ if __name__=="__main__":
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
     parser.add_argument("--stusab", help="stusab for rescanning")
     parser.add_argument("--county", help="county for rescanning")
-    parser.add_argument("--desc", help="Run most populus tracts first, otherwise do least populus tracts first")
+    parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
 
     args   = parser.parse_args()
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')

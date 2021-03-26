@@ -339,8 +339,12 @@ if __name__ == "__main__":
 
     if 'MYSQL_HOST' not in os.environ:
         logging.warning('MYSQL_HOST is not in your environment!')
-        logging.warning('Please run $(./dbrtool.py --env) to create the environment variables')
-        exit(1)
+        logging.warning('Next time, please  run $(./dbrtool.py --env) to create the environment variables')
+        logging.warning('starting sub-shell with environment variables set')
+        for(k,v) in get_mysql_env().items():
+            os.environ[k] = v
+        os.execlp(os.getenv('SHELL'))
+
 
     ################################################################
     # Everything after here needs mysql

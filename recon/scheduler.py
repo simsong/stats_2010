@@ -298,7 +298,6 @@ def run(auth):
 
         # Figure out how many we need to launch
         #
-        print("RUNNING LP: ",running_lp())
         if args.nolp:
             needed_lp = 0
         else:

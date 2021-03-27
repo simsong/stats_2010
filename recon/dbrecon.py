@@ -901,6 +901,7 @@ def dwait_exists(src):
     cmd=['wait','object-exists','--bucket',bucket,'--key',key]
     logging.info(' '.join(cmd))
     s3.aws_s3api(cmd)
+    logging.info('dwait_exists %s returning',src)
 
 def drename(src,dst):
     logging.info('drename({},{})'.format(src,dst))

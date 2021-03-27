@@ -271,9 +271,9 @@ def run_gurobi_for_county(stusab, county, tracts):
     if (tracts==[]) or (tracts==['all']):
         rows = DB.csfr(
             f"""
-            SELECT tract
-            FROM {REIDENT}tracts
-            WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND stusab=%s AND county=%s
+            SELECT t.tract
+            FROM {REIDENT}tracts LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
+            WHERE (t.lp_end IS NOT NULL) AND (t.sol_end IS NULL) AND (t.stusab=%s) AND (t.county=%s) AND (g.sumlev='140') and (g.pop100>0)
             """, (stusab, county))
         tracts = [row[0] for row in rows]
         logging.info(f"Tracts require solving in {stusab} {county}: {tracts}")

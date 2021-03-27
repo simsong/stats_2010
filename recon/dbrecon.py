@@ -42,7 +42,7 @@ if PARENT_DIR not in sys.path:
 
 import ctools.s3 as s3
 import ctools.clogging as clogging
-import ctools.dbfile   as dbfile
+from ctools.dbfile import DBMySQLAuth,DBMySQL
 from ctools.gzfile import GZFile
 from total_size import total_size
 
@@ -260,7 +260,6 @@ class DB:
         return self.dbs.create_schema(schema)
 
     def connect(self):
-        from ctools.dbfile import DBMySQLAuth,DBMySQL
         config = GetConfig().get_config()
         try:
             mysql_section = config['mysql']
@@ -330,8 +329,8 @@ def db_lock(stusab, county, tract):
             rowcount=1)
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {stusab} {county} {tract} ")
 
-def db_unlock(stusab, county, tract):
-    DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+def db_unlock(auth,stusab, county, tract):
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
             (stusab,county,tract),
             rowcount = 1)
 
@@ -350,21 +349,25 @@ def db_done(what, stusab, county, tract):
 
 def is_db_done(what, stusab, county, tract):
     assert what in [LP,SOL, CSV]
-    row = DB.csfr(f"SELECT {what}_end FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND tract=%s and {what}_end IS NOT NULL LIMIT 1",
+    row = DB.csfr(
+        f"""
+        SELECT {what}_end FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
+        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (g.sumlev='140') AND (g.pop100>0) LIMIT 1
+        """,
                   (stusab,county,tract))
     return len(row)==1
 
-def db_clean():
+def db_clean(auth):
     """Clear hostlock if PID is gone. PID is the PID of the scheduler"""
-    rows = DB.csfr(f"SELECT pid,stusab,county,tract FROM {REIDENT}tracts WHERE hostlock=%s",(hostname(),),quiet=True)
+    rows = DBMySQL.csfr(auth,f"SELECT pid,stusab,county,tract FROM {REIDENT}tracts WHERE hostlock=%s",(hostname(),),quiet=True)
     for (pid,stusab,county,tract) in rows:
         if not pid:
-            db_unlock(stusab,county,tract)
+            db_unlock(auth,stusab,county,tract)
             continue
         try:
             p = psutil.Process(pid)
         except psutil.NoSuchProcess:
-            db_unlock(stusab,county,tract)
+            db_unlock(auth,stusab,county,tract)
 
 def rescan_files(stusab, county, tract, check_final_pop=False, quiet=True):
     raise RuntimeError("don't do at the moment. The database is more accurate than the file system.")
@@ -500,7 +503,7 @@ def sf1_zipfilename(stusab):
 
 
 def auth():
-    return dbfile.DBMySQLAuth.FromConfig(os.environ)
+    return DBMySQLAuth.FromConfig(os.environ)
 
 
 # https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
@@ -578,8 +581,14 @@ def counties_for_state(stusab):
     return [row[0] for row in rows]
 
 def tracts_for_state_county(*,stusab,county):
-    """Accessing the database, return the tracts for a given state/county"""
-    rows = DB.csfr(f"SELECT tract from {REIDENT}tracts where stusab=%s and county=%s",(stusab,county))
+    """Accessing the database, return the tracts for a given state/county.
+    Only return tracts with non-zero population
+    """
+    rows = DB.csfr(
+        f"""
+        SELECT tract from {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract)
+        WHERE (t.stusab=%s) and (t.county=%s) AND (g.sumlev='140') AND (g.pop100>0)
+        """,(stusab,county))
     return [row[0] for row in rows]
 
 ################################################################

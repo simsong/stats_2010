@@ -67,9 +67,7 @@ def rescan():
                 dbrecon.rescan_files(stusab,county,tract,quiet=False)
         print()
 
-def clean():
-    db = dbrecon.DB()
-    c  = db.cursor()
+def clean(auth):
     for root, dirs, files in os.walk( dbrecon.dpath_expand("$ROOT") ):
         for fname in files:
             # Do not clean the CSVs
@@ -86,7 +84,7 @@ def clean():
                     continue
                 (stusab,county,tract) = m
                 what = "sol" if "sol" in path else "lp"
-                DB.csfr(f"UPDATE {REIDENT}tracts SET {what}_start=NULL,{what}_end=NULL "
+                DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET {what}_start=NULL,{what}_end=NULL "
                         "where stusab=%s and county=%s and tract=%s",
                         (stusab, county, tract))
                 os.unlink(path)
@@ -114,7 +112,7 @@ def get_free_mem():
     return psutil.virtual_memory().available
 
 last_report = 0
-def report_load_memory():
+def report_load_memory(auth):
     """Report and print the load and free memory; return free memory"""
     global last_report
     free_mem = get_free_mem()
@@ -125,7 +123,7 @@ def report_load_memory():
     mins     = int((total_seconds % 3600) // 60)
     secs     = int(total_seconds % 60)
     if time.time() > last_report + REPORT_FREQUENCY:
-        dbrecon.DB.csfr(
+        DBMySQL.csfr(auth,
             """
             INSERT INTO sysload (t, host, min1, min5, min15, freegb)
             VALUES (NOW(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1
@@ -232,11 +230,11 @@ def run(auth):
                 print(f"UNKNOWN COMMAND: '{command}'.  TRY HALT, STOP, PS, LIST, UPTIME, NOISY, QUIET")
 
         # Clean database if necessary
-        dbrecon.db_clean()
+        dbrecon.db_clean(auth)
 
         # Report system usage if necessary
         dbrecon.GetConfig().config_reload()
-        free_mem = report_load_memory()
+        free_mem = report_load_memory(auth)
 
         # Are we done yet?
         remain = DBMySQL.csfr(auth,f"SELECT count(*) from {REIDENT}tracts where sol_end is null",quiet=True)
@@ -300,10 +298,10 @@ def run(auth):
 
         # Figure out how many we need to launch
         #
-        needed_lp =  get_config_int('run','max_lp') - len(running_lp())
-        needed_lp = max(args.maxlp, needed_lp)
         if args.nolp:
             needed_lp = 0
+        else:
+            needed_lp =  min(get_config_int('run','max_lp'),args.maxlp) - len(running_lp())
 
         # If we can run another launch in, do it.
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
@@ -316,7 +314,7 @@ def run(auth):
             cmd = f"""
                 SELECT t.stusab,t.county,count(*) as tracts,sum(g.pop100) as pop
                 FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (g.sumlev='140')
+                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (g.sumlev='140') and (pop100>0)
                 GROUP BY t.state,t.county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
@@ -334,7 +332,8 @@ def run(auth):
                 running.add(p)
                 last_lp_launch = time.time()
 
-        ## Evaluate Launching SOLs
+        ## Evaluate Launching SOLs.
+        ## Only evaluate solutions where we have a LP file
 
         if args.nosol:
             needed_sol = 0
@@ -378,6 +377,7 @@ def run(auth):
 SHOW_RUNNING=False
 def none_running(auth, hostname):
     """Tell the database that there are no processes running, either on this host or on all hosts"""
+
     hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
 
     if SHOW_RUNNING:
@@ -476,7 +476,7 @@ if __name__=="__main__":
     elif args.rescan:
         rescan()
     elif args.clean:
-        clean()
+        clean(auth)
     elif args.none_running:
         get_lock()
         none_running(auth,HOSTNAME)

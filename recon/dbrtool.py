@@ -37,25 +37,24 @@ except ImportError:
     """,file=sys.stderr)
     exit(1)
 
-import dbrecon
-
 DAS_ROOT   = dirname(dirname(dirname(dirname(abspath(__file__)))))
 if DAS_ROOT not in sys.path:
     sys.path.append(DAS_ROOT)
-assert os.path.exists(os.path.join(DAS_ROOT, 'das_config.json'))
 
 BIN_DIR=os.path.join(DAS_ROOT,'bin')
 if BIN_DIR not in sys.path:
     sys.path.append(BIN_DIR)
 
+MY_DIR=dirname(abspath(__file__))
+if MY_DIR not in sys.path:
+    sys.path.append(MY_DIR)
+
+import dbrecon
 import constants
 import dbrecon
 import ctools.s3
 import ctools.dbfile as dbfile
-
-# pylint: disable=E0401
-import kms as kms
-import ssh_remote
+from ctools.dbfile import DBMySQL
 
 # Step1 Parallelism
 S1_J1 = '50'
@@ -84,7 +83,7 @@ RECON_SCHEMA = os.path.join(RECON_DIR, 'schema.sql')
 
 # REIDENT separator character.
 SEP = '_'
-SEP_ERRORS = '_errors'
+SEP_TRACTS = '_tracts'
 
 
 def states():
@@ -95,6 +94,8 @@ def sf1_zipfile_name(reident, stusab):
 
 def get_mysql_env():
     """Return a dictionary of the encrypted MySQL information in the dbrecon_config_encrypted.json.ITE file"""
+    # pylint: disable=E0401
+    import kms as kms
     return kms.get_encrypted_json_file( os.path.join( dirname(__file__), ENCRYPTED_CONFIG))[os.getenv('DAS_ENVIRONMENT')]
 
 def put_mysql_env():
@@ -122,7 +123,39 @@ def do_mysql():
            '--host='+env['MYSQL_HOST'],env['MYSQL_DATABASE']]
     os.execlp(*cmd)
 
-def get_recon_status(auth):
+QUERIES = [
+    ('Current Time', 'select now()'),
+    ("LP and SOL Files created/needed/total",
+     """SELECT sum(if(t.lp_end is not Null,1,0)) as lp_created,
+               sum(if(t.sol_end is not Null,1,0)) as sol_created,
+               count(*) as total
+     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
+                                       AND g.sumlev='140' and g.pop100>0"""),
+    ("LP files in progress",
+     """SELECT t.state,t.county,t.tract,t.lp_start,timestampdiff(second,t.lp_start,now()) as age,t.hostlock
+     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
+                                       AND g.sumlev='140' and g.pop100>0
+     WHERE lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
+
+    ("SOLs in progress",
+     """SELECT t.state,t.county,t.tract,t.sol_start,timestampdiff(second,t.sol_start,now()) as age,hostlock
+     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
+                                       AND g.sumlev='140' and g.pop100>0
+     WHERE t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
+
+    ("Number of LP files created in past hour:",
+     """select count(*) as `count` from {reident}tracts
+     WHERE unix_timestamp() - unix_timestamp(lp_end) < 3600"""),
+
+    ("Number of SOL files created in past hour:",
+     """select count(*) from {reident}tracts  as `count`
+     WHERE unix_timestamp() - unix_timestamp(sol_end) < 3600"""),
+
+    ]
+
+
+
+def get_recon_status(auth, reident=None):
     """Perform database queries regarding the current state of the reconstruction and return results as a JSON file.
     this is used for the dashboard API but can be run from the command line as well.
     :param auth: authentication token.
@@ -130,10 +163,19 @@ def get_recon_status(auth):
           'tables' - all of the tables in the database.
           'reidents' - all of the reidents
     """
-    tables =   [row[0] for row in dbfile.DBMySQL.csfr(auth, "SHOW TABLES")]
-    reidents = [table.replace(SEP_ERRORS,"") for table in tables if table.endswith(SEP_ERRORS)]
-    return {'tables':tables,
-            'reidents':reidents }
+    ret = {}
+    ret['tables'] =   [row[0] for row in dbfile.DBMySQL.csfr(auth, "SHOW TABLES")]
+    ret['queries'] = {}
+    ret['reidents'] = [table.replace(SEP_TRACTS,"") for table in ret['tables'] if table.endswith(SEP_TRACTS)]
+    if reident:
+        obj = []
+        for(name,query) in QUERIES:
+            obj.append([name, DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True,debug=True)])
+        ret['queries'][reident] = obj
+    return ret
+
+def api(auth):
+    return json.dumps(get_recon_status(auth));
 
 def get_reidents(auth):
     """Return the reidents.
@@ -307,9 +349,11 @@ def all_hosts():
 
 def do_setup(host):
     print("setup ",host)
+    import ssh_remote
     p = ssh_remote.run_command_on_host(
         host,
-        'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; cd $HOME;'
+        'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; '
+        'cd $HOME;'
         'git clone --recursive https://github.ti.census.gov/CB-DAS/das-vm-config.git ; '
         'cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ; pwd',
         pipeerror=True)
@@ -434,7 +478,7 @@ if __name__ == "__main__":
         print("\n".join(get_reidents(auth)))
         exit(0)
     if args.status:
-        ret = get_recon_status(auth)
+        ret = get_recon_status(auth, args.reident)
         print(json.dumps(ret,default=str,indent=4))
         exit(0)
 

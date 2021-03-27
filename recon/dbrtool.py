@@ -309,9 +309,9 @@ def do_setup(host):
     print("setup ",host)
     p = ssh_remote.run_command_on_host(
         host,
-        'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; '
+        'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; cd $HOME;'
         'git clone --recursive https://github.ti.census.gov/CB-DAS/das-vm-config.git ; '
-        'cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ',
+        'cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ; pwd',
         pipeerror=True)
     print(p)
 

@@ -454,6 +454,9 @@ if __name__ == "__main__":
             'export AWS_DEFAULT_REGION=us-gov-west-1;'
             'export DAS_ENVIRONMENT=ITE;'
             'export GUROBI_HOME=/usr/local/lib64/python3.6/site-packages/gurobipy;'
+            'export GRB_APP_NAME=DAS;'
+            'export GRB_LICENSE_FILE=/usr/local/lib64/python3.6/site-packages/gurobipy/gurobi_client.lic;'
+            'export GRB_ISV_NAME=Census;'
             'git checkout update-emr;git pull;git submodule init; git submodule update;'
             '$(./dbrtool.py --env);'
             '(./dbrtool.py --run --reident orig > output-$(date -Iseconds) 2>&1 </dev/null &)')

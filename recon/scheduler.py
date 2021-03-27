@@ -325,10 +325,11 @@ def run(auth):
             for (stusab,county,tract_count,pop) in make_lps:
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
-                print(f"\nLAUNCHING LP {S3_SYNTH} {stusab} {county} TRACTS: {tract_count:,} POP: {pop:,}")
-
                 stusab = stusab.lower()
-                p = prun([sys.executable,'s3_pandas_synth_lp_files.py', '--j1', str(LP_J1), '--j2', str(lp_j2), stusab, county])
+                print(f"\nLAUNCHING LP {S3_SYNTH} {stusab} {county} TRACTS: {tract_count:,} POP: {pop:,}")
+                cmd = [sys.executable,'s3_pandas_synth_lp_files.py', '--j1', str(LP_J1), '--j2', str(lp_j2), stusab, county]
+                print("$ " + " ".join(cmd))
+                p = prun(cmd)
                 running.add(p)
                 last_lp_launch = time.time()
 
@@ -361,11 +362,13 @@ def run(auth):
             if (len(solve_lps)==0 and needed_sol>0) or not quiet:
                 print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
             for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
-                print("WILL SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
+                print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
                 gurobi_threads = get_config_int('gurobi','threads')
                 dbrecon.db_lock(stusab,county,tract)
                 stusab = stusab.lower()
-                p = prun([sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract])
+                cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
+                print("$ "+" ".join(cmd))
+                p = prun(cmd)
                 running.add(p)
                 time.sleep(PYTHON_START_TIME)
                 last_sol_launch = time.time()

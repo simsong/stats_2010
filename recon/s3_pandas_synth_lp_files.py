@@ -473,13 +473,19 @@ class LPTractBuilder:
 
         # Rename the temp file to the gzfile
         # If running on S3, make sure the object exists
-        dbrecon.dwait_exists(outfilename)
+        try:
+            dbrecon.dwait_exists(outfilename)
+        except FileNotFoundError as e:
+            logging.warning("1. Will not fix database. Let s4_ discover the lp file isn't there.")
+            logging.warning("Runtime error: %s",e)
+            return
+
         dbrecon.drename(outfilename, lpfilenamegz)
         # And wait for the lpfilenamegz to exist
         try:
             dbrecon.dwait_exists(lpfilenamegz)
         except RuntimeError as e:
-            logging.warning("Will not fix database. Let s4_ discover the lp file isn't there.")
+            logging.warning("2. Will not fix database. Let s4_ discover the lp file isn't there.")
             logging.warning("Runtime error: %s",e)
         logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
 

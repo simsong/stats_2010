@@ -368,9 +368,23 @@ def do_setup(host):
         'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; '
         'cd $HOME;'
         'git clone --recursive https://github.ti.census.gov/CB-DAS/das-vm-config.git ; '
+        'ln -s das-vm-config/dbrecon/stats_2010/recon;'
         'cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ; pwd',
         pipeerror=True)
     print(p)
+
+
+def host_status(host):
+    """Print the status of host and return True if it is ready to run"""
+    lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
+    if "TASK" in lines:
+        if "scheduler.py" not in lines:
+            print("idle:",host)
+            do_launch(host)
+        else:
+            print("\tin use:", host)
+    else:
+        print("\tCORE:",host)
 
 
 def do_launch(host, *, debug=False):
@@ -418,6 +432,7 @@ if __name__ == "__main__":
     g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
     g.add_argument("--launch", help="Run --run on a specific m achine")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
+    g.add_argument("--status_all", help="report each machine status", action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -478,16 +493,14 @@ if __name__ == "__main__":
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
         for host in all_hosts():
-            """ Figure out if it is core and if scheduler is not running """
-            lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
-            if "TASK" in lines:
-                if "scheduler.py" not in lines:
-                    print("Launching on",host)
-                    do_launch(host)
-                else:
-                    print("\tin use:", host)
-            else:
-                print("\twill not launch on CORE node",host)
+            if host_status(host):
+                print("launching:",host)
+                do_launch(host)
+        exit(0)
+
+    if args.status_all:
+        for host in all_hosts():
+            host_status(host)
         exit(0)
 
     ################################################################

@@ -912,11 +912,19 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
 
 def dwait_exists(src):
     """When writing to S3, objects may not exist immediately. You can call this to wait until they do."""
-    (bucket,key) = s3.get_bucket_key(src)
-    cmd=['wait','object-exists','--bucket',bucket,'--key',key]
-    logging.info(' '.join(cmd))
-    s3.aws_s3api(cmd)
-    logging.info('dwait_exists %s returning',src)
+    if src.startswith('s3://'):
+        (bucket,key) = s3.get_bucket_key(src)
+        cmd=['wait','object-exists','--bucket',bucket,'--key',key]
+        logging.info(' '.join(cmd))
+        try:
+            s3.aws_s3api(cmd)
+        except RuntimeError as e:
+            raise FileNotFoundError(src)
+        logging.info('dwait_exists %s returning',src)
+    else:
+        if os.path.exists(src):
+            return
+        raise RuntimeError("not implemented yet to wait for unix files")
 
 def drename(src,dst):
     logging.info('drename({},{})'.format(src,dst))

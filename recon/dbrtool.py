@@ -468,6 +468,9 @@ if __name__ == "__main__":
         exit(0)
 
     if args.launch_all:
+        if not args.reident:
+            print("--launch requires --reident",file=sys.stderr)
+            exit(1)
         for host in all_hosts():
             """ Figure out if it is core and if scheduler is not running """
             lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')

@@ -378,6 +378,7 @@ class LPTractBuilder:
 
             # file exists and it is good. Note that in the database
             try:
+                print(f"checking to see if {lpfilenamegz} is propertly terminated")
                 if dbrecon.lpfile_properly_terminated(lpfilenamegz):
                     logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
                     dbrecon.db_done('lp',self.stusab, self.county, self.tract)

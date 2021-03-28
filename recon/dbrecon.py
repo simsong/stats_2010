@@ -620,11 +620,15 @@ def lpfile_properly_terminated(fname):
             last4 = f.read(4)
             return last4 in (b'End\n',b'\nEnd')
     # Otherwise, scan the file
-    with dopen(fname,'rb') as f:
-        lastline = ''
-        for line in f:
-            lastline = line
-        return b'End' in lastline
+    try:
+        with dopen(fname,'rb') as f:
+            lastline = ''
+            for line in f:
+                lastline = line
+            return b'End' in lastline
+    except AttributeError as e:
+        logging.error("e=%s",e)
+        return False
     return True
 
 def remove_lpfile(*,stusab,county,tract):

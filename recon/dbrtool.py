@@ -380,7 +380,7 @@ def do_launch(host, *, debug=False):
         'bash DAS-Bootstrap3-setup-python.sh;'
         'source /etc/profile.d/census_dash.sh;'
         'cd dbrecon/stats_2010/recon;'
-        'git pull; git submodule update;'
+        'git fetch --all; git checkout master ; git pull; git submodule update;'
         'export DAS_S3ROOT=s3://uscb-decennial-ite-das;'
         'export BCC_HTTPS_PROXY=https://proxy.ti.census.gov:3128;'
         'export BCC_HTTP_PROXY=http://proxy.ti.census.gov:3128;'

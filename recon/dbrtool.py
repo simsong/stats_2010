@@ -375,12 +375,11 @@ def do_setup(host):
 
 def do_launch(host, *, debug=False):
     cmd=(
-        'cd /mnt/gits/das-vm-config;'
-        'git checkout master;git pull;git submodule init; git submodule update;'
+        'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
+        'cd das-vm-config;'
         'bash DAS-Bootstrap3-setup-python.sh;'
-        'cd /mnt/gits/das-vm-config/dbrecon/stats_2010/recon;'
         'source /etc/profile.d/census_dash.sh;'
-        'git fetch --all; git checkout master;git pull;git submodule init; git submodule update;'
+        'cd dbrecon/stats_2010/recon;'
         'export DAS_S3ROOT=s3://uscb-decennial-ite-das;'
         'export BCC_HTTPS_PROXY=https://proxy.ti.census.gov:3128;'
         'export BCC_HTTP_PROXY=http://proxy.ti.census.gov:3128;'
@@ -480,11 +479,14 @@ if __name__ == "__main__":
         for host in all_hosts():
             """ Figure out if it is core and if scheduler is not running """
             lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
-            if "TASK" in lines and "scheduler.py" not in lines:
-                print("Launching on",host)
-                do_launch(host)
+            if "TASK" in lines:
+                if "scheduler.py" not in lines:
+                    print("Launching on",host)
+                    do_launch(host)
+                else:
+                    print("\tin use:", host)
             else:
-                print("\tin use:", host)
+                print("\twill not launch on CORE node",host)
         exit(0)
 
     ################################################################

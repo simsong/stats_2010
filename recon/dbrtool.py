@@ -190,7 +190,7 @@ def get_reidents(auth):
     :param auth: authentication token.
     :return: a list of the reidents, which is taken to be the prefix of every table with a suffix of `_errors.`
     """
-    return [row[0].replace("_errors","") for row in dbfile.DBMySQL.csfr(auth, f"SHOW TABLES LIKE '%{SEP_TRACTS}'") ]
+    return [row[0].replace("_tracts","") for row in dbfile.DBMySQL.csfr(auth, f"SHOW TABLES LIKE '%{SEP_TRACTS}'") ]
 
 
 def do_register(auth, reident):

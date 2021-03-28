@@ -133,31 +133,35 @@ def do_mysql():
 
 QUERIES = [
     ('Current Time', 'select now()'),
-    ("LP and SOL Files created/needed/total",
-     """SELECT sum(if(t.lp_end is not Null,1,0)) as lp_created,
-               sum(if(t.sol_end is not Null,1,0)) as sol_created,
-               count(*) as total
-     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
-                                       AND g.sumlev='140' and g.pop100>0"""),
+    ("LP and SOL Files created (out of 73507)",
+     """SELECT * FROM
+             (SELECT COUNT(*) as lp_created from {reident}tracts WHERE lp_end IS NOT NULL) a
+              LEFT JOIN
+             (select count(*) as sol_created from {reident}tracts WHERE sol_end IS NOT NULL) b
+         ON 1=1"""),
+
     ("LP files in progress",
-     """SELECT t.state,t.county,t.tract,t.lp_start,timestampdiff(second,t.lp_start,now()) as age,t.hostlock
+     """SELECT t.state,t.county,t.tract,t.lp_start,t.lp_host,unix_timestamp() - unix_timestamp(t.lp_start) as age,t.hostlock
      FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
                                        AND g.sumlev='140' and g.pop100>0
      WHERE lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
 
     ("SOLs in progress",
-     """SELECT t.state,t.county,t.tract,t.sol_start,timestampdiff(second,t.sol_start,now()) as age,hostlock
+     """SELECT t.state,t.county,t.tract,t.sol_start,t.sol_host,unix_timestamp() - unix_timestamp(t.sol_start) as age,hostlock
      FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
                                        AND g.sumlev='140' and g.pop100>0
      WHERE t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
 
     ("Number of LP files created in past hour:",
-     """select count(*) as `count` from {reident}tracts
-     WHERE unix_timestamp() - unix_timestamp(lp_end) < 3600"""),
+     """select count(*) as `count`,lp_host from {reident}tracts
+     WHERE unix_timestamp() - unix_timestamp(lp_end) < 3600
+     GROUP BY lp_host
+     """),
 
     ("Number of SOL files created in past hour:",
-     """select count(*) from {reident}tracts  as `count`
-     WHERE unix_timestamp() - unix_timestamp(sol_end) < 3600"""),
+     """select count(*) as `count`,sol_host FROM {reident}tracts
+     WHERE unix_timestamp() - unix_timestamp(sol_end) < 3600
+     GROUP BY sol_host"""),
 
     ]
 
@@ -173,17 +177,19 @@ def get_recon_status(auth, reident=None):
     """
     ret = {}
     ret['tables'] =   [row[0] for row in dbfile.DBMySQL.csfr(auth, "SHOW TABLES")]
-    ret['queries'] = {}
+    ret['queries'] = []
     ret['reidents'] = [table.replace(SEP_TRACTS,"") for table in ret['tables'] if table.endswith(SEP_TRACTS)]
-    if reident:
-        obj = []
+    for reident in get_reidents(auth):
+        tables = []
         for(name,query) in QUERIES:
-            obj.append([name, DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True,debug=True)])
-        ret['queries'][reident] = obj
+            column_names = []
+            rows = DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True,debug=True)
+            tables.append((name,rows))
+        ret['queries'].append((reident,tables))
     return ret
 
 def api(auth):
-    return json.dumps(get_recon_status(auth));
+    return json.dumps(get_recon_status(auth),default=str);
 
 def get_reidents(auth):
     """Return the reidents.

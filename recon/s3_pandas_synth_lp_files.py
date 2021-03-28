@@ -456,12 +456,12 @@ class LPTractBuilder:
             f.write('\n')
         f.write('End\n')
         f.close()
-        if not args.debug:
-            dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-            DBMySQL.csfr(self.auth,
-                         f"UPDATE {REIDENT}tracts SET lp_gb=%s,hostlock=NULL WHERE stusab=%s AND county=%s AND tract=%s",
-                         (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract), rowcount=1)
-            atexit.unregister(self.db_fail)
+        dbrecon.db_done('lp',self.stusab, self.county, self.tract)
+        DBMySQL.csfr(self.auth,
+                     f"UPDATE {REIDENT}tracts SET lp_gb=%s,hostlock=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+                     (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
+        # TODO: I removed "rowcount=1" from above, as it was generating intermittent fails.
+        atexit.unregister(self.db_fail)
 
         if args.debug:
             logging.info("debug completed.")

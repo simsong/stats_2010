@@ -82,6 +82,7 @@ if __name__=="__main__":
     parser.add_argument("--clean", help="Clear hostlock for this host if process is not live", action='store_true')
 
     args       = parser.parse_args()
+    auth       = dbrecon.auth()
     config     = dbrecon.setup_logging_and_get_config(args=args,prefix="06analyze")
 
     if args.clear or args.schema:
@@ -97,7 +98,7 @@ if __name__=="__main__":
         exit(0)
 
     if args.clean:
-        dbrecon.db_clean()
+        dbrecon.db_clean(auth)
         exit(0)
 
     if args.validate:

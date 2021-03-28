@@ -478,8 +478,9 @@ class LPTractBuilder:
         try:
             dbrecon.dwait_exists(lpfilenamegz)
         except RuntimeError as e:
-            print(e)
             logging.warning("Will not fix database. Let s4_ discover the lp file isn't there.")
+            logging.warning("Runtime error: %s",e)
+        logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
 
 
 # Make the tract LP files.
@@ -494,18 +495,14 @@ def build_tract_lp_tuple(tracttuple):
     try:
         lptb = LPTractBuilder(stusab, county, tract, sf1_tract_data, sf1_block_data)
         lptb.build_tract_lp()
+        logging.info("build_tract_lp_tuple completed")
     except MemoryError as e:
-        if not args.debug:
-            print("MEMORY ERROR!!!")
-            print(e)
-            cmd = f"""
-            UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
-            WHERE stusab=%s and county=%s and tract=%s
-            """
-            print(cmd)
-            auth = DBMySQLAuth.FromConfig(os.environ)
-            DBMySQL.csfr(auth,cmd, (stusab, county, tract), debug=1)
         logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
+        cmd = f"""
+        UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
+        WHERE stusab=%s and county=%s and tract=%s
+        """
+        DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
 
 """Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
 def make_state_county_files(auth, stusab, county, tractgen='all'):
@@ -519,11 +516,16 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
     logging.info(f"make_state_county_files({stusab},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
-    if args.debug:
+    if args.force:
         tracts = [tractgen]
     else:
-        rows = DBMySQL.csfr(auth,f"SELECT tract FROM {REIDENT}tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(stusab,county))
+        rows = DBMySQL.csfr(auth,
+                            f"""
+                            SELECT t.tract FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
+                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (g.sumlev='140') AND (g.pop100>0)
+                            """,(stusab,county))
         tracts_needing_lp_files = [row[0] for row in rows]
+        logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)
         if tractgen=='all':
             if len(tracts_needing_lp_files)==0:
                 logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
@@ -698,15 +700,18 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
 
     ### 2021-03-25 patch:
     ### Remove tracts not in the sf1_tract_dict and in the sf1_block_dict.
-    ### This appears to be tract 990001 and 990000 which are all water
+    ### This was a problem for the water tracts, although we now do not pull them into the 'tracts' list from the SQL.
 
-    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract]) for tract in tracts if (tract in sf1_tract_dict) and (tract in sf1_block_dict)]
+    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract])
+                   for tract in tracts
+                   if (tract in sf1_tract_dict) and (tract in sf1_block_dict)]
 
     if args.j2>1:
         with multiprocessing.Pool( args.j2 ) as p:
             p.map(build_tract_lp_tuple, tracttuples)
     else:
         list(map(build_tract_lp_tuple, tracttuples))
+    logging.info("make_state_county_files %s %s done",stusab,county)
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
@@ -724,6 +729,7 @@ if __name__=="__main__":
     parser.add_argument("--dry_run", help="don't actually write out the LP files",action='store_true')
     parser.add_argument("--debug", help="Run in debug mode. Do not update database and write output to file specified by --output",action='store_true')
     parser.add_argument("--output", help="Specify output file. Requires that a single state/county/tract be specified")
+    parser.add_argument("--force", help="Generate all tract files, even if they exist", action='store_true')
 
     parser.add_argument("state",  help="2-character state abbreviation.")
     parser.add_argument("county", help="3-digit county code")
@@ -736,10 +742,18 @@ if __name__=="__main__":
 
     assert dbrecon.dfxml_writer is not None
 
-    if args.debug and args.output is None:
-        raise RuntimeError("--debug requires --output")
+    if args.debug:
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+        logging.info("Info logging")
+        logging.debug("Debug logging")
 
-    if args.output:
+    if args.output or args.debug:
         logging.info("Memory debugging mode. Setting j1=1 and j2=1")
         args.j1 = 1
         args.j2 = 1
@@ -757,3 +771,4 @@ if __name__=="__main__":
         DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
                 (dbrecon.hostname(),os.getpid(),args.state,args.county))
         make_state_county_files(auth, args.state, args.county)
+    logging.info("s3_pandas_synth_lp_files.py finished")

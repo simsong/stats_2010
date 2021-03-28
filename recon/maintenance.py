@@ -24,7 +24,7 @@ import ctools.dbfile as dbfile
 from dbrecon import REIDENT,DB
 
 
-def fix_states():
+def fix_states(auth):
     db = dbrecon.DB()
     db.connect()
     c = db.cursor()
@@ -45,14 +45,7 @@ def fix_states():
         print("Changed:",c.rowcount)
         db.commit()
 
-def summarize():
-    env.get_census_env()
-    env.get_env( os.path.join(env.get_home(), "dbwriter.bash") )
-    auth = dbfile.DBMySQLAuth(host=os.environ['MYSQL_HOST'],
-                              database=os.environ['MYSQL_DATABASE'],
-                              user=os.environ['MYSQL_USER'],
-                              password=os.environ['MYSQL_PASSWORD'])
-
+def summarize(auth):
     dbfile.DBMySQL.csfr(auth,f"""INSERT INTO das_sysload_summary
     (t,host,ipaddr,min1_min,min1_avg,min1_max,freegb_min,freegb_avg,freegb_max,n)
     SELECT t,host,ipaddr,min1_min,min1_avg,min1_max,freegb_min,freegb_avg,freegb_max,n
@@ -77,8 +70,9 @@ if __name__=="__main__":
     parser.add_argument("--fix", action='store_true')
     args   = parser.parse_args()
     config = dbrecon.setup_logging_and_get_config(args=args,prefix="s9report")
+    auth = dbrecon.auth()
 
     if args.fix:
-        fix_states()
+        fix_states(auth)
         exit(0)
-    summarize()
+    summarize(auth)

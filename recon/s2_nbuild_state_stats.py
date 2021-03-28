@@ -342,9 +342,6 @@ if __name__=="__main__":
         print("Specify stusabs to process or --all")
         exit(1)
 
-    print("config=",config,type(config))
-    print(config['run'])
-
     if not args.j1:
         args.j1=config['run'].getint('threads',1)
 
@@ -357,4 +354,7 @@ if __name__=="__main__":
             with multiprocessing.Pool(args.j1) as p:
                 p.map(process_stusab, stusabs)
     missing_states = validate(auth,args.j1,stusabs)
-    print("Rerun for these states: "+" ".join(missing_states))
+    if missing_states:
+        print("Rerun for these states: "+" ".join(missing_states))
+    else:
+        print("step 2 Validation successful")

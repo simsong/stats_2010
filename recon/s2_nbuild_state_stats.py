@@ -20,14 +20,16 @@ import gc
 import time
 import logging
 import multiprocessing
+import random
+import re
 
-sys.path.append( os.path.join(os.path.dirname(__file__),".."))
-
+import dbrecon                  # brings in path
 from total_size import total_size
-import dbrecon
-from dbrecon import dopen,GEOFILE_FILENAME_TEMPLATE,STATE_COUNTY_FILENAME_TEMPLATE,sf1_zipfilename
-from ctools.timer import Timer
+from dbrecon import dopen,dpath_exists,GEOFILE_FILENAME_TEMPLATE,sf1_zipfilename,REIDENT
+
 import ctools.s3 as s3
+from ctools.timer import Timer
+from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 # The linkage variables, in the order they appear in the file
 SF1_LINKAGE_VARIABLES = ['FILEID','STUSAB','CHARITER','CIFSN','LOGRECNO']
@@ -105,7 +107,8 @@ class SF1SegmentReader():
             return fields
         return ['' for name in self.names]
 
-def process_state(stusab):
+def process_stusab(stusab):
+    """For a given stusab, create all of the county file SF1 extracts"""
     logging.info(f"{stusab}: building data frame with all SF1 measurements")
     with Timer() as timer:
 
@@ -205,12 +208,21 @@ def process_state(stusab):
         output_files = {}
         state_code = dbrecon.state_fips(stusab)
         for county_code in dbrecon.counties_for_state(stusab):
-            countydir = f'$ROOT/work/{stusab}/{state_code}{county_code}'
+            countydir = dbrecon.STATE_COUNTY_DIR(stusab=stusab, county=county_code)
             dbrecon.dmakedirs(countydir)
+
+            # If we are not forcing, then for each file see if it already exists. If it exists, write to /dev/null
+            def special_open(path):
+                if args.force or not dpath_exists(path):
+                    print("creating ",path)
+                    return dopen( path, 'w' )
+                return open('/dev/null', 'w' )
+
+
             output_files[county_code] = {
-                SUMLEV_COUNTY: dopen(f'{countydir}/sf1_county_{state_code}{county_code}.csv','w') ,
-                SUMLEV_BLOCK:  dopen(f'{countydir}/sf1_block_{state_code}{county_code}.csv','w') ,
-                SUMLEV_TRACT:  dopen(f'{countydir}/sf1_tract_{state_code}{county_code}.csv','w') }
+                SUMLEV_COUNTY: special_open( dbrecon.SF1_COUNTY_DATA_FILE(stusab=stusab, county=county_code)) ,
+                SUMLEV_BLOCK:  special_open( dbrecon.SF1_BLOCK_DATA_FILE(stusab=stusab, county=county_code)) ,
+                SUMLEV_TRACT:  special_open( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab, county=county_code)) }
             for f in output_files[county_code].values():
                 f.write(",".join(field_names))
                 f.write("\n")
@@ -255,18 +267,60 @@ def process_state(stusab):
             if count%1000==0:
                 logging.info("count=%d",count)
 
+def validate_proc(row):
+    (stusab,county) = row
+    stusab=stusab.lower()
+    ret = []
+    for fn in [dbrecon.SF1_COUNTY_DATA_FILE(stusab=stusab, county=county),
+               dbrecon.SF1_BLOCK_DATA_FILE(stusab=stusab, county=county),
+               dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab, county=county)]:
+        if not dpath_exists(fn):
+            ret.append(fn)
+    return ret
+
+
+def validate(auth, j1, stusab):
+    """Verify that all of the files exist for the named states"""
+
+    stusab_set = ",".join([f'"{stusab}"' for stusab in stusabs])
+    tracts = DBMySQL.csfr(auth,
+                          f"""SELECT stusab,county
+                          FROM {REIDENT}geo
+                          WHERE sumlev='050' AND pop100>0 AND stusab IN ({stusab_set})
+                          """)
+    print("validating %s tracts" % len(tracts))
+    with multiprocessing.Pool(j1) as p:
+        res = p.map(validate_proc, tracts)
+    res = [row for row in res if row!=[]]
+    missing_states = set()
+    state_re = re.compile("/work/(..)/")
+    if len(res):
+        print("Missing files:")
+        for row in res:
+            for fn in row:
+                print(fn)
+                m = state_re.search(fn)
+                missing_states.add(m.group(1)) # better not fail
+    return missing_states
+
+
+
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Create per-county county, block and tract count files from the state-level SF1 files." )
-    parser.add_argument("stusabs",nargs="*",help='Specify states to process (or type all for all)')
-    parser.add_argument("--all",action='store_true',help='All states')
-    parser.add_argument("--j1", type=int, help='Number of states to run at once (defaults to thread count in config file).')
+    parser.add_argument("stusabs",nargs="*",help='Specify stusabs to process (or type all for all)')
+    parser.add_argument("--all",action='store_true',help='All stusabs')
+    parser.add_argument("--j1", type=int,
+                        help='Number of stusabs to run at once (defaults to thread count in config file).')
+    parser.add_argument("--just_validate", action='store_true', help='Just validate the files')
+    parser.add_argument("--force", action='store_true', help="Delete every output file before creating it. Otherwise leave files if they already exist.")
     dbrecon.argparse_add_logging(parser)
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args, prefix="02bld")
     logfname = logging.getLogger().handlers[0].baseFilename
+    auth     = dbrecon.auth()
 
     if not dbrecon.dpath_exists(f"$SRC/layouts/layouts.json"):
         raise FileNotFoundError("Cannot find $SRC/layouts/layouts.json")
@@ -278,25 +332,29 @@ if __name__=="__main__":
     from dfxml.python.dfxml.writer import DFXMLWriter
     dfxml    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
 
-    states = []
+    stusabs = []
     if (args.all) or (args.stusabs == ['all']):
-        states = dbrecon.all_stusabs()
+        stusabs = dbrecon.all_stusabs()
     else:
-        states = [dbrecon.stusab(st).lower() for st in args.stusabs]
+        stusabs = [dbrecon.stusab(st).lower() for st in args.stusabs]
 
-    if not states:
-        print("Specify states to process or --all")
+    if not stusabs:
+        print("Specify stusabs to process or --all")
         exit(1)
-
-    print("config=",config,type(config))
-    print(config['run'])
 
     if not args.j1:
         args.j1=config['run'].getint('threads',1)
 
     logging.info("Running with {} threads".format(args.j1))
-    if args.j1==1:
-        [process_state(state) for state in states]
+
+    if not args.just_validate:
+        if args.j1==1:
+            [process_stusab(stusab) for stusab in stusabs]
+        else:
+            with multiprocessing.Pool(args.j1) as p:
+                p.map(process_stusab, stusabs)
+    missing_states = validate(auth,args.j1,stusabs)
+    if missing_states:
+        print("Rerun for these states: "+" ".join(missing_states))
     else:
-        with multiprocessing.Pool(args.j1) as p:
-            p.map(process_state, states)
+        print("step 2 Validation successful")

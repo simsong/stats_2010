@@ -446,6 +446,11 @@ def SOLDIR(*,stusab,county):
 def SF1_ZIP_FILE(*,stusab):
     return dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip".format(stusab=stusab))
 
+def SF1_COUNTY_DATA_FILE(*,stusab,county):
+    state_code = state_fips(stusab)
+    sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,stusab=stusab)
+    return dpath_expand(f'{sf1_dir}/sf1_county_{state_code}{county}.csv')
+
 def SF1_BLOCK_DATA_FILE(*,stusab,county):
     state_code = state_fips(stusab)
     sf1_dir    = SF1_DIR.format(state_code=state_code,county=county,stusab=stusab)
@@ -494,9 +499,15 @@ def sf1_zipfilename(stusab):
     sf1_path = dpath_expand(f"$SF1_DIST/{stusab}2010.sf1.zip")
     if sf1_path.startswith("s3://"):
         local_path = "/tmp/" + sf1_path.replace("/","_")
-        if not os.path.exists(local_path):
-            (bucket,key) = s3.get_bucket_key(sf1_path)
+
+        # if the file doesn't exist or if it exists and is the wrong size, download it
+        (bucket,key) = s3.get_bucket_key(sf1_path)
+        if not os.path.exists(local_path) or s3.getsize(bucket,key)!=os.path.getsize(local_path):
             logging.warning(f"Downloading {sf1_path} to {local_path}")
+            try:
+                os.unlink(local_path)
+            except FileNotFoundError:
+                pass
             s3.get_object(bucket, key, local_path)
         return local_path
     return sf1_path
@@ -901,6 +912,7 @@ def dwait_exists(src):
     cmd=['wait','object-exists','--bucket',bucket,'--key',key]
     logging.info(' '.join(cmd))
     s3.aws_s3api(cmd)
+    logging.info('dwait_exists %s returning',src)
 
 def drename(src,dst):
     logging.info('drename({},{})'.format(src,dst))

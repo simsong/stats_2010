@@ -478,8 +478,9 @@ class LPTractBuilder:
         try:
             dbrecon.dwait_exists(lpfilenamegz)
         except RuntimeError as e:
-            print(e)
             logging.warning("Will not fix database. Let s4_ discover the lp file isn't there.")
+            logging.warning("Runtime error: %s",e)
+        logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
 
 
 # Make the tract LP files.
@@ -494,18 +495,14 @@ def build_tract_lp_tuple(tracttuple):
     try:
         lptb = LPTractBuilder(stusab, county, tract, sf1_tract_data, sf1_block_data)
         lptb.build_tract_lp()
+        logging.info("build_tract_lp_tuple completed")
     except MemoryError as e:
-        if not args.debug:
-            print("MEMORY ERROR!!!")
-            print(e)
-            cmd = f"""
-            UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
-            WHERE stusab=%s and county=%s and tract=%s
-            """
-            print(cmd)
-            auth = DBMySQLAuth.FromConfig(os.environ)
-            DBMySQL.csfr(auth,cmd, (stusab, county, tract), debug=1)
         logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
+        cmd = f"""
+        UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
+        WHERE stusab=%s and county=%s and tract=%s
+        """
+        DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
 
 """Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
 def make_state_county_files(auth, stusab, county, tractgen='all'):
@@ -714,6 +711,7 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
             p.map(build_tract_lp_tuple, tracttuples)
     else:
         list(map(build_tract_lp_tuple, tracttuples))
+    logging.info("make_state_county_files %s %s done",stusab,county)
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
@@ -751,7 +749,7 @@ if __name__=="__main__":
         handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
-        root.addHandler(handler)        
+        root.addHandler(handler)
         logging.info("Info logging")
         logging.debug("Debug logging")
 
@@ -773,3 +771,4 @@ if __name__=="__main__":
         DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
                 (dbrecon.hostname(),os.getpid(),args.state,args.county))
         make_state_county_files(auth, args.state, args.county)
+    logging.info("s3_pandas_synth_lp_files.py finished")

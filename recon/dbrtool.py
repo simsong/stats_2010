@@ -49,9 +49,18 @@ MY_DIR=dirname(abspath(__file__))
 if MY_DIR not in sys.path:
     sys.path.append(MY_DIR)
 
+# Import ssh_remote if we can get it. If we cannot, we won't be able to run commands on remote host
+try:
+    import ssh_remote
+    import kms as kms
+except ImportError:
+    logging.warning("ssh_remote and kms not available")
+
+
+
 import dbrecon
 import constants
-import dbrecon
+
 import ctools.s3
 import ctools.dbfile as dbfile
 from ctools.dbfile import DBMySQL
@@ -95,7 +104,6 @@ def sf1_zipfile_name(reident, stusab):
 def get_mysql_env():
     """Return a dictionary of the encrypted MySQL information in the dbrecon_config_encrypted.json.ITE file"""
     # pylint: disable=E0401
-    import kms as kms
     return kms.get_encrypted_json_file( os.path.join( dirname(__file__), ENCRYPTED_CONFIG))[os.getenv('DAS_ENVIRONMENT')]
 
 def put_mysql_env():
@@ -187,13 +195,13 @@ def get_reidents(auth):
     :param auth: authentication token.
     :return: a list of the reidents, which is taken to be the prefix of every table with a suffix of `_errors.`
     """
-    return [row[0].replace("_errors","") for row in dbfile.DBMySQL.csfr(auth, f"SHOW TABLES LIKE '%{SEP_ERRORS}'") ]
+    return [row[0].replace("_tracts","") for row in dbfile.DBMySQL.csfr(auth, f"SHOW TABLES LIKE '%{SEP_TRACTS}'") ]
 
 
 def do_register(auth, reident):
     """Create a new database with reident as a prefix."""
     db = dbfile.DBMySQL(auth)
-    tables = db.execselect(f"SHOW TABLES LIKE '{reident}{SEP_ERRORS}'")
+    tables = db.execselect(f"SHOW TABLES LIKE '{reident}{SEP_TRACTS}'")
     if tables:
         raise ValueError(f"{reident} already exists")
 
@@ -354,7 +362,6 @@ def all_hosts():
 
 def do_setup(host):
     print("setup ",host)
-    import ssh_remote
     p = ssh_remote.run_command_on_host(
         host,
         'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; '
@@ -383,6 +390,8 @@ if __name__ == "__main__":
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
     g.add_argument("--run_desc", help="Run the scheduler, largest tracts first",action='store_true')
     g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
+    g.add_argument("--launch", help="Run --run on a specific m achine")
+    g.add_argument("--launch_all", help="Run --run on every machine", action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -429,6 +438,35 @@ if __name__ == "__main__":
                 print(host, uptime[0])
             else:
                 print(host, "NO OBVIOUS UPTIME")
+        exit(0)
+
+    #if args.launch_all:
+
+
+    if args.launch:
+        if not args.reident:
+            print("--launch requires --reident",file=sys.stderr)
+            exit(1)
+        cmd=(
+            'cd /mnt/gits/das-vm-config;'
+            'git checkout master;git pull;git submodule init; git submodule update;'
+            'bash DAS-Bootstrap3-setup-python.sh;'
+            'cd /mnt/gits/das-vm-config/dbrecon/stats_2010/recon;'
+            'source /etc/profile.d/census_dash.sh;'
+            'export DAS_S3ROOT=s3://uscb-decennial-ite-das;'
+            'export BCC_HTTPS_PROXY=https://proxy.ti.census.gov:3128;'
+            'export BCC_HTTP_PROXY=http://proxy.ti.census.gov:3128;'
+            'export AWS_DEFAULT_REGION=us-gov-west-1;'
+            'export DAS_ENVIRONMENT=ITE;'
+            'export GUROBI_HOME=/usr/local/lib64/python3.6/site-packages/gurobipy;'
+            'export GRB_APP_NAME=DAS;'
+            'export GRB_LICENSE_FILE=/usr/local/lib64/python3.6/site-packages/gurobipy/gurobi_client.lic;'
+            'export GRB_ISV_NAME=Census;'
+            'git checkout update-emr;git pull;git submodule init; git submodule update;'
+            '$(./dbrtool.py --env);'
+            '(./dbrtool.py --run --reident orig > output-$(date -Iseconds) 2>&1 </dev/null &)')
+        out = ssh_remote.run_command_on_host(args.launch,cmd, pipeerror=True)
+        print(out)
         exit(0)
 
     ################################################################

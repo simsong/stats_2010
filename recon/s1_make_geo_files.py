@@ -15,7 +15,6 @@ import json
 import csv
 import collections
 import sys
-import dbrecon
 import logging
 import time
 import os
@@ -23,6 +22,8 @@ import io
 import multiprocessing
 import zipfile
 import random
+
+import dbrecon                  # brings in path
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 sys.path.append( os.path.join(os.path.dirname(__file__),".."))
@@ -197,3 +198,4 @@ if __name__=="__main__":
         p.map(make_county_list, stusabs)
 
     print("Made geofiles for: {}".format(" ".join(stusabs)))
+    #validate(dbrecon.(), args.j1, stusabs)

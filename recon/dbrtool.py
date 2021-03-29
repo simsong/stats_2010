@@ -388,6 +388,38 @@ def host_status(host,*, idle_message=""):
     return False
 
 
+def uptime_host(host):
+    lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
+    uptime = [line for line in lines if 'load average' in line]
+    if uptime:
+        print(host, uptime[0])
+    else:
+        print(host, "NO OBVIOUS UPTIME")
+
+
+def launch_if_needed(host):
+    if host_status(host,idle_message='LAUNCHING') or args.force:
+        do_launch(host, desc=args.desc, reident=args.reident)
+
+def fast_all(callback):
+    """Run the callback on every machine, with the parameter being the hostname, each in their own process."""
+    procs = []
+    for host in all_hosts():
+        p = os.fork()
+        if p==0:
+            callback(host)
+            exit(0)
+        elif p>0:
+            procs.append(p)
+        else:
+            raise RuntimeError("fork")
+        if len(procs) == args.limit:
+            print("Limit reached.",file=sys.stderr)
+            break
+    for p in procs:
+        os.waitpid(p,0)
+
+
 def do_launch(host, *, debug=False, desc=False, reident):
     print(">launch ",host)
     cmd=(
@@ -420,7 +452,6 @@ def do_launch(host, *, debug=False, desc=False, reident):
             print(out)
         else:
             exit(0)
-
 
 
 if __name__ == "__main__":
@@ -484,13 +515,7 @@ if __name__ == "__main__":
         exit(0)
 
     if args.uptime_all:
-        for host in all_hosts():
-            lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
-            uptime = [line for line in lines if 'load average' in line]
-            if uptime:
-                print(host, uptime[0])
-            else:
-                print(host, "NO OBVIOUS UPTIME")
+        fast_all(uptime_host)
         exit(0)
 
     if args.launch:
@@ -505,28 +530,11 @@ if __name__ == "__main__":
         if not args.reident:
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
-        for host in all_hosts():
-            if host_status(host,idle_message='LAUNCHING') or args.force:
-                do_launch(host, desc=args.desc, reident=args.reident)
-                args.limit -= 1
-                if args.limit==0:
-                    print("limit reached.")
-                    break
+        fast_all(launch_if_needed)
         exit(0)
 
     if args.status_all:
-        procs = []
-        for host in all_hosts():
-            p = os.fork()
-            if p==0:
-                host_status(host)
-                exit(0)
-            elif p>0:
-                procs.append(p)
-            else:
-                raise RuntimeError("fork")
-        for p in procs:
-            os.waitpid(p,0)
+        fast_all(host_status)
         exit(0)
 
     ################################################################

@@ -374,20 +374,21 @@ def do_setup(host):
     print(p)
 
 
-def host_status(host):
+def host_status(host,*, idle_message=""):
     """Print the status of host and return True if it is ready to run"""
     lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
     if "TASK" in lines:
         if "scheduler.py" not in lines:
-            print("idle:",host)
-            do_launch(host)
+            print("idle:",host, idle_message)
+            return True
         else:
             print("\tin use:", host)
     else:
         print("\tCORE:",host)
+    return False
 
 
-def do_launch(host, *, debug=False):
+def do_launch(host, *, debug=False, desc=False, reident):
     cmd=(
         'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
         'cd das-vm-config;'
@@ -404,8 +405,11 @@ def do_launch(host, *, debug=False):
         'export GRB_APP_NAME=DAS;'
         'export GRB_LICENSE_FILE=/usr/local/lib64/python3.6/site-packages/gurobipy/gurobi_client.lic;'
         'export GRB_ISV_NAME=Census;'
+        "kill $(ps auxww | grep drbtool.py | grep -v grep | awk '{print $2;}');"
         '$(./dbrtool.py --env);'
-        '(./dbrtool.py --run --reident orig > output-$(date -Iseconds) 2>&1 </dev/null &)')
+        f'(./dbrtool.py --run --reident {reident} > output-$(date -Iseconds) 2>&1 </dev/null &)')
+    if desc:
+        cmd = cmd.replace("--run","--run --desc ")
     out = ssh_remote.run_command_on_host(host, cmd, pipeerror=True)
     if debug:
         print(out)
@@ -428,7 +432,6 @@ if __name__ == "__main__":
     g.add_argument("--run", help="Run the scheduler",action='store_true')
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
-    g.add_argument("--run_desc", help="Run the scheduler, largest tracts first",action='store_true')
     g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
     g.add_argument("--launch", help="Run --run on a specific m achine")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
@@ -444,9 +447,11 @@ if __name__ == "__main__":
     parser.add_argument("--county", help="required for step3 and step4")
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
     parser.add_argument('--debug', action='store_true', help='debug all SQL')
-    parser.add_argument('--force', action='store_true', help='delete output files if they exist')
+    parser.add_argument('--force', action='store_true', help='delete output files if they exist, and force launching on all clusters')
     parser.add_argument('--nodes', help='Show YARN nodes', action='store_true')
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
+    parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
+    parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
     args = parser.parse_args()
 
     if args.env:
@@ -485,7 +490,7 @@ if __name__ == "__main__":
         if not args.reident:
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
-        do_launch(args.launch, debug=True)
+        do_launch(args.launch, debug=True, desc=args.desc, reident=args.reident)
         exit(0)
 
     if args.launch_all:
@@ -493,9 +498,12 @@ if __name__ == "__main__":
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
         for host in all_hosts():
-            if host_status(host):
-                print("launching:",host)
-                do_launch(host)
+            if host_status(host,idle_message='LAUNCHING') or args.force:
+                do_launch(host, desc=args.desc, reident=args.reident)
+                args.limit -= 1
+                if args.limit==0:
+                    print("limit reached.")
+                    break
         exit(0)
 
     if args.status_all:
@@ -553,13 +561,13 @@ if __name__ == "__main__":
     elif args.ls:
         root = os.path.join(os.getenv('DAS_S3ROOT'),'2010-re',args.reident,'work',args.stusab)
         run(['aws','s3','ls','--recursive',root])
-    elif (args.run or args.run_desc):
+    elif args.run:
         cmd = [sys.executable,'scheduler.py']
         if args.stusab:
             cmd.extend(['--stusab',args.stusab])
         if args.county:
             cmd.extend(['--county',args.county])
-        if args.run_desc:
+        if args.desc:
             cmd.extend(['--desc','--maxlp','1','--nosol'])
         run(cmd)
 

@@ -34,7 +34,8 @@ class InfeasibleError(RuntimeError):
 # How many threads to use
 GUROBI_THREADS_DEFAULT=16
 # The model variables we track
-MODEL_ATTRS="NumVars,NumConstrs,NumNZs,NumIntVars,MIPGap,Runtime,IterCount,BarIterCount,isMIP".split(",")
+MODEL_ATTRS="NumVars,NumConstrs,NumNZs,NumIntVars,Runtime,IterCount,BarIterCount,isMIP".split(",")
+# Previously had MIPGap but it was sometimes inf
 
 """Run gurobi with a given LP file.
 Note: automatically handles the case where lpfile is compressed by decompressing

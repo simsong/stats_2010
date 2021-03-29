@@ -929,12 +929,15 @@ def dwait_exists(src):
 def drename(src,dst):
     logging.info('drename({},{})'.format(src,dst))
     if src.startswith('s3://') and dst.startswith('s3://'):
-        (src_bucket, src_key) = s3.get_bucket_key(src)
-        (dst_bucket, dst_key) = s3.get_bucket_key(dst)
-        s3r = boto3.resource('s3')
-        s3r.Object(dst_bucket,dst_key).copy_from(CopySource=src_bucket + '/' + src_key)
-        s3r.Object(src_bucket, src_key).delete()
-        return
+        try:
+            (src_bucket, src_key) = s3.get_bucket_key(src)
+            (dst_bucket, dst_key) = s3.get_bucket_key(dst)
+            s3r = boto3.resource('s3')
+            s3r.Object(dst_bucket,dst_key).copy_from(CopySource=src_bucket + '/' + src_key)
+            s3r.Object(src_bucket, src_key).delete()
+            return
+        except botocore.errorfactory.NoSuchKey as e:
+            raise FileNotFoundError(src)
 
     if src.startswith('s3://') or dst.startswith('s3://'):
         raise RuntimeError('drename does not implement renaming local file to S3')

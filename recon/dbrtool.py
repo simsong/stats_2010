@@ -407,13 +407,18 @@ def do_launch(host, *, debug=False, desc=False, reident):
         'export GRB_LICENSE_FILE=/usr/local/lib64/python3.6/site-packages/gurobipy/gurobi_client.lic;'
         'export GRB_ISV_NAME=Census;'
         "kill $(ps auxww | grep drbtool.py | grep -v grep | awk '{print $2;}');"
+        "kill $(ps auxww | grep scheduler.py | grep -v grep | awk '{print $2;}');"
         '$(./dbrtool.py --env);'
         f'(./dbrtool.py --run --reident {reident} > output-$(date -Iseconds) 2>&1 </dev/null &)')
     if desc:
         cmd = cmd.replace("--run","--run --desc ")
-    out = ssh_remote.run_command_on_host(host, cmd, pipeerror=True)
-    if debug:
-        print(out)
+    # Run this in the background
+    if debug or os.fork()==0:
+        out = ssh_remote.run_command_on_host(host, cmd, pipeerror=True)
+        if debug:
+            print(out)
+        else:
+            exit(0)
 
 
 
@@ -492,7 +497,7 @@ if __name__ == "__main__":
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
         for host in args.launch.split(','):
-            do_launch(args.launch, debug=True, desc=args.desc, reident=args.reident)
+            do_launch(host, debug=args.debug, desc=args.desc, reident=args.reident)
         exit(0)
 
     if args.launch_all:

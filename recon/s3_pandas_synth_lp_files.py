@@ -480,12 +480,17 @@ class LPTractBuilder:
             logging.warning("Runtime error: %s",e)
             return
 
-        dbrecon.drename(outfilename, lpfilenamegz)
+        try:
+            dbrecon.drename(outfilename, lpfilenamegz)
+        except FileNotFoundError as e:
+            logging.warning("2. drename failed on %s->%s",outfilename,lpfilenamegz)
+            logging.warning("Runtime error: %s",e)
+            return
         # And wait for the lpfilenamegz to exist
         try:
             dbrecon.dwait_exists(lpfilenamegz)
         except RuntimeError as e:
-            logging.warning("2. Will not fix database. Let s4_ discover the lp file isn't there.")
+            logging.warning("3. Will not fix database. Let s4_ discover the lp file isn't there.")
             logging.warning("Runtime error: %s",e)
         logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
 

@@ -392,6 +392,7 @@ def do_launch(host, *, debug=False, desc=False, reident):
     print(">launch ",host)
     cmd=(
         'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
+        'ln -s das-vm-config/dbrecon/stats_2010/recon;'
         'cd das-vm-config;'
         'bash DAS-Bootstrap3-setup-python.sh;'
         'source /etc/profile.d/census_dash.sh;'

@@ -183,7 +183,7 @@ def get_recon_status(auth, reident=None):
         tables = []
         for(name,query) in QUERIES:
             column_names = []
-            rows = DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True,debug=True)
+            rows = DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True)
             tables.append((name,rows))
         ret['queries'].append((reident,tables))
     return ret

@@ -62,6 +62,8 @@ CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be chang
 S3ZPUT  = os.path.join( MY_DIR, 's3zput') # script that uploads a file to s3 with compression
 S3ZCAT  = os.path.join( MY_DIR, 's3zcat') # script that downloads and decompresses a file from s3
 ZCAT    = 'zcat'                          # regular zcat program
+GZIP    = 'gzip'                # compressor
+GZIP_OPT = '-1f'                # compression options
 
 
 ##
@@ -515,6 +517,7 @@ def sf1_zipfilename(stusab):
 
 
 def auth():
+    """Returns a new, clean database connection for ctools.dbfile"""
     return DBMySQLAuth.FromConfig(os.environ)
 
 

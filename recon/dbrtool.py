@@ -264,10 +264,11 @@ def do_register(auth, reident):
     db.create_schema(new_schema.getvalue())
 
 
-def run(cmd):
+def run(cmd, check=True):
+    """Run a command. Stdout gets piped through"""
     print()
     print("$ " + " ".join(cmd))
-    subprocess.run(cmd, cwd=RECON_DIR, check=True)
+    subprocess.run(cmd, cwd=RECON_DIR, check=check)
 
 def do_step1(auth, reident, state, *, force=False):
     print(f"Step 1 - s1_make_geo_files.py")
@@ -420,6 +421,14 @@ def fast_all(callback):
         os.waitpid(p,0)
 
 
+def show_file(path):
+    if path.startswith('s3://'):
+        cmd = ['aws','s3','ls',path]
+    else:
+        cmd = ['ls','-l',path]
+    run(cmd, check=False)
+
+
 def do_launch(host, *, debug=False, desc=False, reident):
     print(">launch ",host)
     cmd=(
@@ -464,7 +473,7 @@ if __name__ == "__main__":
     g.add_argument("--status", action='store_true', help='Print stats about the current runs')
     g.add_argument("--register", action='store_true', help="register a new REIDENT for database reconstruction.")
     g.add_argument("--drop", action='store_true', help="drop a REIDENT from database")
-    g.add_argument("--show", action='store_true', help="Show all reidents in database")
+    g.add_argument("--show", action='store_true', help="Show everything known about reisdents, and optionally a stusab, county, tract")
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
     g.add_argument("--run", help="Run the scheduler",action='store_true')
@@ -474,6 +483,7 @@ if __name__ == "__main__":
     g.add_argument("--launch", help="Run --run on a specific machine(s) (sep by comma)")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
     g.add_argument("--status_all", help="report each machine status", action='store_true')
+    g.add_argument("--resize", help="Resize cluster", type=int)
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -537,16 +547,21 @@ if __name__ == "__main__":
         fast_all(host_status)
         exit(0)
 
+    if args.resize:
+        confirm = input(f"Resize cluster to {args.resize} nodes?").strip()
+        if confirm[0:1]=='y':
+            subprocess.check_call([sys.executable,'/mnt/gits/das-vm-config/das_decennial/programs/emr_control.py','--task',str(args.resize)])
+        exit(0)
+
+
+
     ################################################################
     # Everything after here needs mysql
 
     if 'MYSQL_HOST' not in os.environ:
         logging.warning('MYSQL_HOST is not in your environment!')
-        logging.warning('Next time, please  run $(./dbrtool.py --env) to create the environment variables')
-        logging.warning('starting sub-shell with environment variables set')
-        for(k,v) in get_mysql_env().items():
-            os.environ[k] = v
-        os.execlp(os.getenv('SHELL'),os.getenv('SHELL'))
+        logging.warning('Please  run $(./dbrtool.py --env)')
+        exit(0)
 
 
     if args.mysql:
@@ -558,7 +573,29 @@ if __name__ == "__main__":
         logging.getLogger().setLevel(logging.INFO)
 
     if args.show:
-        print("\n".join(get_reidents(auth)))
+        print("reidents:")
+        reidents = get_reidents(auth)
+        print("\n".join(reidents))
+        if args.stusab and args.county and args.tract:
+            if args.reident:
+                reidents = [args.reident]
+            for reident in reidents:
+                print(f"\n================ {reident} ================")
+                dbrecon.set_reident(reident)
+                print(f"reident: {reident} {args.stusab} {args.county} {args.tract}")
+                for fname in [dbrecon.LPFILENAMEGZ( stusab=args.stusab,county=args.county,tract=args.tract),
+                              dbrecon.SOLFILENAMEGZ(stusab=args.stusab,county=args.county,tract=args.tract)]:
+                    show_file(fname)
+                    print()
+                print("Database:")
+                rows = DBMySQL.csfr(auth,f"select * from {reident}_tracts where stusab=%s and county=%s and tract=%s",
+                               (args.stusab,args.county,args.tract),asDicts=True)
+                for row in rows:
+                    for (k,v) in row.items():
+                        print(f"{k:15} {v}")
+
+
+
         exit(0)
     if args.status:
         ret = get_recon_status(auth, args.reident)

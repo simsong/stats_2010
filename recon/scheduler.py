@@ -451,11 +451,11 @@ if __name__=="__main__":
                              "next work if the CPU load and memory use is not too high." )
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
-    parser.add_argument("--rescan", help="scan all of the files and update the database if we find any missing LP or Solution files",
-                        action='store_true')
     parser.add_argument("--clean",   help="Look for .lp and .sol files that are too slow and delete them, then remove them from the database", action='store_true')
     parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
     parser.add_argument("--maxlp",  help="Never run more than this many LP makers", type=int, default=999)
+    parser.add_argument("--rescan", help="scan all of the files and update the database if we find any missing LP or Solution files",
+                        action='store_true')
     parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
     parser.add_argument("--none_running", help="Run if there are no outstanding LP files being built or Solutions being solved; clears them from database",
                         action='store_true')
@@ -464,7 +464,7 @@ if __name__=="__main__":
     parser.add_argument("--dry_run", help="Just report what the next thing to run would be, then quit", action='store_true')
     parser.add_argument("--stusab", help="stusab for rescanning")
     parser.add_argument("--county", help="county for rescanning")
-    parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
+    parser.add_argument("--desc", action='store_true', help="Make LP files for the most populus tracts first, otherwise do least populus tracts first")
 
     args   = parser.parse_args()
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
@@ -481,13 +481,10 @@ if __name__=="__main__":
     elif args.clean:
         clean(auth)
     elif args.none_running:
-        get_lock()
         none_running(auth,HOSTNAME)
     elif args.none_running_anywhere:
-        get_lock()
         none_running(auth, None)
     else:
-        get_lock()
         scan_s3_s4()
         none_running(auth,HOSTNAME)
         run(auth)

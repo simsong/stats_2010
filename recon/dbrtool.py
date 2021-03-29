@@ -389,6 +389,7 @@ def host_status(host,*, idle_message=""):
 
 
 def do_launch(host, *, debug=False, desc=False, reident):
+    print(">launch ",host)
     cmd=(
         'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
         'cd das-vm-config;'
@@ -433,7 +434,7 @@ if __name__ == "__main__":
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
     g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
-    g.add_argument("--launch", help="Run --run on a specific m achine")
+    g.add_argument("--launch", help="Run --run on a specific machine(s) (sep by comma)")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
     g.add_argument("--status_all", help="report each machine status", action='store_true')
 
@@ -490,7 +491,8 @@ if __name__ == "__main__":
         if not args.reident:
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
-        do_launch(args.launch, debug=True, desc=args.desc, reident=args.reident)
+        for host in args.launch.split(','):
+            do_launch(args.launch, debug=True, desc=args.desc, reident=args.reident)
         exit(0)
 
     if args.launch_all:

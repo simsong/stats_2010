@@ -132,8 +132,8 @@ def do_mysql():
     os.execlp(*cmd)
 
 QUERIES = [
-    ('Current Time', 'select now()'),
-    ("LP and SOL Files created (out of 73507)",
+    ('Current Time', 'SELECT now()'),
+    ("LP and SOL Files created and remaining",
      """SELECT * FROM
              (SELECT COUNT(*) as lp_created from {reident}tracts WHERE lp_end IS NOT NULL) a
               LEFT JOIN
@@ -141,26 +141,26 @@ QUERIES = [
          ON 1=1"""),
 
     ("LP files in progress",
-     """SELECT t.state,t.county,t.tract,t.lp_start,t.lp_host,unix_timestamp() - unix_timestamp(t.lp_start) as age,t.hostlock
+     """SELECT t.stusab,t.county,t.tract,t.lp_start,t.lp_host,timediff(t.lp_start,now()) as age,t.hostlock
      FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
                                        AND g.sumlev='140' and g.pop100>0
      WHERE lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
 
     ("SOLs in progress",
-     """SELECT t.state,t.county,t.tract,t.sol_start,t.sol_host,unix_timestamp() - unix_timestamp(t.sol_start) as age,hostlock
+     """SELECT t.stusab,t.county,t.tract,t.sol_start,t.sol_host,timediff(t.sol_start,now()) as age,hostlock
      FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
                                        AND g.sumlev='140' and g.pop100>0
      WHERE t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
 
     ("Number of LP files created in past hour:",
      """select count(*) as `count`,lp_host from {reident}tracts
-     WHERE unix_timestamp() - unix_timestamp(lp_end) < 3600
+     WHERE timediff(lp_end,now()) < "01:00:00"
      GROUP BY lp_host
      """),
 
     ("Number of SOL files created in past hour:",
      """select count(*) as `count`,sol_host FROM {reident}tracts
-     WHERE unix_timestamp() - unix_timestamp(sol_end) < 3600
+     WHERE timediff(sol_end,now()) < "01:00:00"
      GROUP BY sol_host"""),
 
     ]

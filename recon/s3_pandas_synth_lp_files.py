@@ -360,31 +360,22 @@ class LPTractBuilder:
 
         state_code    = dbrecon.state_fips(self.stusab)
         geo_id        = self.sf1_tract_data[0][GEOID]
-        lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
-        use_s3        = lpfilenamegz.startswith("s3://")
-        tmpgzfilename = lpfilenamegz.replace(".gz",".tmp.gz")
         if args.output:
             outfilename = args.output
         else:
-            outfilename   = tmpgzfilename
-            lpfileexists  = dbrecon.dpath_exists(lpfilenamegz)
+            lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
 
-            if dbrecon.is_db_done('lp',self.stusab, self.county, self.tract):
-                logging.warning(f"note: LP file exists in database: {self.stusab}{self.county}{self.tract}  exists in file system: {lpfileexists}; "
-                                "will not create another one.")
+            # Check to see if file is already finished.
+            if dbrecon.lpfile_properly_terminated(lpfilenamegz):
+                logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
+                dbrecon.db_done('lp',self.stusab, self.county, self.tract)
                 return
-            lpdir      = LPDIR(stusab=self.stusab,county=self.county)
-            dmakedirs(lpdir)
 
-            # file exists and it is good. Note that in the database
-            try:
-                if dbrecon.lpfile_properly_terminated(lpfilenamegz):
-                    logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
-                    dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-                    return
-            except FileNotFoundError as e:
-                # Intentional fall through
-                pass
+            # If outputting to S3, make the output file a named temp
+            if lpfilenamegz.startswith('s3://'):
+                outfilename = tempfile.NamedTemporaryFile(suffix='.gz',delete=False).name
+            else:
+                outfilename = lpfilenamegz.replace(".gz",".tmp.gz")
 
 
         t0         = time.time()
@@ -456,11 +447,19 @@ class LPTractBuilder:
             f.write('\n')
         f.write('End\n')
         f.close()
-        dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-        DBMySQL.csfr(self.auth,
-                     f"UPDATE {REIDENT}tracts SET lp_gb=%s,hostlock=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+
+
+        # if we were just asked to create the output file, notify of that and return
+        if args.outfile:
+            logging.info("%s created",args.outfile)
+            return
+
+        # otherwise, rename the file (which may upload it to s3), and update the databse
+        dbrecon.drename(outfilename, lpfilenamegz)
+        dbrecon.db_done('lp', self.stusab, self.county, self.tract)
+        DBMySQL.csfr(self.auth, f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
                      (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
-        # TODO: I removed "rowcount=1" from above, as it was generating intermittent fails.
+
         atexit.unregister(self.db_fail)
 
         if args.debug:
@@ -470,16 +469,6 @@ class LPTractBuilder:
             dbrecon.add_dfxml_tag('synth_lp_files','', {'success':'1'})
             exit(0)
 
-        # Rename the temp file to the gzfile
-        # If running on S3, make sure the object exists
-        dbrecon.dwait_exists(outfilename)
-        dbrecon.drename(outfilename, lpfilenamegz)
-        # And wait for the lpfilenamegz to exist
-        try:
-            dbrecon.dwait_exists(lpfilenamegz)
-        except RuntimeError as e:
-            logging.warning("Will not fix database. Let s4_ discover the lp file isn't there.")
-            logging.warning("Runtime error: %s",e)
         logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
 
 

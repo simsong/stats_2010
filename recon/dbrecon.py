@@ -59,8 +59,9 @@ SRC_DIRECTORY   = os.path.dirname( os.path.abspath(__file__))
 CONFIG_FILENAME = "config.ini"
 CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
 
-S3ZPUT  = os.path.join(MY_DIR, 's3zput') # script that uploads a file to s3 with compression
+S3ZPUT  = os.path.join( MY_DIR, 's3zput') # script that uploads a file to s3 with compression
 S3ZCAT  = os.path.join( MY_DIR, 's3zcat') # script that downloads and decompresses a file from s3
+ZCAT    = 'zcat'                          # regular zcat program
 
 
 ##
@@ -845,8 +846,12 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     """An open function that can open from S3 and from inside of zipfiles.
     Don't use this for new projects; use ctools.dconfig.dopen instead"""
     logging.info("  dopen('{}','{}','{}', zipfilename={})".format(path,mode,encoding,zipfilename))
-    path = dpath_expand(path)
 
+    # If we are writing but not writing to S3, make sure the directory exists
+    if mode[0]=='w' and path[0:5]!='s3://':
+        dmakedirs(path)
+
+    path = dpath_expand(path)
     # immediate passthrough if zipfilename is None and s3 is requested
     if path[0:5]=='s3://' and zipfilename is None:
         if mode.startswith('r') and not s3.s3exists(path):
@@ -915,17 +920,33 @@ def dwait_exists(src):
     logging.info('dwait_exists %s returning',src)
 
 def drename(src,dst):
-    logging.info('drename({},{})'.format(src,dst))
+    logging.info('drename(%s -> %s)',src,dst)
     if src.startswith('s3://') and dst.startswith('s3://'):
-        (src_bucket, src_key) = s3.get_bucket_key(src)
-        (dst_bucket, dst_key) = s3.get_bucket_key(dst)
-        s3r = boto3.resource('s3')
-        s3r.Object(dst_bucket,dst_key).copy_from(CopySource=src_bucket + '/' + src_key)
-        s3r.Object(src_bucket, src_key).delete()
-        return
+        try:
+            (src_bucket, src_key) = s3.get_bucket_key(src)
+            (dst_bucket, dst_key) = s3.get_bucket_key(dst)
+            s3r = boto3.resource('s3')
+            s3r.Object(dst_bucket,dst_key).copy_from(CopySource=src_bucket + '/' + src_key)
+            s3r.Object(src_bucket, src_key).delete()
+            return
+        except botocore.errorfactory.NoSuchKey as e:
+            raise FileNotFoundError(src)
+    if src.startswith('s3://'):
+        raise RuntimeError("Have not implemented drename from s3->local file")
 
-    if src.startswith('s3://') or dst.startswith('s3://'):
-        raise RuntimeError('drename does not implement renaming local file to S3')
+    if dst.startswith('s3://'):
+        (dst_bucket, dst_key) = s3.get_bucket_key(dst)
+        with open(src,'rb') as f:
+            err_hold = None
+            for retry in range(1,4):
+                try:
+                    boto3.client('s3').upload_fileobj(f, dst_bucket, dst_key)
+                    return
+                except botocore.exceptions.ClientError as err:
+                    logging.error("Boto3 error: %s  retry %s",err,retry)
+                    err_hold = err
+            raise err_hold
+
     return os.rename( dpath_expand(src), dpath_expand(dst) )
 
 def dmakedirs(dpath):

@@ -77,8 +77,6 @@ def make_county_list(stusab:str):
         state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(stusab=stusab, state_code=state_code)
 
         logging.info(f"Creating {geofile_csv_filename}")
-        dmakedirs( os.path.dirname(geofile_csv_filename) ) # make sure we can create the output file
-
         csvfile = dopen(geofile_csv_filename, 'w')
         writer  = csv.DictWriter(csvfile, fieldnames=names)
         writer.writeheader()

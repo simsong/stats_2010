@@ -22,7 +22,7 @@ from os.path import dirname,basename,abspath
 import gurobipy
 import dbrecon
 from dbrecon import DB
-from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT,REIDENT
+from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT,REIDENT,ZCAT
 
 GZIP    = 'gzip'                # compressor
 GZIP_OPT = '-1f'                # compression options
@@ -117,7 +117,7 @@ def run_gurobi(stusab, county, tract, lpgz_filename, dry_run):
         if lpgz_filename.startswith('s3://'):
             cmd = S3ZCAT
         else:
-            cmd = 'zcat'
+            cmd = ZCAT
         p = subprocess.Popen([cmd,lpgz_filename],stdout=subprocess.PIPE)
         tempname = f"/tmp/stdin-{p.pid}-"+(lpgz_filename.replace("/","_"))+".lp"
         if os.path.exists(tempname):

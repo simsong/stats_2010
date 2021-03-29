@@ -30,6 +30,7 @@ import psutil
 import boto3
 import botocore
 import subprocess
+import inspect
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
@@ -50,8 +51,7 @@ from dfxml.python.dfxml.writer import DFXMLWriter
 
 REIDENT = os.getenv('REIDENT')
 
-
-RETRIES = 10
+DB_RETRIES = 10
 RETRY_DELAY_TIME = 10
 DEFAULT_QUIET=True
 # For handling the config file
@@ -65,6 +65,12 @@ ZCAT    = 'zcat'                          # regular zcat program
 GZIP    = 'gzip'                # compressor
 GZIP_OPT = '-1f'                # compression options
 
+
+def set_reident(reident):
+    global REIDENT
+    import dbrecon
+    dbrecon.REIDENT = REIDENT = os.environ['REIDENT'] = reident + "_"
+    os.environ['REIDENT_NO_SEP'] = reident
 
 ##
 ## Functions that return paths.
@@ -216,7 +222,7 @@ class DB:
         except ImportError as e:
             from pymysql.err import ProgrammingError,InterfaceError,OperationalError
 
-        for i in range(1,RETRIES):
+        for i in range(1,DB_RETRIES):
             try:
                 db = DB()
                 db.connect()
@@ -244,11 +250,11 @@ class DB:
                 return result
             except InterfaceError as e:
                 logging.error(e)
-                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{DB_RETRIES}: {cmd} {vals} ")
                 pass
             except OperationalError as e:
                 logging.error(e)
-                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{DB_RETRIES}: {cmd} {vals} ")
                 pass
             time.sleep(RETRY_DELAY_TIME)
         raise e
@@ -283,6 +289,25 @@ class DB:
         return self.dbs.close()
 
 ################################################################
+### The USA Geography object.
+### tracks geographies. We should have created this originally.
+################################################################
+class USAG:
+    __slots__ = ['stusab','state','county','tract']
+    def __init__(self, stusab, county, tract, block=None):
+        self.stusab = stusab(stusab)
+        self.state = state_fips(stusab)
+        self.county = county
+        self.tract  = tract
+        self.block  = block
+    def __repr__(self):
+        v = " "+self.block if self.block is not None else ""
+        return f"<{self.self} {self.stusab} {self.county} {self.tract}{v}>"
+    def __eq__(self,a):
+        return (self.stusab == a.stusab) and (self.county==a.county) and (self.tract == a.tract) and (self.block==a.block)
+
+
+################################################################
 ### Understanding LP and SOL files #############################
 ################################################################
 
@@ -299,7 +324,7 @@ def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
                     pass
                 else:
                     if errors==0:
-                        logging.error("non-integer solutions in file "+sol_filenamegz)
+                        logging.error("Invalid pop count variables in "+sol_filenamegz)
                     logging.error("line {}: {}".format(num,line))
                     count += round(float(line.split()[1]))
                     errors += 1
@@ -574,11 +599,15 @@ def lpfile_properly_terminated(fname):
             last4 = f.read(4)
             return last4 in (b'End\n',b'\nEnd')
     # Otherwise, scan the file
-    with dopen(fname,'rb') as f:
-        lastline = ''
-        for line in f:
-            lastline = line
-        return b'End' in lastline
+    try:
+        with dopen(fname,'rb') as f:
+            lastline = ''
+            for line in f:
+                lastline = line
+            return b'End' in lastline
+    except AttributeError as e:
+        logging.error("e=%s",e)
+        return False
     return True
 
 def remove_lpfile(auth,stusab,county,tract):
@@ -652,6 +681,7 @@ def state_has_any_files(stusab, county_code, filetype=LP):
 def argparse_add_logging(parser):
     clogging.add_argument(parser)
     parser.add_argument("--config", help="config file")
+    parser.add_argument("--reident", help='set reident at command line')
     parser.add_argument("--stdout", help="Also log to stdout", action='store_true')
     parser.add_argument("--logmem", action='store_true',
                         help="enable memory debugging. Print memory usage. "
@@ -705,6 +735,9 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
 
 def setup_logging_and_get_config(*,args,**kwargs):
+    if args.reident:
+        set_reident(args.reident)
+        inspect.stack()[1].frame.f_globals['REIDENT']=os.getenv('REIDENT')
     config = GetConfig().get_config()
     setup_logging(config=config,**kwargs)
     return config
@@ -868,11 +901,19 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
 
 def dwait_exists(src):
     """When writing to S3, objects may not exist immediately. You can call this to wait until they do."""
-    (bucket,key) = s3.get_bucket_key(src)
-    cmd=['wait','object-exists','--bucket',bucket,'--key',key]
-    logging.info(' '.join(cmd))
-    s3.aws_s3api(cmd)
-    logging.info('dwait_exists %s returning',src)
+    if src.startswith('s3://'):
+        (bucket,key) = s3.get_bucket_key(src)
+        cmd=['wait','object-exists','--bucket',bucket,'--key',key]
+        logging.info(' '.join(cmd))
+        try:
+            s3.aws_s3api(cmd)
+        except RuntimeError as e:
+            raise FileNotFoundError(src)
+        logging.info('dwait_exists %s returning',src)
+    else:
+        if os.path.exists(src):
+            return
+        raise RuntimeError("not implemented yet to wait for unix files")
 
 def drename(src,dst):
     logging.info('drename(%s -> %s)',src,dst)
@@ -886,8 +927,6 @@ def drename(src,dst):
             return
         except botocore.errorfactory.NoSuchKey as e:
             raise FileNotFoundError(src)
-    if src.startswith('s3://'):
-        raise RuntimeError("Have not implemented drename from s3->local file")
 
     if dst.startswith('s3://'):
         (dst_bucket, dst_key) = s3.get_bucket_key(dst)
@@ -901,6 +940,9 @@ def drename(src,dst):
                     logging.error("Boto3 error: %s  retry %s",err,retry)
                     err_hold = err
             raise err_hold
+
+    if src.startswith('s3://'):
+        raise RuntimeError('drename does not implement renaming local file to S3')
     return os.rename( dpath_expand(src), dpath_expand(dst) )
 
 def dmakedirs(dpath):

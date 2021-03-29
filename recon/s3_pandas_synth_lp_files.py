@@ -530,7 +530,8 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
                     remove_lpfile(auth, stusab, county, tractgen)
                 else:
                     logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
-                                    f"- tract {tractgen} not in {tracts_needing_lp_files}")
+                                    f"- tract {tractgen} not in tracts needing lp files: {' '.join(tracts_needing_lp_files)}")
+                    logging.warning(f"Use --force to force")
                     return
             tracts = [tractgen]
 

@@ -264,10 +264,11 @@ def do_register(auth, reident):
     db.create_schema(new_schema.getvalue())
 
 
-def run(cmd):
+def run(cmd, check=True):
+    """Run a command. Stdout gets piped through"""
     print()
     print("$ " + " ".join(cmd))
-    subprocess.run(cmd, cwd=RECON_DIR, check=True)
+    subprocess.run(cmd, cwd=RECON_DIR, check=check)
 
 def do_step1(auth, reident, state, *, force=False):
     print(f"Step 1 - s1_make_geo_files.py")
@@ -368,18 +369,76 @@ def do_setup(host):
         'cd /mnt/gits/das-vm-config && git checkout master && git pull && bash DAS-Bootstrap3-setup-python.sh; '
         'cd $HOME;'
         'git clone --recursive https://github.ti.census.gov/CB-DAS/das-vm-config.git ; '
+        'ln -s das-vm-config/dbrecon/stats_2010/recon;'
         'cd das-vm-config/dbrecon/stats_2010/recon; git pull ; ls -l ; pwd',
         pipeerror=True)
     print(p)
 
 
-def do_launch(host, *, debug=False):
+def host_status(host,*, idle_message=""):
+    """Print the status of host and return True if it is ready to run"""
+    lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
+    if "TASK" in lines:
+        if "scheduler.py" not in lines:
+            print("idle:",host, idle_message)
+            return True
+        else:
+            print("\tin use:", host)
+    else:
+        print("\tCORE:",host)
+    return False
+
+
+def uptime_host(host):
+    lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
+    uptime = [line for line in lines if 'load average' in line]
+    if uptime:
+        print(host, uptime[0])
+    else:
+        print(host, "NO OBVIOUS UPTIME")
+
+
+def launch_if_needed(host):
+    if host_status(host,idle_message='LAUNCHING') or args.force:
+        do_launch(host, desc=args.desc, reident=args.reident)
+
+def fast_all(callback):
+    """Run the callback on every machine, with the parameter being the hostname, each in their own process."""
+    procs = []
+    for host in all_hosts():
+        p = os.fork()
+        if p==0:
+            callback(host)
+            exit(0)
+        elif p>0:
+            procs.append(p)
+        else:
+            raise RuntimeError("fork")
+        if len(procs) == args.limit:
+            print("Limit reached.",file=sys.stderr)
+            break
+    for p in procs:
+        os.waitpid(p,0)
+
+
+def show_file(path):
+    if path.startswith('s3://'):
+        cmd = ['aws','s3','ls',path]
+    else:
+        cmd = ['ls','-l',path]
+    run(cmd, check=False)
+
+
+def do_launch(host, *, debug=False, desc=False, reident):
+    print(">launch ",host)
     cmd=(
         'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
+        'ln -s das-vm-config/dbrecon/stats_2010/recon;'
         'cd das-vm-config;'
         'bash DAS-Bootstrap3-setup-python.sh;'
         'source /etc/profile.d/census_dash.sh;'
         'cd dbrecon/stats_2010/recon;'
+        'git fetch --all; git checkout master ; git pull; git submodule update;'
         'export DAS_S3ROOT=s3://uscb-decennial-ite-das;'
         'export BCC_HTTPS_PROXY=https://proxy.ti.census.gov:3128;'
         'export BCC_HTTP_PROXY=http://proxy.ti.census.gov:3128;'
@@ -389,12 +448,19 @@ def do_launch(host, *, debug=False):
         'export GRB_APP_NAME=DAS;'
         'export GRB_LICENSE_FILE=/usr/local/lib64/python3.6/site-packages/gurobipy/gurobi_client.lic;'
         'export GRB_ISV_NAME=Census;'
+        "kill $(ps auxww | grep drbtool.py | grep -v grep | awk '{print $2;}');"
+        "kill $(ps auxww | grep scheduler.py | grep -v grep | awk '{print $2;}');"
         '$(./dbrtool.py --env);'
-        '(./dbrtool.py --run --reident orig > output-$(date -Iseconds) 2>&1 </dev/null &)')
-    out = ssh_remote.run_command_on_host(host, cmd, pipeerror=True)
-    if debug:
-        print(out)
-
+        f'(./dbrtool.py --run --reident {reident} > output-$(date -Iseconds) 2>&1 </dev/null &)')
+    if desc:
+        cmd = cmd.replace("--run","--run --desc ")
+    # Run this in the background
+    if debug or os.fork()==0:
+        out = ssh_remote.run_command_on_host(host, cmd, pipeerror=True)
+        if debug:
+            print(out)
+        else:
+            exit(0)
 
 
 if __name__ == "__main__":
@@ -407,16 +473,17 @@ if __name__ == "__main__":
     g.add_argument("--status", action='store_true', help='Print stats about the current runs')
     g.add_argument("--register", action='store_true', help="register a new REIDENT for database reconstruction.")
     g.add_argument("--drop", action='store_true', help="drop a REIDENT from database")
-    g.add_argument("--show", action='store_true', help="Show all reidents in database")
+    g.add_argument("--show", action='store_true', help="Show everything known about reisdents, and optionally a stusab, county, tract")
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
     g.add_argument("--run", help="Run the scheduler",action='store_true')
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
-    g.add_argument("--run_desc", help="Run the scheduler, largest tracts first",action='store_true')
     g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
-    g.add_argument("--launch", help="Run --run on a specific m achine")
+    g.add_argument("--launch", help="Run --run on a specific machine(s) (sep by comma)")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
+    g.add_argument("--status_all", help="report each machine status", action='store_true')
+    g.add_argument("--resize", help="Resize cluster", type=int)
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -428,9 +495,11 @@ if __name__ == "__main__":
     parser.add_argument("--county", help="required for step3 and step4")
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
     parser.add_argument('--debug', action='store_true', help='debug all SQL')
-    parser.add_argument('--force', action='store_true', help='delete output files if they exist')
+    parser.add_argument('--force', action='store_true', help='delete output files if they exist, and force launching on all clusters')
     parser.add_argument('--nodes', help='Show YARN nodes', action='store_true')
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
+    parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
+    parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
     args = parser.parse_args()
 
     if args.env:
@@ -456,49 +525,43 @@ if __name__ == "__main__":
         exit(0)
 
     if args.uptime_all:
-        for host in all_hosts():
-            lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
-            uptime = [line for line in lines if 'load average' in line]
-            if uptime:
-                print(host, uptime[0])
-            else:
-                print(host, "NO OBVIOUS UPTIME")
+        fast_all(uptime_host)
         exit(0)
 
     if args.launch:
         if not args.reident:
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
-        do_launch(args.launch, debug=True)
+        for host in args.launch.split(','):
+            do_launch(host, debug=args.debug, desc=args.desc, reident=args.reident)
         exit(0)
 
     if args.launch_all:
         if not args.reident:
             print("--launch requires --reident",file=sys.stderr)
             exit(1)
-        for host in all_hosts():
-            """ Figure out if it is core and if scheduler is not running """
-            lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
-            if "TASK" in lines:
-                if "scheduler.py" not in lines:
-                    print("Launching on",host)
-                    do_launch(host)
-                else:
-                    print("\tin use:", host)
-            else:
-                print("\twill not launch on CORE node",host)
+        fast_all(launch_if_needed)
         exit(0)
+
+    if args.status_all:
+        fast_all(host_status)
+        exit(0)
+
+    if args.resize:
+        confirm = input(f"Resize cluster to {args.resize} nodes?").strip()
+        if confirm[0:1]=='y':
+            subprocess.check_call([sys.executable,'/mnt/gits/das-vm-config/das_decennial/programs/emr_control.py','--task',str(args.resize)])
+        exit(0)
+
+
 
     ################################################################
     # Everything after here needs mysql
 
     if 'MYSQL_HOST' not in os.environ:
         logging.warning('MYSQL_HOST is not in your environment!')
-        logging.warning('Next time, please  run $(./dbrtool.py --env) to create the environment variables')
-        logging.warning('starting sub-shell with environment variables set')
-        for(k,v) in get_mysql_env().items():
-            os.environ[k] = v
-        os.execlp(os.getenv('SHELL'),os.getenv('SHELL'))
+        logging.warning('Please  run $(./dbrtool.py --env)')
+        exit(0)
 
 
     if args.mysql:
@@ -510,7 +573,29 @@ if __name__ == "__main__":
         logging.getLogger().setLevel(logging.INFO)
 
     if args.show:
-        print("\n".join(get_reidents(auth)))
+        print("reidents:")
+        reidents = get_reidents(auth)
+        print("\n".join(reidents))
+        if args.stusab and args.county and args.tract:
+            if args.reident:
+                reidents = [args.reident]
+            for reident in reidents:
+                print(f"\n================ {reident} ================")
+                dbrecon.set_reident(reident)
+                print(f"reident: {reident} {args.stusab} {args.county} {args.tract}")
+                for fname in [dbrecon.LPFILENAMEGZ( stusab=args.stusab,county=args.county,tract=args.tract),
+                              dbrecon.SOLFILENAMEGZ(stusab=args.stusab,county=args.county,tract=args.tract)]:
+                    show_file(fname)
+                    print()
+                print("Database:")
+                rows = DBMySQL.csfr(auth,f"select * from {reident}_tracts where stusab=%s and county=%s and tract=%s",
+                               (args.stusab,args.county,args.tract),asDicts=True)
+                for row in rows:
+                    for (k,v) in row.items():
+                        print(f"{k:15} {v}")
+
+
+
         exit(0)
     if args.status:
         ret = get_recon_status(auth, args.reident)
@@ -539,13 +624,13 @@ if __name__ == "__main__":
     elif args.ls:
         root = os.path.join(os.getenv('DAS_S3ROOT'),'2010-re',args.reident,'work',args.stusab)
         run(['aws','s3','ls','--recursive',root])
-    elif (args.run or args.run_desc):
+    elif args.run:
         cmd = [sys.executable,'scheduler.py']
         if args.stusab:
             cmd.extend(['--stusab',args.stusab])
         if args.county:
             cmd.extend(['--county',args.county])
-        if args.run_desc:
+        if args.desc:
             cmd.extend(['--desc','--maxlp','1','--nosol'])
         run(cmd)
 

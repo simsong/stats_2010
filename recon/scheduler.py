@@ -513,6 +513,7 @@ if __name__=="__main__":
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
     parser.add_argument("--clean",   help="Look for .lp and .sol files that are too slow and delete them, then remove them from the database", action='store_true')
     parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
+
     parser.add_argument("--maxlp",   help="Never run more than this many LP makers", type=int, default=999)
     parser.add_argument("--rescan",  help="validate and update the database contents against files in the file system. Uses --j1", action='store_true')
     parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
@@ -525,7 +526,6 @@ if __name__=="__main__":
     parser.add_argument("--county", help="county for rescanning")
     parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
     parser.add_argument("--debug", action='store_true', help="debug mode")
-
 
     args   = parser.parse_args()
 

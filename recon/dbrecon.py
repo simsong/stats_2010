@@ -588,6 +588,7 @@ def tracts_for_state_county(*,stusab,county):
 MIN_LP_SIZE  =  100      # smaller than this, the file must be invalid
 MIN_SOL_SIZE = 1000      # smaller than this, the file is invalid
 def lpfile_properly_terminated(fname):
+
     # Small files are not valid LP files
     if dgetsize(fname) < MIN_LP_SIZE:
         return False
@@ -599,16 +600,19 @@ def lpfile_properly_terminated(fname):
             last4 = f.read(4)
             return last4 in (b'End\n',b'\nEnd')
     # Otherwise, scan the file
-    try:
-        with dopen(fname,'rb') as f:
-            lastline = ''
-            for line in f:
-                lastline = line
-            return b'End' in lastline
-    except AttributeError as e:
-        logging.error("e=%s",e)
-        return False
-    return True
+    # Note: dopen() can't be used as a context manager
+    f = dopen(fname,'r')
+    lastline = None
+    while True:
+        line = f.readline()
+        if line=='':
+            break
+        line = line.strip()
+        if line=='':
+            continue
+        lastline = line
+    return lastline == 'End'
+
 
 def remove_lpfile(auth,stusab,county,tract):
     # Remove the LP file and its solution
@@ -806,7 +810,7 @@ def dpath_unlink(path):
     if path.startswith('s3://'):
         (bucket,key) = s3.get_bucket_key(path)
         r = boto3.client('s3').delete_object(Bucket=bucket, Key=key)
-        print("delete",bucket,key,r)
+        print(f"aws s3 rm s3://{bucket}/{key}")
     else:
         return os.unlink(path)
 
@@ -956,6 +960,7 @@ def dmakedirs(dpath):
     os.makedirs(path,exist_ok=True)
 
 def dgetsize(dpath):
+    """Return the size of a file path. If it is not found, return None."""
     path = dpath_expand(dpath)
     if path.startswith("s3://"):
         (bucket,key) = s3.get_bucket_key(path)
@@ -963,9 +968,12 @@ def dgetsize(dpath):
             return boto3.resource('s3').Object(bucket,key).content_length
         except botocore.exceptions.ClientError as err:
             if err.response['Error']['Code']=='404':
-                raise FileNotFoundError(path) from err
+                return None
             raise
-    return os.path.getsize(path)
+    try:
+        return os.path.getsize(path)
+    except FileNotFoundError as e:
+        return None
 
 def dsystem(x):
     logging.info("system({})".format(x))
@@ -1021,5 +1029,7 @@ if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Get the count for SOL.GZ files" )
-    parser.add_argument("gzfile",nargs="*")
+    parser.add_argument("--lpcheck",help="check to see if file is properly terminated")
     args     = parser.parse_args()
+    if args.lpcheck:
+        print(f"lpfile_properly_terminated({args.lpcheck})=",lpfile_properly_terminated(args.lpcheck))

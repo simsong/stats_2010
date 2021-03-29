@@ -436,6 +436,7 @@ def rescan_row(row):
     """Designed to be called from multiprocessing. Validate that the files referenced in the database row are present. If they are not, update the database.
     If they are present, validate them. If they do not validate, update the database.
     """
+    row['stusab'] = row['stusab'].lower()
     logging.info(f"rescan_row {row}")
     lpfilenamegz  = dbrecon.LPFILENAMEGZ(stusab=row['stusab'],county=row['county'],tract=row['tract'])
     solfilenamegz = dbrecon.SOLFILENAMEGZ(stusab=row['stusab'],county=row['county'],tract=row['tract'])
@@ -452,7 +453,7 @@ def rescan_row(row):
 def rescan(auth, stusab, county):
     """Get a list of the tracts that require scanning and check each one."""
     restrict = "AND ((lp_end IS NOT NULL) or (sol_end IS NOT NULL)) "
-    cmd = f"SELECT stusab,county,tract from {REIDENT}tracts where (pop100>0) {restrict} "
+    cmd = f"SELECT * from {REIDENT}tracts where (pop100>0) {restrict} "
     args = []
     if stusab:
         cmd += " and (stusab = %s)"
@@ -466,18 +467,12 @@ def rescan(auth, stusab, county):
     r2  = DBMySQL.csfr(auth, cmd, args)[0][0]
     print(f"Total tracts: {r2}")
 
-    rescan_row( rows[0])
+    print("make this multi-threaded")
+    for row in rows:
+        rescan_row( rows )
 
     exit(0)
 
-    stusabs = [args.stusab] if args.stusab else dbrecon.all_stusabs()
-    for stusab in stusabs:
-        counties = [args.county] if args.county else dbrecon.counties_for_state(stusab=stusab)
-        for county in counties:
-            print(f"RESCAN {stusab} {county}")
-            for tract in dbrecon.tracts_for_state_county(stusab=stusab,county=county):
-                dbrecon.rescan_files(stusab,county,tract,quiet=False)
-        print()
 
 def clean(auth):
     for root, dirs, files in os.walk( dbrecon.dpath_expand("$ROOT") ):

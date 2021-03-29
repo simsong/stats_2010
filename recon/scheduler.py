@@ -28,6 +28,20 @@ from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
 from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
 from ctools.dbfile import DBMySQL,DBMySQLAuth
+import ctools.lock
+
+HELP="""
+Try one of the following commands:
+
+HALT - Immediately halt the jobs and the scheduler.
+STOP - Clean shutdown of the scheduler at the end of the current.
+PS   - Show the current processes
+LIST - Show the current tasks
+UPTIME - Show system load
+DEBUG  - enable/disable debugging
+SQL    - show/hide SQL
+"""
+
 
 HOSTNAME = dbrecon.hostname()
 
@@ -39,8 +53,8 @@ MIN_LP_WAIT   = 120             # wait two minutes between launches
 MIN_SOL_WAIT  = 60              # wait one minute between launch
 
 # Failsafes: don't start an LP or SOL unless we have this much free
-MIN_FREE_MEM_FOR_LP  = 200*GiB
-MIN_FREE_MEM_FOR_SOL = 100*GiB
+MIN_FREE_MEM_FOR_LP  = 400*GiB  # we've seen LP generation take up to 350GiB
+MIN_FREE_MEM_FOR_SOL = 20*GiB
 
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
 
@@ -48,7 +62,7 @@ REPORT_FREQUENCY = 60           # report this often into sysload table
 
 PROCESS_DIE_TIME = 5            # how long to wait for a process to die
 LONG_SLEEP= 300          # sleep for this long (seconds) when there are no resources
-PS_LIST_FREQUENCY = 60   #
+PS_LIST_FREQUENCY = 30   # big status report every 30 seconds
 
 S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
@@ -110,6 +124,8 @@ def prun(cmd):
 
 def get_free_mem():
     return psutil.virtual_memory().available
+    #lines = subprocess.check_output(['free','-b'],encoding='utf-8').split('\n')
+    #return int(lines[1].split()[3])
 
 last_report = 0
 def report_load_memory(auth):
@@ -150,7 +166,7 @@ def kill_tree(p):
         finally:
             print("")
     p.kill()
-    return p.wait()
+    # Don't wait anymore.
 
 class PSTree():
     """Service class. Given a set of processes (or all of them), find parents that meet certain requirements."""
@@ -173,6 +189,9 @@ class PSTree():
                 sum([child.cpu_times().user for child in p.children(recursive=True)]))
 
     def ps_list(self):
+        """ps_list shows all of the processes that we are running."""
+        print("PIDs in use: ",[p.pid for p in self.plist])
+        print("")
         for p in sorted(self.plist, key=lambda p:p.pid):
             try:
                 print("PID{}: {:,} MiB {} children {} ".format(
@@ -190,14 +209,13 @@ class PSTree():
 # Then report for each job how long it has been running.
 # Modify this to track the total number of bytes by all child processes
 
-def run(auth):
+def run(auth, debug=False):
     os.set_blocking(sys.stdin.fileno(), False)
-    running     = set()
-    last_ps_list     = 0
-    quiet       = True
-    last_lp_launch = 0
+    running         = set()
+    last_ps_list    = 0
+    last_lp_launch  = 0
     last_sol_launch = 0
-
+    halting         = False
 
     def running_lp():
         """Return a list of the runn LP makers"""
@@ -210,8 +228,10 @@ def run(auth):
             print("COMMAND:",command)
             if command=="halt":
                 # Halt is like stop, except we kill the jobs first
+                print("Killing existing...")
                 [kill_tree(p) for p in running]
                 stop_requested = True
+                halt           = True
             elif command=='stop':
                 stop_requested = True
             elif command.startswith('ps'):
@@ -220,14 +240,14 @@ def run(auth):
                 last_ps_list = 0
             elif command=='uptime':
                 subprocess.call(['uptime'])
-            elif command=='noisy':
-                quiet = False
-                dbrecon.DB.quiet = False
-            elif command=='quiet':
-                quiet = True
-                dbrecon.DB.quiet = True
+            elif command=='debug':
+                debug = not debug
+            elif command=='sql':
+                auth.debug = not auth.debug
             else:
-                print(f"UNKNOWN COMMAND: '{command}'.  TRY HALT, STOP, PS, LIST, UPTIME, NOISY, QUIET")
+                if command!='help':
+                    print(f"UNKNOWN COMMAND: '{command}'.")
+                print(HELP)
 
         # Clean database if necessary
         dbrecon.db_clean(auth)
@@ -237,18 +257,26 @@ def run(auth):
         free_mem = report_load_memory(auth)
 
         # Are we done yet?
-        remain = DBMySQL.csfr(auth,f"SELECT count(*) from {REIDENT}tracts where sol_end is null",quiet=True)
-        if remain[0][0]==0:
+        remain = {}
+        for what in ['lp','sol']:
+            remain[what]  = DBMySQL.csfr(auth,
+                                   f""" SELECT count(*) from {REIDENT}tracts WHERE {what}_end is null and pop100>0 """)[0][0]
+
+        if remain['sol']==0:
             print("All done!")
-            break
+            return
 
         # See if any of the processes have finished
+        # Hard fail if any of them did not exit cleanly so we can diagnose the problem.
         for p in copy.copy(running):
             if p.poll() is not None:
                 logging.info(f"PID{p.pid}: EXITED {pcmd(p)} code: {p.returncode}")
-                if p.returncode!=0:
+                if debug:
+                    print("PID{p.pid} {p.args} completed")
+                if p.returncode!=0 and not halting:
                     logging.error(f"ERROR: Process {p.pid} did not exit cleanly. retcode={p.returncode} mypid={os.getpid()} ")
-                    exit(1)     # hard fail
+                    logging.error(f"***************************************************************************************")
+                    exit(1)
                 running.remove(p)
 
         SHOW_PS = False
@@ -260,7 +288,8 @@ def run(auth):
                 print("{}: {} Free Memory: {} GiB  {}% Load: {}".format(
                     HOSTNAME,
                     time.asctime(), free_mem//GiB, psutil.virtual_memory().percent, os.getloadavg()))
-                print("")
+                print(f"Remaining LP: {remain['lp']} Remaining SOL: {remain['sol']}")
+                print("Running processes:")
                 ps.ps_list()
                 print(lookup('BLACK UP-POINTING TRIANGLE')*64+"\n")
                 last_ps_list = time.time()
@@ -284,12 +313,12 @@ def run(auth):
                 continue
 
         if stop_requested:
-            print("STOP REQUESTED")
+            print("STOP REQUESTED  (type 'halt' to abort)")
             if len(running)==0:
                 print("NONE LEFT. STOPPING.")
                 break;
             else:
-                print("Waiting for stop...")
+                print(f"Waiting for {len(running)} processes to stop...")
                 time.sleep(PROCESS_DIE_TIME)
                 continue
 
@@ -303,6 +332,9 @@ def run(auth):
         else:
             needed_lp =  min(get_config_int('run','max_lp'),args.maxlp) - len(running_lp())
 
+        if debug:
+            print(f"needed_lp: {needed_lp}")
+
         # If we can run another launch in, do it.
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
 
@@ -312,14 +344,14 @@ def run(auth):
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
-                SELECT t.stusab,t.county,count(*) as tracts,sum(g.pop100) as pop
-                FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (g.sumlev='140') and (pop100>0)
+                SELECT t.stusab,t.county,count(*) as tracts,sum(t.pop100) as pop
+                FROM {REIDENT}tracts t
+                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (t.pop100>0)
                 GROUP BY t.state,t.county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
             make_lps = DBMySQL.csfr(auth, cmd)
-            if (len(make_lps)==0 and needed_lp>0) or not quiet:
+            if (len(make_lps)==0 and needed_lp>0) or debug:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
             for (stusab,county,tract_count,pop) in make_lps:
@@ -336,42 +368,48 @@ def run(auth):
         ## Evaluate Launching SOLs.
         ## Only evaluate solutions where we have a LP file
 
+        max_sol    = get_config_int('run','max_sol')
+        max_jobs   = get_config_int('run','max_jobs')
+        max_sol_launch = get_config_int('run','max_sol_launch')
         if args.nosol:
             needed_sol = 0
         else:
-            max_sol    = get_config_int('run','max_sol')
-            max_jobs   = get_config_int('run','max_jobs')
             needed_sol = max_jobs-len(running)
-            if not quiet:
-                print(f"1: max_sol={max_sol} needed_sol={needed_sol} max_jobs={max_jobs} running={len(running)} ")
             if needed_sol > max_sol:
                 needed_sol = max_sol
+
+        if debug:
+            print(f"max_sol={max_sol} needed_sol={needed_sol} max_jobs={max_jobs} running={len(running)} get_free_mem()={get_free_mem()} ")
+
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             # As before, we only launch one at a time
-            max_sol_launch = get_config_int('run','max_sol_launch')
+            # Solve the biggest first, because they take the most time
+
+
             if last_sol_launch + MIN_SOL_WAIT > time.time():
-                continue
-            cmd = f"""
+                print(f"Can't launch again for {last_sol_launch+MIN_SOL_WAIT-time.time()} seconds")
+            else:
+                cmd = f"""
                 SELECT stusab,county,tract FROM {REIDENT}tracts
                 WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)
-                ORDER BY RAND() LIMIT 1
+                ORDER BY pop100 desc LIMIT %s
                 """
+                solve_lps = DBMySQL.csfr(auth,cmd,(max_sol_launch,))
+                if (len(solve_lps)==0 and needed_sol>0) or debug:
+                    print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
 
-            solve_lps = DBMySQL.csfr(auth,cmd)
-            if (len(solve_lps)==0 and needed_sol>0) or not quiet:
-                print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
-            for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
-                print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
-                gurobi_threads = get_config_int('gurobi','threads')
-                dbrecon.db_lock(stusab,county,tract)
-                stusab = stusab.lower()
-                cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
-                print("$ "+" ".join(cmd))
-                p = prun(cmd)
-                running.add(p)
-                time.sleep(PYTHON_START_TIME)
-                last_sol_launch = time.time()
+                for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
+                    print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
+                    gurobi_threads = get_config_int('gurobi','threads')
+                    dbrecon.db_lock(stusab,county,tract)
+                    stusab         = stusab.lower()
+                    cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
+                    print("$ "+" ".join(cmd))
+                    p = prun(cmd)
+                    running.add(p)
+                    time.sleep(PYTHON_START_TIME)
+                    last_sol_launch = time.time()
 
         time.sleep( get_config_int('run', 'sleep_time' ) )
         # and repeat
@@ -414,24 +452,7 @@ def none_running(auth, hostname):
         """ + hostlock)
     print("Resume...")
 
-def get_lock():
-    """This version of get_lock() assumes a shared file system, so we can't lock __file__"""
-    lockfile = f"/tmp/lockfile_{HOSTNAME}"
-    if not os.path.exists(lockfile):
-        with open(lockfile,"w") as lf:
-            lf.write("lock")
-    try:
-        fd = os.open( lockfile, os.O_RDONLY )
-        if fd>0:
-            # non-blocking
-            fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
-            return
-    except IOError:
-        pass
-    logging.error("Could not acquire lock. Another copy of %s must be running",(__file__))
-    raise RuntimeError("Could not acquire lock")
-
-def scan_s3_s4():
+def kill_running_s3_s4():
     """Look for any running instances of s3 or s4. If they are found, print and abort"""
     found = 0
     for p in psutil.process_iter():
@@ -465,11 +486,15 @@ if __name__=="__main__":
     parser.add_argument("--stusab", help="stusab for rescanning")
     parser.add_argument("--county", help="county for rescanning")
     parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
+    parser.add_argument("--debug", action='store_true', help="debug mode")
+
 
     args   = parser.parse_args()
+
+    ctools.lock.lock_script()
+
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
     auth = dbrecon.auth()
-    DB.quiet = True
 
     if args.testdb:
         print("Tables:")
@@ -481,13 +506,10 @@ if __name__=="__main__":
     elif args.clean:
         clean(auth)
     elif args.none_running:
-        get_lock()
         none_running(auth,HOSTNAME)
     elif args.none_running_anywhere:
-        get_lock()
         none_running(auth, None)
     else:
-        get_lock()
-        scan_s3_s4()
+        kill_running_s3_s4()
         none_running(auth,HOSTNAME)
-        run(auth)
+        run(auth, args.debug)

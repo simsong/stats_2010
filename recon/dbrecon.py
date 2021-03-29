@@ -59,8 +59,11 @@ SRC_DIRECTORY   = os.path.dirname( os.path.abspath(__file__))
 CONFIG_FILENAME = "config.ini"
 CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
 
-S3ZPUT  = os.path.join(MY_DIR, 's3zput') # script that uploads a file to s3 with compression
+S3ZPUT  = os.path.join( MY_DIR, 's3zput') # script that uploads a file to s3 with compression
 S3ZCAT  = os.path.join( MY_DIR, 's3zcat') # script that downloads and decompresses a file from s3
+ZCAT    = 'zcat'                          # regular zcat program
+GZIP    = 'gzip'                # compressor
+GZIP_OPT = '-1f'                # compression options
 
 
 ##
@@ -341,18 +344,21 @@ def db_start(what,stusab, county, tract):
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {stusab} {county} {tract} ")
 
-def db_done(what, stusab, county, tract):
+def db_done(auth, what, stusab, county, tract, clear_start=False):
     assert what in [LP,SOL, CSV]
-    DB.csfr(f"UPDATE {REIDENT}tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
-            (hostname(),stusab,county,tract),rowcount=1)
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+                 (hostname(),stusab,county,tract),rowcount=1)
+    if clear_start:
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set {what}_start=NULL,{what}_host=NULL where stusab=%s and county=%s and tract=%s",
+                (hostname(),stusab,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
-def is_db_done(what, stusab, county, tract):
+def is_db_done(what, stusab, county, tract, clear_start=False):
     assert what in [LP,SOL, CSV]
     row = DB.csfr(
         f"""
-        SELECT {what}_end FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (g.sumlev='140') AND (g.pop100>0) LIMIT 1
+        SELECT {what}_end FROM {REIDENT}tracts t
+        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (t.pop100>0) LIMIT 1
         """,
                   (stusab,county,tract))
     return len(row)==1
@@ -514,6 +520,7 @@ def sf1_zipfilename(stusab):
 
 
 def auth():
+    """Returns a new, clean database connection for ctools.dbfile"""
     return DBMySQLAuth.FromConfig(os.environ)
 
 
@@ -597,8 +604,8 @@ def tracts_for_state_county(*,stusab,county):
     """
     rows = DB.csfr(
         f"""
-        SELECT tract from {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract)
-        WHERE (t.stusab=%s) and (t.county=%s) AND (g.sumlev='140') AND (g.pop100>0)
+        SELECT tract from {REIDENT}tracts t
+        WHERE (t.stusab=%s) and (t.county=%s) AND (t.pop100>0)
         """,(stusab,county))
     return [row[0] for row in rows]
 
@@ -849,8 +856,12 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     """An open function that can open from S3 and from inside of zipfiles.
     Don't use this for new projects; use ctools.dconfig.dopen instead"""
     logging.info("  dopen('{}','{}','{}', zipfilename={})".format(path,mode,encoding,zipfilename))
-    path = dpath_expand(path)
 
+    # If we are writing but not writing to S3, make sure the directory exists
+    if mode[0]=='w' and path[0:5]!='s3://':
+        dmakedirs(path)
+
+    path = dpath_expand(path)
     # immediate passthrough if zipfilename is None and s3 is requested
     if path[0:5]=='s3://' and zipfilename is None:
         if mode.startswith('r') and not s3.s3exists(path):
@@ -927,7 +938,7 @@ def dwait_exists(src):
         raise RuntimeError("not implemented yet to wait for unix files")
 
 def drename(src,dst):
-    logging.info('drename({},{})'.format(src,dst))
+    logging.info('drename(%s -> %s)',src,dst)
     if src.startswith('s3://') and dst.startswith('s3://'):
         try:
             (src_bucket, src_key) = s3.get_bucket_key(src)
@@ -938,9 +949,22 @@ def drename(src,dst):
             return
         except botocore.errorfactory.NoSuchKey as e:
             raise FileNotFoundError(src)
+    if src.startswith('s3://'):
+        raise RuntimeError("Have not implemented drename from s3->local file")
 
-    if src.startswith('s3://') or dst.startswith('s3://'):
-        raise RuntimeError('drename does not implement renaming local file to S3')
+    if dst.startswith('s3://'):
+        (dst_bucket, dst_key) = s3.get_bucket_key(dst)
+        with open(src,'rb') as f:
+            err_hold = None
+            for retry in range(1,4):
+                try:
+                    boto3.client('s3').upload_fileobj(f, dst_bucket, dst_key)
+                    return
+                except botocore.exceptions.ClientError as err:
+                    logging.error("Boto3 error: %s  retry %s",err,retry)
+                    err_hold = err
+            raise err_hold
+
     return os.rename( dpath_expand(src), dpath_expand(dst) )
 
 def dmakedirs(dpath):

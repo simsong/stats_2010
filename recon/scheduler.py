@@ -469,9 +469,8 @@ def rescan(auth, stusab, county):
 
     print("make this multi-threaded")
     for row in rows:
-        rescan_row( rows )
+        rescan_row( row )
 
-    exit(0)
 
 
 def clean(auth):

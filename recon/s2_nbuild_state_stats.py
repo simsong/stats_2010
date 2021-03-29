@@ -209,7 +209,6 @@ def process_stusab(stusab):
         state_code = dbrecon.state_fips(stusab)
         for county_code in dbrecon.counties_for_state(stusab):
             countydir = dbrecon.STATE_COUNTY_DIR(stusab=stusab, county=county_code)
-            dbrecon.dmakedirs(countydir)
 
             # If we are not forcing, then for each file see if it already exists. If it exists, write to /dev/null
             def special_open(path):

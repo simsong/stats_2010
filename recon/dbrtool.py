@@ -183,7 +183,7 @@ def get_recon_status(auth, reident=None):
         tables = []
         for(name,query) in QUERIES:
             column_names = []
-            rows = DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True,debug=True)
+            rows = DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True)
             tables.append((name,rows))
         ret['queries'].append((reident,tables))
     return ret
@@ -573,15 +573,15 @@ if __name__ == "__main__":
 
     if args.step3:
         if args.force:
-            dbrecon.remove_lpfile(stusab=args.stusab, county=args.county, tract=args.tract)
+            dbrecon.remove_lpfile(auth, args.stusab, args.county, args.tract)
         do_step3(auth, args.reident, args.stusab, args.county, args.tract)
 
     if args.step4:
         if args.force:
-            dbrecon.remove_solfile(stusab=args.stusab, county=args.county, tract=args.tract)
+            dbrecon.remove_solfile(auth, args.stusab, args.county, args.tract)
         do_step4(auth, args.reident, args.stusab, args.county, args.tract.split(","))
 
     if args.step5:
         if args.force:
-            dbrecon.remove_csvfile(stusab=args.stusab, county=args.county, tract=args.tract)
+            dbrecon.remove_csvfile(auth, args.stusab, args.county, args.tract)
         do_step5(auth, args.reident, args.stusab, args.county)

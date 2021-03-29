@@ -515,8 +515,18 @@ if __name__ == "__main__":
         exit(0)
 
     if args.status_all:
+        procs = []
         for host in all_hosts():
-            host_status(host)
+            p = os.fork()
+            if p==0:
+                host_status(host)
+                exit(0)
+            elif p>0:
+                procs.append(p)
+            else:
+                raise RuntimeError("fork")
+        for p in procs:
+            os.waitpid(p,0)
         exit(0)
 
     ################################################################

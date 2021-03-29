@@ -620,11 +620,15 @@ def lpfile_properly_terminated(fname):
             last4 = f.read(4)
             return last4 in (b'End\n',b'\nEnd')
     # Otherwise, scan the file
-    with dopen(fname,'rb') as f:
-        lastline = ''
-        for line in f:
-            lastline = line
-        return b'End' in lastline
+    try:
+        with dopen(fname,'rb') as f:
+            lastline = ''
+            for line in f:
+                lastline = line
+            return b'End' in lastline
+    except AttributeError as e:
+        logging.error("e=%s",e)
+        return False
     return True
 
 def remove_lpfile(*,stusab,county,tract):
@@ -908,21 +912,32 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
 
 def dwait_exists(src):
     """When writing to S3, objects may not exist immediately. You can call this to wait until they do."""
-    (bucket,key) = s3.get_bucket_key(src)
-    cmd=['wait','object-exists','--bucket',bucket,'--key',key]
-    logging.info(' '.join(cmd))
-    s3.aws_s3api(cmd)
-    logging.info('dwait_exists %s returning',src)
+    if src.startswith('s3://'):
+        (bucket,key) = s3.get_bucket_key(src)
+        cmd=['wait','object-exists','--bucket',bucket,'--key',key]
+        logging.info(' '.join(cmd))
+        try:
+            s3.aws_s3api(cmd)
+        except RuntimeError as e:
+            raise FileNotFoundError(src)
+        logging.info('dwait_exists %s returning',src)
+    else:
+        if os.path.exists(src):
+            return
+        raise RuntimeError("not implemented yet to wait for unix files")
 
 def drename(src,dst):
     logging.info('drename({},{})'.format(src,dst))
     if src.startswith('s3://') and dst.startswith('s3://'):
-        (src_bucket, src_key) = s3.get_bucket_key(src)
-        (dst_bucket, dst_key) = s3.get_bucket_key(dst)
-        s3r = boto3.resource('s3')
-        s3r.Object(dst_bucket,dst_key).copy_from(CopySource=src_bucket + '/' + src_key)
-        s3r.Object(src_bucket, src_key).delete()
-        return
+        try:
+            (src_bucket, src_key) = s3.get_bucket_key(src)
+            (dst_bucket, dst_key) = s3.get_bucket_key(dst)
+            s3r = boto3.resource('s3')
+            s3r.Object(dst_bucket,dst_key).copy_from(CopySource=src_bucket + '/' + src_key)
+            s3r.Object(src_bucket, src_key).delete()
+            return
+        except botocore.errorfactory.NoSuchKey as e:
+            raise FileNotFoundError(src)
 
     if src.startswith('s3://') or dst.startswith('s3://'):
         raise RuntimeError('drename does not implement renaming local file to S3')

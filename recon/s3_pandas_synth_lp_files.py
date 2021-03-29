@@ -378,6 +378,7 @@ class LPTractBuilder:
 
             # file exists and it is good. Note that in the database
             try:
+                print(f"checking to see if {lpfilenamegz} is propertly terminated")
                 if dbrecon.lpfile_properly_terminated(lpfilenamegz):
                     logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
                     dbrecon.db_done('lp',self.stusab, self.county, self.tract)
@@ -456,12 +457,12 @@ class LPTractBuilder:
             f.write('\n')
         f.write('End\n')
         f.close()
-        if not args.debug:
-            dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-            DBMySQL.csfr(self.auth,
-                         f"UPDATE {REIDENT}tracts SET lp_gb=%s,hostlock=NULL WHERE stusab=%s AND county=%s AND tract=%s",
-                         (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract), rowcount=1)
-            atexit.unregister(self.db_fail)
+        dbrecon.db_done('lp',self.stusab, self.county, self.tract)
+        DBMySQL.csfr(self.auth,
+                     f"UPDATE {REIDENT}tracts SET lp_gb=%s,hostlock=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+                     (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
+        # TODO: I removed "rowcount=1" from above, as it was generating intermittent fails.
+        atexit.unregister(self.db_fail)
 
         if args.debug:
             logging.info("debug completed.")
@@ -472,13 +473,24 @@ class LPTractBuilder:
 
         # Rename the temp file to the gzfile
         # If running on S3, make sure the object exists
-        dbrecon.dwait_exists(outfilename)
-        dbrecon.drename(outfilename, lpfilenamegz)
+        try:
+            dbrecon.dwait_exists(outfilename)
+        except FileNotFoundError as e:
+            logging.warning("1. Will not fix database. Let s4_ discover the lp file isn't there.")
+            logging.warning("Runtime error: %s",e)
+            return
+
+        try:
+            dbrecon.drename(outfilename, lpfilenamegz)
+        except FileNotFoundError as e:
+            logging.warning("2. drename failed on %s->%s",outfilename,lpfilenamegz)
+            logging.warning("Runtime error: %s",e)
+            return
         # And wait for the lpfilenamegz to exist
         try:
             dbrecon.dwait_exists(lpfilenamegz)
         except RuntimeError as e:
-            logging.warning("Will not fix database. Let s4_ discover the lp file isn't there.")
+            logging.warning("3. Will not fix database. Let s4_ discover the lp file isn't there.")
             logging.warning("Runtime error: %s",e)
         logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
 

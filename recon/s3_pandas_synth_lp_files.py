@@ -510,8 +510,8 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
     else:
         rows = DBMySQL.csfr(auth,
                             f"""
-                            SELECT t.tract FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (g.sumlev='140') AND (g.pop100>0)
+                            SELECT t.tract FROM {REIDENT}tracts t
+                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (t.pop100>0)
                             """,(stusab,county))
         tracts_needing_lp_files = [row[0] for row in rows]
         logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)

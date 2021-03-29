@@ -38,8 +38,8 @@ STOP - Clean shutdown of the scheduler at the end of the current.
 PS   - Show the current processes
 LIST - Show the current tasks
 UPTIME - Show system load
-DEBUG  - Enable debug printing. (also NOISY)
-QUIET  - Disable debug printing. (also DEBUG_OFF)
+DEBUG  - enable/disable debugging
+SQL    - show/hide SQL
 """
 
 
@@ -62,7 +62,7 @@ REPORT_FREQUENCY = 60           # report this often into sysload table
 
 PROCESS_DIE_TIME = 5            # how long to wait for a process to die
 LONG_SLEEP= 300          # sleep for this long (seconds) when there are no resources
-PS_LIST_FREQUENCY = 60   #
+PS_LIST_FREQUENCY = 30   # big status report every 30 seconds
 
 S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
@@ -124,6 +124,8 @@ def prun(cmd):
 
 def get_free_mem():
     return psutil.virtual_memory().available
+    #lines = subprocess.check_output(['free','-b'],encoding='utf-8').split('\n')
+    #return int(lines[1].split()[3])
 
 last_report = 0
 def report_load_memory(auth):
@@ -164,7 +166,7 @@ def kill_tree(p):
         finally:
             print("")
     p.kill()
-    return p.wait()
+    # Don't wait anymore.
 
 class PSTree():
     """Service class. Given a set of processes (or all of them), find parents that meet certain requirements."""
@@ -188,7 +190,8 @@ class PSTree():
 
     def ps_list(self):
         """ps_list shows all of the processes that we are running."""
-        print("PIDs in use: ",self.plist)
+        print("PIDs in use: ",[p.pid for p in self.plist])
+        print("")
         for p in sorted(self.plist, key=lambda p:p.pid):
             try:
                 print("PID{}: {:,} MiB {} children {} ".format(
@@ -206,12 +209,13 @@ class PSTree():
 # Then report for each job how long it has been running.
 # Modify this to track the total number of bytes by all child processes
 
-def run(auth, *, debug=False):
+def run(auth, debug=False):
     os.set_blocking(sys.stdin.fileno(), False)
     running         = set()
     last_ps_list    = 0
     last_lp_launch  = 0
     last_sol_launch = 0
+    halting         = False
 
     def running_lp():
         """Return a list of the runn LP makers"""
@@ -224,8 +228,10 @@ def run(auth, *, debug=False):
             print("COMMAND:",command)
             if command=="halt":
                 # Halt is like stop, except we kill the jobs first
+                print("Killing existing...")
                 [kill_tree(p) for p in running]
                 stop_requested = True
+                halt           = True
             elif command=='stop':
                 stop_requested = True
             elif command.startswith('ps'):
@@ -234,14 +240,13 @@ def run(auth, *, debug=False):
                 last_ps_list = 0
             elif command=='uptime':
                 subprocess.call(['uptime'])
-            elif command=='noisy' or command=='debug':
-                debug = True
-                auth.debug = True
-            elif command=='quiet' or command=='debug_off' or command=='debugoff':
-                debug = False
-                auth.debug = False
+            elif command=='debug':
+                debug = not debug
+            elif command=='sql':
+                auth.debug = not auth.debug
             else:
-                print(f"UNKNOWN COMMAND: '{command}'.")
+                if command!='help':
+                    print(f"UNKNOWN COMMAND: '{command}'.")
                 print(HELP)
 
         # Clean database if necessary
@@ -255,14 +260,8 @@ def run(auth, *, debug=False):
         remain = {}
         for what in ['lp','sol']:
             remain[what]  = DBMySQL.csfr(auth,
-                                   f"""
-                                   SELECT count(*) from {REIDENT}tracts t
-                                   LEFT JOIN {REIDENT}geo g
-                                   ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract and g.sumlev='140' and g.pop100>0
-                                   WHERE t.{what}_end is null
-                                   """)[0][0]
+                                   f""" SELECT count(*) from {REIDENT}tracts WHERE {what}_end is null and pop100>0 """)[0][0]
 
-        print(f"Remaining LP: {remain['lp']} Remaining SOL: {remain['sol']}")
         if remain['sol']==0:
             print("All done!")
             return
@@ -274,7 +273,7 @@ def run(auth, *, debug=False):
                 logging.info(f"PID{p.pid}: EXITED {pcmd(p)} code: {p.returncode}")
                 if debug:
                     print("PID{p.pid} {p.args} completed")
-                if p.returncode!=0:
+                if p.returncode!=0 and not halting:
                     logging.error(f"ERROR: Process {p.pid} did not exit cleanly. retcode={p.returncode} mypid={os.getpid()} ")
                     logging.error(f"***************************************************************************************")
                     exit(1)
@@ -289,6 +288,7 @@ def run(auth, *, debug=False):
                 print("{}: {} Free Memory: {} GiB  {}% Load: {}".format(
                     HOSTNAME,
                     time.asctime(), free_mem//GiB, psutil.virtual_memory().percent, os.getloadavg()))
+                print(f"Remaining LP: {remain['lp']} Remaining SOL: {remain['sol']}")
                 print("Running processes:")
                 ps.ps_list()
                 print(lookup('BLACK UP-POINTING TRIANGLE')*64+"\n")
@@ -313,7 +313,7 @@ def run(auth, *, debug=False):
                 continue
 
         if stop_requested:
-            print("STOP REQUESTED")
+            print("STOP REQUESTED  (type 'halt' to abort)")
             if len(running)==0:
                 print("NONE LEFT. STOPPING.")
                 break;
@@ -344,9 +344,9 @@ def run(auth, *, debug=False):
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
-                SELECT t.stusab,t.county,count(*) as tracts,sum(g.pop100) as pop
-                FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (g.sumlev='140') and (pop100>0)
+                SELECT t.stusab,t.county,count(*) as tracts,sum(t.pop100) as pop
+                FROM {REIDENT}tracts t
+                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (t.pop100>0)
                 GROUP BY t.state,t.county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
@@ -370,6 +370,7 @@ def run(auth, *, debug=False):
 
         max_sol    = get_config_int('run','max_sol')
         max_jobs   = get_config_int('run','max_jobs')
+        max_sol_launch = get_config_int('run','max_sol_launch')
         if args.nosol:
             needed_sol = 0
         else:
@@ -378,34 +379,37 @@ def run(auth, *, debug=False):
                 needed_sol = max_sol
 
         if debug:
-            print(f"max_sol={max_sol} needed_sol={needed_sol} max_jobs={max_jobs} running={len(running)} ")
+            print(f"max_sol={max_sol} needed_sol={needed_sol} max_jobs={max_jobs} running={len(running)} get_free_mem()={get_free_mem()} ")
 
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             # As before, we only launch one at a time
-            max_sol_launch = get_config_int('run','max_sol_launch')
+            # Solve the biggest first, because they take the most time
+
+
             if last_sol_launch + MIN_SOL_WAIT > time.time():
-                continue
-            cmd = f"""
+                print(f"Can't launch again for {last_sol_launch+MIN_SOL_WAIT-time.time()} seconds")
+            else:
+                cmd = f"""
                 SELECT stusab,county,tract FROM {REIDENT}tracts
                 WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)
-                ORDER BY RAND() LIMIT 1
+                ORDER BY pop100 desc LIMIT %s
                 """
-            solve_lps = DBMySQL.csfr(auth,cmd)
-            if (len(solve_lps)==0 and needed_sol>0) or debug:
-                print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
+                solve_lps = DBMySQL.csfr(auth,cmd,(max_sol_launch,))
+                if (len(solve_lps)==0 and needed_sol>0) or debug:
+                    print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
 
-            for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
-                print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
-                gurobi_threads = get_config_int('gurobi','threads')
-                dbrecon.db_lock(stusab,county,tract)
-                stusab         = stusab.lower()
-                cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
-                print("$ "+" ".join(cmd))
-                p = prun(cmd)
-                running.add(p)
-                time.sleep(PYTHON_START_TIME)
-                last_sol_launch = time.time()
+                for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
+                    print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
+                    gurobi_threads = get_config_int('gurobi','threads')
+                    dbrecon.db_lock(stusab,county,tract)
+                    stusab         = stusab.lower()
+                    cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
+                    print("$ "+" ".join(cmd))
+                    p = prun(cmd)
+                    running.add(p)
+                    time.sleep(PYTHON_START_TIME)
+                    last_sol_launch = time.time()
 
         time.sleep( get_config_int('run', 'sleep_time' ) )
         # and repeat
@@ -482,7 +486,8 @@ if __name__=="__main__":
     parser.add_argument("--stusab", help="stusab for rescanning")
     parser.add_argument("--county", help="county for rescanning")
     parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
-    parser.add_argument("--debug", action='store_true', help='Run in debug mode')
+    parser.add_argument("--debug", action='store_true', help="debug mode")
+
 
     args   = parser.parse_args()
 
@@ -490,7 +495,6 @@ if __name__=="__main__":
 
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
     auth = dbrecon.auth()
-    auth.debug = args.debug
 
     if args.testdb:
         print("Tables:")
@@ -508,4 +512,4 @@ if __name__=="__main__":
     else:
         kill_running_s3_s4()
         none_running(auth,HOSTNAME)
-        run(auth, debug=args.debug)
+        run(auth, args.debug)

@@ -354,8 +354,8 @@ def is_db_done(what, stusab, county, tract):
     assert what in [LP,SOL, CSV]
     row = DB.csfr(
         f"""
-        SELECT {what}_end FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (g.sumlev='140') AND (g.pop100>0) LIMIT 1
+        SELECT {what}_end FROM {REIDENT}tracts t
+        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (t.pop100>0) LIMIT 1
         """,
                   (stusab,county,tract))
     return len(row)==1
@@ -601,8 +601,8 @@ def tracts_for_state_county(*,stusab,county):
     """
     rows = DB.csfr(
         f"""
-        SELECT tract from {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract)
-        WHERE (t.stusab=%s) and (t.county=%s) AND (g.sumlev='140') AND (g.pop100>0)
+        SELECT tract from {REIDENT}tracts t
+        WHERE (t.stusab=%s) and (t.county=%s) AND (t.pop100>0)
         """,(stusab,county))
     return [row[0] for row in rows]
 

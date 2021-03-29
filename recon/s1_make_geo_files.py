@@ -133,7 +133,7 @@ def make_county_list(stusab:str):
     DBMySQL.csfr(auth,
                  f"""
                  INSERT INTO {REIDENT}tracts (stusab,state,county,tract)
-                 SELECT stusab,state,county,tract FROM {REIDENT}geo where sumlev=140 and stusab=%s
+                 SELECT stusab,state,county,tract,pop100 FROM {REIDENT}geo where sumlev=140 and stusab=%s
                  """,(stusab,))
 
     if args.csv:

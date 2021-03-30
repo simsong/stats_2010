@@ -583,13 +583,11 @@ if __name__ == "__main__":
         fast_all(print_host_status)
         exit(0)
 
-    if args.resize:
+    if args.resize is not None:
         confirm = input(f"Resize cluster to {args.resize} nodes?").strip()
         if confirm[0:1]=='y':
             subprocess.check_call([sys.executable,EMR_CONTROL,'--task',str(args.resize)])
         exit(0)
-
-
 
     ################################################################
     # Everything after here needs mysql

@@ -533,11 +533,8 @@ if __name__=="__main__":
 
 
     args   = parser.parse_args()
-
-    ctools.lock.lock_script()
-
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
-    auth = dbrecon.auth()
+    auth   = dbrecon.auth()
 
     if args.testdb:
         print("Tables:")
@@ -546,7 +543,7 @@ if __name__=="__main__":
             print(row)
         exit(0)
 
-    ctools.lock.lock_script()
+    ctools.lock.lock_script( abspath(__file__))
 
     if args.rescan:
         rescan(auth, args.stusab, args.county, args.j1)

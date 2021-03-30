@@ -74,6 +74,7 @@ import dbrecon
 import constants
 
 import ctools.s3
+import ctools.cspark
 import ctools.dbfile as dbfile
 from ctools.dbfile import DBMySQL
 
@@ -527,7 +528,7 @@ if __name__ == "__main__":
 
 
     parser.add_argument("--reident", help="specify the reconstruction identification")
-    parser.add_argument("--spark", help="Run certian commands under spark")
+    parser.add_argument("--spark", help="Run certian commands under spark",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
@@ -650,7 +651,6 @@ if __name__ == "__main__":
         dbrecon.REIDENT = os.environ['REIDENT'] = REIDENT = args.reident+"_"
     else:
         print("Please specify --reident\n",file=sys.stderr)
-        parser.print_help()
         exit(1)
 
     if args.register:

@@ -464,7 +464,7 @@ def rescan(auth, args):
         # pylint: disable=E0401
         from pyspark.sql import SparkSession
         spark = SparkSession.builder.getOrCreate()
-        sc    = spark.sparkContext.getConf()
+        sc    = spark.sparkContext
 
         d = sc.parallelize(range(10000))
         import operator

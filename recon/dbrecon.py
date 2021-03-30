@@ -65,7 +65,6 @@ ZCAT    = 'zcat'                          # regular zcat program
 GZIP    = 'gzip'                # compressor
 GZIP_OPT = '-1f'                # compression options
 
-
 def set_reident(reident):
     global REIDENT
     import dbrecon
@@ -947,6 +946,7 @@ def drename(src,dst):
 
     if src.startswith('s3://'):
         raise RuntimeError('drename does not implement renaming local file to S3')
+
     return os.rename( dpath_expand(src), dpath_expand(dst) )
 
 def dmakedirs(dpath):

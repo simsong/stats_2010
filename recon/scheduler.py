@@ -531,6 +531,14 @@ if __name__=="__main__":
         print("Experience has shown that --j1>50 is not useful. Setting --j1 to 50")
         args.j1 = 50
 
+
+    args   = parser.parse_args()
+
+    ctools.lock.lock_script()
+
+    config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
+    auth = dbrecon.auth()
+
     if args.testdb:
         print("Tables:")
         rows = DBMySQL.csfr(auth,f"show tables")

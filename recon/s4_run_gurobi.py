@@ -224,7 +224,6 @@ def run_gurobi_for_county_tract(stusab, county, tract):
         logging.warning(f"SOL exists in database and sol file exists: {stusab}{county}{tract}; will not solve")
         return
 
-
     try:
         run_gurobi(auth, stusab, county, tract, lpgz_filename, args.dry_run)
 

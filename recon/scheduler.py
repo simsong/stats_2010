@@ -444,14 +444,20 @@ def rescan_row(row):
     lpfilenamegz  = dbrecon.LPFILENAMEGZ(stusab=row['stusab'],county=row['county'],tract=row['tract'])
     solfilenamegz = dbrecon.SOLFILENAMEGZ(stusab=row['stusab'],county=row['county'],tract=row['tract'])
 
+    ret = []
     auth = dbrecon.auth()
-    if row['lp_end'] and not dbrecon.lpfile_properly_terminated(lpfilenamegz):
-        logging.warning(f"{lpfilenamegz} is not properly terminated. Removing")
-        dbrecon.remove_lpfile(auth, row['stusab'], row['county'], row['tract'])
-
     if row['sol_end'] and dbrecon.dgetsize(solfilenamegz) < dbrecon.MIN_SOL_SIZE:
         logging.warning(f"{solfilenamegz} not existing or too small. Removing.")
         dbrecon.remove_solfile(auth, row['stusab'], row['county'], row['tract'])
+        ret.append(solfilenamegz)
+
+    if row['lp_end'] and not dbrecon.lpfile_properly_terminated(lpfilenamegz):
+        logging.warning(f"{lpfilenamegz} is not properly terminated. Removing")
+        dbrecon.remove_lpfile(auth, row['stusab'], row['county'], row['tract'])
+        ret.append(lpfilenamegz)
+
+    del auth                    # be sure its disconnected
+    return ret
 
 def rescan(auth, args):
     """Get a list of the tracts that require scanning and check each one."""
@@ -466,12 +472,17 @@ def rescan(auth, args):
         spark = SparkSession.builder.getOrCreate()
         sc    = spark.sparkContext
 
+        print("================================================================")
+        print("================================================================")
+        print("================================================================")
+        print("================================================================")
+
         d = sc.parallelize(range(10000))
         import operator
         print("reduce:",d.reduce(operator.add))
         exit(0)
 
-
+    # Figure out what needs to be processed
 
     restrict = "AND ((lp_end IS NOT NULL) or (sol_end IS NOT NULL)) "
     cmd = f"SELECT * from {REIDENT}tracts where (pop100>0) {restrict} "
@@ -483,14 +494,33 @@ def rescan(auth, args):
             cmd += " and (county=%s)"
             args.append(county)
     rows = DBMySQL.csfr(auth, cmd, args, asDicts='True')
+
+    ### DEBUG CODE. LIMIT TO 10 ROWS
+    rows = rows[0:10]
+
+
+
     print(f"tracts requiring rescanning: {len(rows)}")
     cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
     r2  = DBMySQL.csfr(auth, cmd, args)[0][0]
-    print(f"Total tracts: {r2}. Processing with {args.j1} threads")
-    with multiprocessing.Pool(args.j1) as p:
-        p.map(rescan_row, rows)
+    print(f"Total tracts: {r2}.")
 
+    if not args.spark:
+        print(f"Processing locally with {args.j1} threads. Expected completion in {len(rows)*3/10000} hours")
+        with multiprocessing.Pool(args.j1) as p:
+            p.map(rescan_row, rows)
+        return
 
+    print("Processing with spark. Creating RDDs...")
+    # Create an RDD for each
+    rdds = []
+    for row in rows:
+        rdds.append(sc.parallelize([row]).flatMap(rescan_row))
+
+    # Create a union with all the results and process the RDDs
+    results = sc.union(*rdds).collect()
+    print("The following files were deleted by spark:")
+    print("\n".join(results))
 
 def clean(auth):
     for root, dirs, files in os.walk( dbrecon.dpath_expand("$ROOT") ):
@@ -541,7 +571,6 @@ if __name__=="__main__":
     parser.add_argument("--debug", action='store_true', help="debug mode")
     parser.add_argument("--j1", help="number of threads for rescan", type=int, default=10)
     parser.add_argument("--spark", help="run under spark", action='store_true')
-
     args   = parser.parse_args()
 
 
@@ -549,7 +578,7 @@ if __name__=="__main__":
     auth = dbrecon.auth()
 
     if args.j1>50:
-        print("Experience has shown that --j1>50 is not useful. Setting --j1 to 50")
+        print("Experience has shown that --j1>50 is not useful on a machine with 96 cores. Setting --j1 to 50")
         args.j1 = 50
 
 

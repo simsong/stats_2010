@@ -32,6 +32,8 @@ from dbrecon import dopen,dmakedirs,dsystem
 from dfxml.python.dfxml.writer import DFXMLWriter
 from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
 from ctools.dbfile import DBMySQL,DBMySQLAuth
+
+import ctools.cspark as cspark
 import ctools.lock
 
 HELP="""
@@ -451,8 +453,26 @@ def rescan_row(row):
         logging.warning(f"{solfilenamegz} not existing or too small. Removing.")
         dbrecon.remove_solfile(auth, row['stusab'], row['county'], row['tract'])
 
-def rescan(auth, stusab, county, j1):
+def rescan(auth, args):
     """Get a list of the tracts that require scanning and check each one."""
+    stusab = args.stusab
+    county = args.county
+
+    if args.spark:
+        if not cspark.spark_running():
+            raise RuntimeError("--spark provided but not running under spark")
+        # pylint: disable=E0401
+        from pyspark.sql import SparkSession
+        spark = SparkSession.builder.getOrCreate()
+        sc    = spark.sparkContext
+
+        d = sc.parallelize(range(10000))
+        import operator
+        print("reduce:",d.reduce(operator.add))
+        exit(0)
+
+
+
     restrict = "AND ((lp_end IS NOT NULL) or (sol_end IS NOT NULL)) "
     cmd = f"SELECT * from {REIDENT}tracts where (pop100>0) {restrict} "
     args = []
@@ -466,8 +486,8 @@ def rescan(auth, stusab, county, j1):
     print(f"tracts requiring rescanning: {len(rows)}")
     cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
     r2  = DBMySQL.csfr(auth, cmd, args)[0][0]
-    print(f"Total tracts: {r2}. Processing with {j1} threads")
-    with multiprocessing.Pool(j1) as p:
+    print(f"Total tracts: {r2}. Processing with {args.j1} threads")
+    with multiprocessing.Pool(args.j1) as p:
         p.map(rescan_row, rows)
 
 
@@ -508,7 +528,7 @@ if __name__=="__main__":
     parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
 
     parser.add_argument("--maxlp",   help="Never run more than this many LP makers", type=int, default=999)
-    parser.add_argument("--rescan",  help="validate and update the database contents against files in the file system. Uses --j1", action='store_true')
+    parser.add_argument("--rescan",  help="validate and update the database contents against files in the file system. Uses --j1 when not run under spark. SPARK ENABLED.", action='store_true')
     parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
     parser.add_argument("--set_none_running", help="Update database to indicate there are no outstanding LP files being built or Solutions being solved on this machine.",
                         action='store_true')
@@ -520,6 +540,7 @@ if __name__=="__main__":
     parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
     parser.add_argument("--debug", action='store_true', help="debug mode")
     parser.add_argument("--j1", help="number of threads for rescan", type=int, default=10)
+    parser.add_argument("--spark", help="run under spark", action='store_true')
 
     args   = parser.parse_args()
 
@@ -546,7 +567,7 @@ if __name__=="__main__":
     ctools.lock.lock_script( abspath(__file__))
 
     if args.rescan:
-        rescan(auth, args.stusab, args.county, args.j1)
+        rescan(auth, args)
     elif args.clean:
         clean(auth)
     elif args.set_none_running:

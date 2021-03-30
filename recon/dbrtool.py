@@ -8,6 +8,17 @@ HELP="""
 Manipulate the reconstruction database. Database authenticaiton
 credentials come from KMS if they are not in the environment.
 
+Typically your sequence of operation is:
+
+$ $(./drbtool.py --env)
+$ ./drbtool.py --register db10
+$ ./drbtool.py --reident db10 --step1 --step2
+$ ./drbtool.py --reident db10 --run  [--spark]
+
+If you run into problems, check your database with:
+$./drbtool.py --reident db10 --rescah --spark
+
+
 Use --env to generate bash statements to put them in your environment. This is
 easily done with:
 
@@ -23,6 +34,7 @@ import io
 import re
 import logging
 import subprocess
+import glob
 
 
 try:
@@ -62,6 +74,7 @@ import dbrecon
 import constants
 
 import ctools.s3
+import ctools.cspark
 import ctools.dbfile as dbfile
 from ctools.dbfile import DBMySQL
 
@@ -81,6 +94,7 @@ S4_J2 = "32"
 
 # Step5 parallelism
 S5_J1 = "1"
+REFRESH_PARALLELISM = "50"
 
 FAST=True
 
@@ -299,14 +313,12 @@ def do_step5(auth, reident, state, county):
     cmd = [sys.executable, 's5_make_microdata.py', '--config', RECON_CONFIG, '--j1', S5_J1, state, county]
     run(cmd)
 
-
 def list_counties(auth, stusab):
     logging.error("A county must be specified. Try one of these:")
     rows = dbfile.DBMySQL.csfr(auth,f"SELECT DISTINCT county FROM {REIDENT}geo where stusab=%s and sumlev='050'",
                                (stusab,))
     for row in rows:
         logging.error("\t%s",row[0])
-
 
 def list_tracts(auth,stusab, county):
     logging.error("One or more tracts must be specified. Try one of these (or type 'all'):")
@@ -361,7 +373,6 @@ def all_hosts():
     return ret
 
 
-
 def do_setup(host):
     print("setup ",host)
     p = ssh_remote.run_command_on_host(
@@ -380,32 +391,24 @@ CORE='CORE'
 IN_USE='IN_USE'
 def host_status(host):
     """Print the status of host and return True if it is ready to run"""
-    lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
-    if "TASK" in lines:
-        if "scheduler.py" not in lines:
-            print("idle:",host)
+    response = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime',
+                                           pipeerror='True')
+    uptime = [line for line in response.split('\n') if 'load average' in line]
+    if uptime:
+        uptime = ' '.join(uptime[0].split()[2:])
+    else:
+        uptime = ''
+    if "TASK" in response:
+        if "scheduler.py" not in response:
+            print("idle:",host,uptime)
             return IDLE
         else:
-            print("\tin use:", host)
+            print("\tin use:", host,uptime)
             return IN_USE
     else:
-        print("\tCORE:",host)
+        print("\tCORE:",host,uptime)
         return CORE
 
-
-def uptime_host(host):
-    lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
-    uptime = [line for line in lines if 'load average' in line]
-    if uptime:
-        print(host, uptime[0])
-    else:
-        print(host, "NO OBVIOUS UPTIME")
-
-
-def launch_if_needed(host):
-    status = host_status(host)
-    if status==IDLE or (status==IN_USE and args.force):
-        do_launch(host, desc=args.desc, reident=args.reident)
 
 def fast_all(callback):
     """Run the callback on every machine, with the parameter being the hostname, each in their own process."""
@@ -433,6 +436,25 @@ def show_file(path):
         cmd = ['ls','-l',path]
     run(cmd, check=False)
 
+
+def do_spark(args):
+    """one of the great errors in the desing of the DAS was that we didn't use a python program to launch spark, instead we use a run_cluster script.
+    Here we do not repeat that same mistake.
+    """
+    try:
+        num_executors = int(args.num_executors)
+    except ValueError:
+        num_executors = (len(all_hosts)-2)*40
+
+    cmd = []
+    if args.rescan:
+        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark'])
+
+    ctools.cspark.spark_submit(pyfiles = glob.glob("*.py"),
+                               pydirs = "ctools",
+                               num_executors = args.num_executors,
+                               executor_cores = 2,
+                               argv = cmd)
 
 def do_launch(host, *, debug=False, desc=False, reident):
     print(">launch ",host)
@@ -467,6 +489,10 @@ def do_launch(host, *, debug=False, desc=False, reident):
         else:
             exit(0)
 
+def launch_if_needed(host):
+    status = host_status(host)
+    if status==IDLE or (status==IN_USE and args.force):
+        do_launch(host, desc=args.desc, reident=args.reident)
 
 if __name__ == "__main__":
     import argparse
@@ -484,18 +510,23 @@ if __name__ == "__main__":
     g.add_argument("--run", help="Run the scheduler",action='store_true')
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
-    g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
     g.add_argument("--launch", help="Run --run on a specific machine(s) (sep by comma)")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
-    g.add_argument("--status_all", help="report each machine status", action='store_true')
+    g.add_argument("--cluster_status", help="report each machine status", action='store_true')
     g.add_argument("--resize", help="Resize cluster", type=int)
+    g.add_argument("--rescan", help="Validate all LP and SOL files in S3 against the database", action='store_true')
+    g.add_argument("--step3", help="manually run Step 3 and make LP files. Normally run this through the controller. This is for testing", action='store_true')
+    g.add_argument("--step4", help="manually run Step 4 and make SOL files. Normally run this through the controller. This is for testing", action='store_true')
+    g.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
+
+
+    parser.add_argument("--reident", help="specify the reconstruction identification")
+    parser.add_argument("--spark", help="Run certian commands under spark",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
-    parser.add_argument("--step3", help="manually run Step 3 and make LP files. Normally run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--step4", help="manually run Step 4 and make SOL files. Normally run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--reident", help="specify the reconstruction identification")
+
+
     parser.add_argument("--stusab", help="which stusab to process", default='all')
     parser.add_argument("--county", help="required for step3 and step4")
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
@@ -505,6 +536,7 @@ if __name__ == "__main__":
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
     parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
+    parser.add_argument("--num_executors", help="number of spark executors to use",default="(number of workers)*40")
     args = parser.parse_args()
 
     if args.env:
@@ -529,9 +561,6 @@ if __name__ == "__main__":
             do_setup( host )
         exit(0)
 
-    if args.uptime_all:
-        fast_all(uptime_host)
-        exit(0)
 
     if args.launch:
         if not args.reident:
@@ -548,7 +577,7 @@ if __name__ == "__main__":
         fast_all(launch_if_needed)
         exit(0)
 
-    if args.status_all:
+    if args.cluster_status:
         fast_all(host_status)
         exit(0)
 
@@ -615,7 +644,6 @@ if __name__ == "__main__":
         dbrecon.REIDENT = os.environ['REIDENT'] = REIDENT = args.reident+"_"
     else:
         print("Please specify --reident\n",file=sys.stderr)
-        parser.print_help()
         exit(1)
 
     if args.register:
@@ -639,6 +667,11 @@ if __name__ == "__main__":
             cmd.extend(['--desc','--maxlp','1','--nosol'])
         run(cmd)
 
+
+    # Check if we are using spark!
+    ################################################################
+    if args.spark:
+        do_spark(args)
 
     ################################################################
     # We can run multiple steps if we want! For testing, of course
@@ -675,3 +708,6 @@ if __name__ == "__main__":
         if args.force:
             dbrecon.remove_csvfile(auth, args.stusab, args.county, args.tract)
         do_step5(auth, args.reident, args.stusab, args.county)
+
+    if args.rescan:
+        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG, '--j1', REFRESH_PARALLELISM])

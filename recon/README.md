@@ -286,14 +286,14 @@ You are better off with:
 
     python3 s5_make_microdata.py all
 
-## Status
+# Running at Scale
 
-If you can run a CGI script on a web server that has access to your MySQL server, you can use `report.cgi` to monitor the progress of `scheduler.py`
+## Scheduler
 
+## Spark
 
+## Web-Status
 
-# Validation
+If you can run a CGI script on a web server that has access to your MySQL server, you can use `dbrecon.py` program as a back-end to generate a JSON object that can be used to monitor the progress. The front-end is located in the html/ and html/js directory. We run this through mod_wsgi on an Apache web server using bottle.
 
-This information is for those of us at the Census Bureau. It largely
-tracks how we validated that the new code ran as was as the original,
-development code.
+# Future Work

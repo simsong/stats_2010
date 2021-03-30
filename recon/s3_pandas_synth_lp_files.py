@@ -649,6 +649,7 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
         if s is None:
             logging.error("s is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
             none_errors += 1
+            continue
         if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
             geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
             for k,v in list(s.items()):

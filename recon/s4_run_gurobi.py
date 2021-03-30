@@ -176,7 +176,7 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
                 pass
 
         # Get the final pop
-        final_pop = dbrecon.get_final_pop_from_sol(stusab,county,tract,delete=False);
+        final_pop = dbrecon.get_final_pop_from_sol(auth,stusab,county,tract,delete=False);
         if final_pop==0:
             raise RuntimeError("final pop cannot be 0")
         vars.append("final_pop")

@@ -68,6 +68,7 @@ try:
 except ImportError:
     logging.warning("ssh_remote and kms not available")
 
+EMR_CONTROL='/mnt/gits/das-vm-config/das_decennial/programs/emr_control.py'
 
 
 import dbrecon
@@ -400,14 +401,11 @@ def host_status(host):
         uptime = ''
     if "TASK" in response:
         if "scheduler.py" not in response:
-            print("idle:",host,uptime)
-            return IDLE
+            return (IDLE, f"idle: {host} {uptime}")
         else:
-            print("\tin use:", host,uptime)
-            return IN_USE
+            return (IN_USE, f"in use: {host} {uptime}")
     else:
-        print("\tCORE:",host,uptime)
-        return CORE
+        return (CORE, f"CORE: {host} {uptime}")
 
 
 def fast_all(callback):
@@ -458,7 +456,6 @@ def do_spark(args):
                                argv = cmd)
 
 def do_launch(host, *, debug=False, desc=False, reident):
-    print(">launch ",host)
     cmd=(
         'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
         'ln -s das-vm-config/dbrecon/stats_2010/recon;'
@@ -491,9 +488,13 @@ def do_launch(host, *, debug=False, desc=False, reident):
             exit(0)
 
 def launch_if_needed(host):
-    status = host_status(host)
+    status = host_status(host)[0]
     if status==IDLE or (status==IN_USE and args.force):
         do_launch(host, desc=args.desc, reident=args.reident)
+        print("Launch: ",host)
+
+def print_host_status(host):
+    print(host_status(host)[1])
 
 if __name__ == "__main__":
     import argparse
@@ -579,13 +580,13 @@ if __name__ == "__main__":
         exit(0)
 
     if args.cluster_status:
-        fast_all(host_status)
+        fast_all(print_host_status)
         exit(0)
 
     if args.resize:
         confirm = input(f"Resize cluster to {args.resize} nodes?").strip()
         if confirm[0:1]=='y':
-            subprocess.check_call([sys.executable,'/mnt/gits/das-vm-config/das_decennial/programs/emr_control.py','--task',str(args.resize)])
+            subprocess.check_call([sys.executable,EMR_CONTROL,'--task',str(args.resize)])
         exit(0)
 
 
@@ -597,7 +598,6 @@ if __name__ == "__main__":
         logging.warning('MYSQL_HOST is not in your environment!')
         logging.warning('Please  run $(./dbrtool.py --env)')
         exit(0)
-
 
     if args.mysql:
         do_mysql()
@@ -628,10 +628,8 @@ if __name__ == "__main__":
                 for row in rows:
                     for (k,v) in row.items():
                         print(f"{k:15} {v}")
-
-
-
         exit(0)
+
     if args.status:
         ret = get_recon_status(auth, args.reident)
         print(json.dumps(ret,default=str,indent=4))

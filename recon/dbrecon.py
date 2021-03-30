@@ -331,14 +331,14 @@ def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
         raise RuntimeError(f"errors: {errors}")
     return count
 
-def get_final_pop_from_sol(stusab, county, tract, delete=True):
+def get_final_pop_from_sol(auth, stusab, county, tract, delete=True):
     sol_filenamegz = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
         if delete:
             dpath_unlink(sol_filenamegz)
-        DB.csfr(f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
                 (stusab,county,tract))
         return None
     return count

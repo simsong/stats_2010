@@ -587,7 +587,6 @@ def tracts_for_state_county(*,stusab,county):
 MIN_LP_SIZE  =  100      # smaller than this, the file must be invalid
 MIN_SOL_SIZE = 1000      # smaller than this, the file is invalid
 def lpfile_properly_terminated(fname):
-
     # Small files are not valid LP files
     if dgetsize(fname) < MIN_LP_SIZE:
         return False
@@ -960,7 +959,7 @@ def dmakedirs(dpath):
     os.makedirs(path,exist_ok=True)
 
 def dgetsize(dpath):
-    """Return the size of a file path. If it is not found, return None."""
+    """Return the size of a file path. If it is not found, return 0. Safer than None."""
     path = dpath_expand(dpath)
     if path.startswith("s3://"):
         (bucket,key) = s3.get_bucket_key(path)
@@ -968,12 +967,12 @@ def dgetsize(dpath):
             return boto3.resource('s3').Object(bucket,key).content_length
         except botocore.exceptions.ClientError as err:
             if err.response['Error']['Code']=='404':
-                return None
+                return 0
             raise
     try:
         return os.path.getsize(path)
     except FileNotFoundError as e:
-        return None
+        return 0
 
 def dsystem(x):
     logging.info("system({})".format(x))

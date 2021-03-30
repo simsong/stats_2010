@@ -365,11 +365,11 @@ def do_info(path):
 def all_hosts():
     pat = re.compile("(ip-[^ :]+)")
     ret = []
-    for line in subprocess.check_output(['yarn','node','--list'],
-                                        stderr=open('/dev/null','w'),encoding='utf-8').split('\n'):
-            m = pat.search(line)
-            if m:
-                ret.append(m.group(1))
+    cmd = ['yarn','node','--list']
+    for line in subprocess.check_output(cmd, stderr=open('/dev/null','w'), encoding='utf-8').split('\n'):
+        m = pat.search(line)
+        if m:
+            ret.append(m.group(1))
     return ret
 
 
@@ -391,9 +391,9 @@ CORE='CORE'
 IN_USE='IN_USE'
 def host_status(host):
     """Print the status of host and return True if it is ready to run"""
-    response = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime',
-                                           pipeerror='True')
-    uptime = [line for line in response.split('\n') if 'load average' in line]
+    cmd = 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime'
+    response = ssh_remote.run_command_on_host(host,cmd, pipeerror='True')
+    uptime   = [line for line in response.split('\n') if 'load average' in line]
     if uptime:
         uptime = ' '.join(uptime[0].split()[2:])
     else:
@@ -444,12 +444,13 @@ def do_spark(args):
     try:
         num_executors = int(args.num_executors)
     except ValueError:
-        num_executors = (len(all_hosts)-2)*40
+        num_executors = (len(all_hosts())-2)*40
 
     cmd = []
     if args.rescan:
         cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark'])
 
+    print("LAUNCH: ",cmd)
     ctools.cspark.spark_submit(pyfiles = glob.glob("*.py"),
                                pydirs = "ctools",
                                num_executors = args.num_executors,

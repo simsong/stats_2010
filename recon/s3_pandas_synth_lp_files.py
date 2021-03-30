@@ -450,8 +450,8 @@ class LPTractBuilder:
 
 
         # if we were just asked to create the output file, notify of that and return
-        if args.outfile:
-            logging.info("%s created",args.outfile)
+        if args.output:
+            logging.info("%s created",args.output)
             return
 
         # otherwise, rename the file (which may upload it to s3), and update the databse

@@ -375,18 +375,22 @@ def do_setup(host):
     print(p)
 
 
-def host_status(host,*, idle_message=""):
+IDLE='IDLE'
+CORE='CORE'
+IN_USE='IN_USE'
+def host_status(host):
     """Print the status of host and return True if it is ready to run"""
     lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
     if "TASK" in lines:
         if "scheduler.py" not in lines:
-            print("idle:",host, idle_message)
-            return True
+            print("idle:",host)
+            return IDLE
         else:
             print("\tin use:", host)
+            return IN_USE
     else:
         print("\tCORE:",host)
-    return False
+        return CORE
 
 
 def uptime_host(host):
@@ -399,7 +403,8 @@ def uptime_host(host):
 
 
 def launch_if_needed(host):
-    if host_status(host,idle_message='LAUNCHING') or args.force:
+    status = host_status(host)
+    if status==IDLE or (status==IN_USE and args.force):
         do_launch(host, desc=args.desc, reident=args.reident)
 
 def fast_all(callback):

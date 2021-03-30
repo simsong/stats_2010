@@ -313,14 +313,12 @@ def do_step5(auth, reident, state, county):
     cmd = [sys.executable, 's5_make_microdata.py', '--config', RECON_CONFIG, '--j1', S5_J1, state, county]
     run(cmd)
 
-
 def list_counties(auth, stusab):
     logging.error("A county must be specified. Try one of these:")
     rows = dbfile.DBMySQL.csfr(auth,f"SELECT DISTINCT county FROM {REIDENT}geo where stusab=%s and sumlev='050'",
                                (stusab,))
     for row in rows:
         logging.error("\t%s",row[0])
-
 
 def list_tracts(auth,stusab, county):
     logging.error("One or more tracts must be specified. Try one of these (or type 'all'):")
@@ -375,7 +373,6 @@ def all_hosts():
     return ret
 
 
-
 def do_setup(host):
     print("setup ",host)
     p = ssh_remote.run_command_on_host(
@@ -413,13 +410,6 @@ def host_status(host):
         return CORE
 
 
-
-
-def launch_if_needed(host):
-    status = host_status(host)
-    if status==IDLE or (status==IN_USE and args.force):
-        do_launch(host, desc=args.desc, reident=args.reident)
-
 def fast_all(callback):
     """Run the callback on every machine, with the parameter being the hostname, each in their own process."""
     procs = []
@@ -455,7 +445,6 @@ def do_spark(args):
         num_executors = int(args.num_executors)
     except ValueError:
         num_executors = (len(all_hosts)-2)*40
-
 
     cmd = []
     if args.rescan:
@@ -500,6 +489,10 @@ def do_launch(host, *, debug=False, desc=False, reident):
         else:
             exit(0)
 
+def launch_if_needed(host):
+    status = host_status(host)
+    if status==IDLE or (status==IN_USE and args.force):
+        do_launch(host, desc=args.desc, reident=args.reident)
 
 if __name__ == "__main__":
     import argparse

@@ -380,26 +380,25 @@ CORE='CORE'
 IN_USE='IN_USE'
 def host_status(host):
     """Print the status of host and return True if it is ready to run"""
-    lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
-    if "TASK" in lines:
-        if "scheduler.py" not in lines:
-            print("idle:",host)
+    response = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime',
+                                           pipeerror='True')
+    uptime = [line for line in response.split('\n') if 'load average' in line]
+    if uptime:
+        uptime = ' '.join(uptime[0].split()[2:])
+    else:
+        uptime = ''
+    if "TASK" in response:
+        if "scheduler.py" not in response:
+            print("idle:",host,uptime)
             return IDLE
         else:
-            print("\tin use:", host)
+            print("\tin use:", host,uptime)
             return IN_USE
     else:
-        print("\tCORE:",host)
+        print("\tCORE:",host,uptime)
         return CORE
 
 
-def uptime_host(host):
-    lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
-    uptime = [line for line in lines if 'load average' in line]
-    if uptime:
-        print(host, uptime[0])
-    else:
-        print(host, "NO OBVIOUS UPTIME")
 
 
 def launch_if_needed(host):
@@ -484,10 +483,9 @@ if __name__ == "__main__":
     g.add_argument("--run", help="Run the scheduler",action='store_true')
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
-    g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
     g.add_argument("--launch", help="Run --run on a specific machine(s) (sep by comma)")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
-    g.add_argument("--status_all", help="report each machine status", action='store_true')
+    g.add_argument("--cluster_status", help="report each machine status", action='store_true')
     g.add_argument("--resize", help="Resize cluster", type=int)
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
@@ -529,9 +527,6 @@ if __name__ == "__main__":
             do_setup( host )
         exit(0)
 
-    if args.uptime_all:
-        fast_all(uptime_host)
-        exit(0)
 
     if args.launch:
         if not args.reident:
@@ -548,7 +543,7 @@ if __name__ == "__main__":
         fast_all(launch_if_needed)
         exit(0)
 
-    if args.status_all:
+    if args.cluster_status:
         fast_all(host_status)
         exit(0)
 

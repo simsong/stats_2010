@@ -8,6 +8,17 @@ HELP="""
 Manipulate the reconstruction database. Database authenticaiton
 credentials come from KMS if they are not in the environment.
 
+Typically your sequence of operation is:
+
+$ $(./drbtool.py --env)
+$ ./drbtool.py --register db10
+$ ./drbtool.py --reident db10 --step1 --step2
+$ ./drbtool.py --reident db10 --run  [--spark]
+
+If you run into problems, check your database with:
+$./drbtool.py --reident db10 --rescah --spark
+
+
 Use --env to generate bash statements to put them in your environment. This is
 easily done with:
 
@@ -23,6 +34,7 @@ import io
 import re
 import logging
 import subprocess
+import glob
 
 
 try:
@@ -81,6 +93,7 @@ S4_J2 = "32"
 
 # Step5 parallelism
 S5_J1 = "1"
+REFRESH_PARALLELISM = "50"
 
 FAST=True
 
@@ -433,6 +446,26 @@ def show_file(path):
     run(cmd, check=False)
 
 
+def do_spark(args):
+    """one of the great errors in the desing of the DAS was that we didn't use a python program to launch spark, instead we use a run_cluster script.
+    Here we do not repeat that same mistake.
+    """
+    try:
+        num_executors = int(args.num_executors)
+    except ValueError:
+        num_executors = (len(all_hosts)-2)*40
+
+
+    cmd = []
+    if args.rescan:
+        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark'])
+
+    ctools.cspark.spark_submit(pyfiles = glob.glob("*.py"),
+                               pydirs = "ctools",
+                               num_executors = args.num_executors,
+                               executor_cores = 2,
+                               argv = cmd)
+
 def do_launch(host, *, debug=False, desc=False, reident):
     print(">launch ",host)
     cmd=(
@@ -487,13 +520,19 @@ if __name__ == "__main__":
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
     g.add_argument("--cluster_status", help="report each machine status", action='store_true')
     g.add_argument("--resize", help="Resize cluster", type=int)
+    g.add_argument("--rescan", help="Validate all LP and SOL files in S3 against the database", action='store_true')
+    g.add_argument("--step3", help="manually run Step 3 and make LP files. Normally run this through the controller. This is for testing", action='store_true')
+    g.add_argument("--step4", help="manually run Step 4 and make SOL files. Normally run this through the controller. This is for testing", action='store_true')
+    g.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
+
+
+    parser.add_argument("--reident", help="specify the reconstruction identification")
+    parser.add_argument("--spark", help="Run certian commands under spark")
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
-    parser.add_argument("--step3", help="manually run Step 3 and make LP files. Normally run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--step4", help="manually run Step 4 and make SOL files. Normally run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--reident", help="specify the reconstruction identification")
+
+
     parser.add_argument("--stusab", help="which stusab to process", default='all')
     parser.add_argument("--county", help="required for step3 and step4")
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
@@ -503,6 +542,7 @@ if __name__ == "__main__":
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
     parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
+    parser.add_argument("--num_executors", help="number of spark executors to use",default="(number of workers)*40")
     args = parser.parse_args()
 
     if args.env:
@@ -635,6 +675,11 @@ if __name__ == "__main__":
         run(cmd)
 
 
+    # Check if we are using spark!
+    ################################################################
+    if args.spark:
+        do_spark(args)
+
     ################################################################
     # We can run multiple steps if we want! For testing, of course
     if args.step3 or args.step4 or args.step5:
@@ -670,3 +715,6 @@ if __name__ == "__main__":
         if args.force:
             dbrecon.remove_csvfile(auth, args.stusab, args.county, args.tract)
         do_step5(auth, args.reident, args.stusab, args.county)
+
+    if args.rescan:
+        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG, '--j1', REFRESH_PARALLELISM])

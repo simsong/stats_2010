@@ -839,7 +839,7 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
 
     # If we are writing but not writing to S3, make sure the directory exists
     if mode[0]=='w' and path[0:5]!='s3://':
-        dmakedirs(path)
+        dmakedirs( os.path.dirname(path))
 
     path = dpath_expand(path)
     # immediate passthrough if zipfilename is None and s3 is requested
@@ -956,7 +956,10 @@ def dmakedirs(dpath):
     if path[0:5]=='s3://':
         return
     logging.info("mkdirs({})".format(path))
-    os.makedirs(path,exist_ok=True)
+    try:
+        os.makedirs(path,exist_ok=True)
+    except FileExistsError as e:
+        pass
 
 def dgetsize(dpath):
     """Return the size of a file path. If it is not found, return 0. Safer than None."""

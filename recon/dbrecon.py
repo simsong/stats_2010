@@ -759,6 +759,7 @@ def logging_exit():
     if hasattr(sys,'last_value'):
         msg = f'PID{os.getpid()}: {sys.last_value}'
         logging.error(msg)
+        logging.error("%s",sys.argv)
         log_error(error=msg, filename=__file__, last_value=str(sys.last_value))
 
 

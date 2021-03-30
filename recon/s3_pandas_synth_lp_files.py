@@ -561,7 +561,7 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
 
     try:
         sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )
-        sf1_tract_reader = csv.DictReader(dopen( sf1_tract_data_file,'r'))
+        sf1_tract_reader    = csv.DictReader(dopen( sf1_tract_data_file,'r'))
     except FileNotFoundError as e:
         print(e)
         logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {stusab} {county} ")
@@ -644,7 +644,11 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
     logging.info("getting tract data for %s %s",stusab,county)
     sf1_tract_list=[]
     error_count = 0
-    for s in sf1_tract_reader:
+    none_errors = 0
+    for (ct,s) in enumerate(sf1_tract_reader):
+        if s is None:
+            logging.error("s is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
+            none_errors += 1
         if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
             geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
             for k,v in list(s.items()):
@@ -652,10 +656,13 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
                     try:
                         sf1_tract_list.append([geo_id,k,float(v)])
                     except ValueError as e:
-                        logging.error(f"state:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
+                        logging.error(f"stusab:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
                         error_count += 1
                         if error_count>MAX_SF1_ERRORS:
                             return
+
+    if none_errors>0:
+        raise RuntimeError("none_errors > 0 ")
 
     sf1_tract = pd.DataFrame.from_records(sf1_tract_list, columns=[GEOID,TABLEVAR,'value'])
     make_attributes_categories(sf1_tract)

@@ -646,21 +646,29 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
     error_count = 0
     none_errors = 0
     for (ct,s) in enumerate(sf1_tract_reader):
-        if s is None:
+        if s['STATE'] is None:
             logging.error("s is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
             none_errors += 1
             continue
-        if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
-            geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
-            for k,v in list(s.items()):
-                if k[:3]=='PCT' and geo_id[:1]!='S':
-                    try:
-                        sf1_tract_list.append([geo_id,k,float(v)])
-                    except ValueError as e:
-                        logging.error(f"stusab:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
-                        error_count += 1
-                        if error_count>MAX_SF1_ERRORS:
-                            return
+        try:
+            if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
+                geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
+                for k,v in list(s.items()):
+                    if k[:3]=='PCT' and geo_id[:1]!='S':
+                        try:
+                            sf1_tract_list.append([geo_id,k,float(v)])
+                        except ValueError as e:
+                            logging.error(f"stusab:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
+                            error_count += 1
+                            if error_count>MAX_SF1_ERRORS:
+                                return
+        except TypeError as e:
+            logging.error("s['STATE'] is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
+            logging.error(e)
+            none_errors += 1
+            continue
+
+
 
     if none_errors>0:
         raise RuntimeError("none_errors > 0 ")

@@ -22,6 +22,7 @@ import time
 import psutil
 import socket
 import fcntl
+import multiprocessing
 from os.path import dirname,basename,abspath
 
 # Set up path, among other things
@@ -450,7 +451,7 @@ def rescan_row(row):
         logging.warning(f"{solfilenamegz} not existing or too small. Removing.")
         dbrecon.remove_solfile(auth, row['stusab'], row['county'], row['tract'])
 
-def rescan(auth, stusab, county):
+def rescan(auth, stusab, county, j1):
     """Get a list of the tracts that require scanning and check each one."""
     restrict = "AND ((lp_end IS NOT NULL) or (sol_end IS NOT NULL)) "
     cmd = f"SELECT * from {REIDENT}tracts where (pop100>0) {restrict} "
@@ -465,11 +466,9 @@ def rescan(auth, stusab, county):
     print(f"tracts requiring rescanning: {len(rows)}")
     cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
     r2  = DBMySQL.csfr(auth, cmd, args)[0][0]
-    print(f"Total tracts: {r2}")
-
-    print("make this multi-threaded")
-    for row in rows:
-        rescan_row( row )
+    print(f"Total tracts: {r2}. Processing with {j1} threads")
+    with multiprocessing.Pool(j1) as p:
+        p.map(rescan_row, rows)
 
 
 
@@ -520,12 +519,17 @@ if __name__=="__main__":
     parser.add_argument("--county", help="county for rescanning")
     parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
     parser.add_argument("--debug", action='store_true', help="debug mode")
+    parser.add_argument("--j1", help="number of threads for rescan", type=int, default=10)
 
     args   = parser.parse_args()
 
 
     config = dbrecon.setup_logging_and_get_config(args=args,prefix='sch_')
     auth = dbrecon.auth()
+
+    if args.j1>50:
+        print("Experience has shown that --j1>50 is not useful. Setting --j1 to 50")
+        args.j1 = 50
 
     if args.testdb:
         print("Tables:")
@@ -537,7 +541,7 @@ if __name__=="__main__":
     ctools.lock.lock_script()
 
     if args.rescan:
-        rescan(auth, args.stusab, args.county)
+        rescan(auth, args.stusab, args.county, args.j1)
     elif args.clean:
         clean(auth)
     elif args.set_none_running:

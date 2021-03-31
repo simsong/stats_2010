@@ -535,8 +535,16 @@ def rescan(auth, args):
 
     # Create a union with all the results and process the RDDs
     results = sc.union(rdds).collect()
-    print("The following files were deleted by spark:")
-    print("\n".join(results))
+    print("Spark union is finished!")
+    if len(results)==0:
+        print("all files validate!")
+    else:
+        print("The following files were deleted by spark:")
+        print("\n".join(results))
+    print("\n\n\n\n")
+    print("================================================================")
+    print("================================================================")
+    print("================================================================")
 
 def clean(auth):
     for root, dirs, files in os.walk( dbrecon.dpath_expand("$ROOT") ):

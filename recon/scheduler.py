@@ -512,10 +512,6 @@ def rescan(auth, args):
         config['environment'][var] = os.getenv(var)
     config_rows = [ (config, row) for row in rows]
 
-    print("### DEBUG CODE. LIMIT TO 2 ROWS")
-    config_rows = config_rows[0:2]
-
-
     print(f"tracts requiring rescanning: {len(config_rows)}")
     cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
     r2  = DBMySQL.csfr(auth, cmd, sqlargs)[0][0]

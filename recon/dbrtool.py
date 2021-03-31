@@ -458,8 +458,8 @@ def do_spark(args):
         cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark'])
 
     print("LAUNCH: ",cmd)
-    ctools.cspark.spark_submit(files_to_zip = glob.glob("*.py") + glob.glob("ctools/*.py") + glob.glob("dfxml/*py"),
-                               pyfiles = ['s3zcat','s3zput'],
+    REQUIRED_FILES = glob.glob("*.py") + glob.glob("ctools/*.py") + glob.glob("dfxml/*py")
+    ctools.cspark.spark_submit(files_to_zip = REQUIRED_FILES,
                                num_executors = args.num_executors,
                                executor_cores = 2,
                                argv = cmd)

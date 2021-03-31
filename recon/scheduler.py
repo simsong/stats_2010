@@ -30,7 +30,7 @@ from os.path import dirname,basename,abspath
 import dbrecon
 
 from dbrecon import dopen,dmakedirs,dsystem
-from dfxml.python.dfxml.writer import DFXMLWriter
+from dfxml.writer import DFXMLWriter
 from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
@@ -436,10 +436,16 @@ def kill_running_s3_s4():
 ## rescan stuff follows
 
 
-def rescan_row(row):
+def rescan_row(config_row):
     """Designed to be called from multiprocessing. Validate that the files referenced in the database row are present. If they are not, update the database.
     If they are present, validate them. If they do not validate, update the database.
     """
+    (config,row) = config_row
+    dbrecon.GetConfig().set_config(config)
+    dbrecon.set_reident(config['paths']['reident'])
+    for var in config['environment']['vars'].split(','):
+        os.environ[var] = config['environment'][var]
+
     row['stusab'] = row['stusab'].lower()
     logging.info(f"rescan_row {row}")
     lpfilenamegz  = dbrecon.LPFILENAMEGZ(stusab=row['stusab'],county=row['county'],tract=row['tract'])
@@ -488,39 +494,47 @@ def rescan(auth, args):
 
     restrict = "AND ((lp_end IS NOT NULL) or (sol_end IS NOT NULL)) "
     cmd = f"SELECT * from {REIDENT}tracts where (pop100>0) {restrict} "
-    args = []
+    sqlargs = []
     if stusab:
         cmd += " and (stusab = %s)"
-        args.append(stusab)
+        sqlargs.append(stusab)
         if county:
             cmd += " and (county=%s)"
-            args.append(county)
-    rows = DBMySQL.csfr(auth, cmd, args, asDicts='True')
+            sqlargs.append(county)
+    rows = DBMySQL.csfr(auth, cmd, sqlargs, asDicts='True')
 
-    print("### DEBUG CODE. LIMIT TO 10 ROWS")
-    rows = rows[0:10]
+    # This idea borrowed from DAS. Put in the config file all of the information that the worker will need.
+    # Move over environment variables in a special section called [environment]
+    config = dbrecon.GetConfig().config
+
+    config['paths']['reident'] = REIDENT
+    for var in config['environment']['vars'].split(','):
+        config['environment'][var] = os.getenv(var)
+    config_rows = [ (config, row) for row in rows]
+
+    print("### DEBUG CODE. LIMIT TO 2 ROWS")
+    config_rows = config_rows[0:2]
 
 
-
-    print(f"tracts requiring rescanning: {len(rows)}")
+    print(f"tracts requiring rescanning: {len(config_rows)}")
     cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
-    r2  = DBMySQL.csfr(auth, cmd, args)[0][0]
+    r2  = DBMySQL.csfr(auth, cmd, sqlargs)[0][0]
     print(f"Total tracts: {r2}.")
 
     if not args.spark:
-        print(f"Processing locally with {args.j1} threads. Expected completion in {len(rows)*3/10000} hours")
+        print(f"Processing locally with {args.j1} threads. Expected completion in {len(config_rows)*3/10000} hours")
         with multiprocessing.Pool(args.j1) as p:
-            p.map(rescan_row, rows)
+            p.map(rescan_row, config_rows)
         return
 
     print("Processing with spark. Creating RDDs...")
     # Create an RDD for each
     rdds = []
-    for row in rows:
-        rdds.append(sc.parallelize([row]).flatMap(rescan_row))
+    for config_row in config_rows:
+        rdds.append(sc.parallelize([config_row]).flatMap(rescan_row))
 
     # Create a union with all the results and process the RDDs
-    results = sc.union(*rdds).collect()
+    results = sc.union(rdds).collect()
     print("The following files were deleted by spark:")
     print("\n".join(results))
 

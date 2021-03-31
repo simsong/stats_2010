@@ -27,9 +27,9 @@ import atexit
 
 import dbrecon
 
-from total_size import total_size
 from dbrecon import DB,GB,MB
 from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
+from ctools.total_size import total_size
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 assert pd.__version__ > '0.19'

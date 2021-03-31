@@ -24,9 +24,9 @@ import random
 import re
 
 import dbrecon                  # brings in path
-from total_size import total_size
 from dbrecon import dopen,dpath_exists,GEOFILE_FILENAME_TEMPLATE,sf1_zipfilename,REIDENT
 
+from ctools.total_size import total_size
 import ctools.s3 as s3
 from ctools.timer import Timer
 from ctools.dbfile import DBMySQL,DBMySQLAuth
@@ -327,9 +327,6 @@ if __name__=="__main__":
     if not dbrecon.dpath_exists(f"$SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv"):
         raise FileNotFoundError("$SRC/layouts/DATA_FIELD_DESCRIPTORS_classified.csv")
 
-
-    from dfxml.python.dfxml.writer import DFXMLWriter
-    dfxml    = DFXMLWriter(filename=logfname.replace(".log",".dfxml"), prettyprint=True)
 
     stusabs = []
     if (args.all) or (args.stusabs == ['all']):

@@ -31,6 +31,8 @@ import boto3
 import botocore
 import subprocess
 import inspect
+import gzip
+import codecs
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
@@ -45,9 +47,11 @@ import ctools.s3 as s3
 import ctools.clogging as clogging
 from ctools.dbfile import DBMySQLAuth,DBMySQL
 from ctools.gzfile import GZFile
-from total_size import total_size
+from ctools.total_size import total_size
 
-from dfxml.python.dfxml.writer import DFXMLWriter
+from dfxml.writer import DFXMLWriter
+global dfxml_writer
+dfxml_writer = None
 
 REIDENT = os.getenv('REIDENT')
 
@@ -65,11 +69,13 @@ ZCAT    = 'zcat'                          # regular zcat program
 GZIP    = 'gzip'                # compressor
 GZIP_OPT = '-1f'                # compression options
 
-def set_reident(reident):
+def set_reident(reident_no_sep):
     global REIDENT
     import dbrecon
-    dbrecon.REIDENT = REIDENT = os.environ['REIDENT'] = reident + "_"
-    os.environ['REIDENT_NO_SEP'] = reident
+    if reident_no_sep.endswith("_"):   # remove if it was inadvertnetly provided
+        reident_no_sep = reident_no_sep[:-1]
+    os.environ['REIDENT_NO_SEP'] = reident_no_sep
+    dbrecon.REIDENT = REIDENT = os.environ['REIDENT'] = reident_no_sep + "_"
 
 ##
 ## Functions that return paths.
@@ -80,11 +86,7 @@ SF1_RACE_BINARIES              = '$SRC/layouts/sf1_vars_race_binaries.csv'
 GEOFILE_FILENAME_TEMPLATE      = "$ROOT/work/{stusab}/geofile_{stusab}.csv"
 STATE_COUNTY_FILENAME_TEMPLATE = '$ROOT/work/{stusab}/state_county_list_{state_code}.csv'
 
-
-global dfxml_writer
-dfxml_writer = None
 start_time = time.time()
-
 MB=1000*1000
 GB=1000*1000*1000
 MiB=1024*1024
@@ -508,6 +510,9 @@ class GetConfig(metaclass=Singleton):
     def __init__(self):
         self.config = None
 
+    def set_config(self, config):
+        self.config = config
+
     def config_reload(self, path=CONFIG_PATH):
         self.config = ConfigParser()
         self.config.read(path)
@@ -853,8 +858,13 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
             p = subprocess.Popen([ S3ZPUT, '/dev/stdin', path], stdin=subprocess.PIPE, encoding=encoding)
             return p.stdin
         if mode.startswith('r') and path.endswith('.gz'):
-            p = subprocess.Popen([ S3ZCAT, path], stdout=subprocess.PIPE, encoding=encoding)
-            return p.stdout
+            (bucket,key) = s3.get_bucket_key(path)
+            obj = boto3.resource('s3').Object(bucket,key)
+            f   = gzip.GzipFile(fileobj=obj.get()['Body'])
+            if mode.endswith('b'):
+                return f
+            else:
+                return codecs.getreader(encoding)(f, errors='ignore')
         return s3.s3open(path, mode=mode, encoding=encoding)
 
     if 'b' in mode:
@@ -1033,6 +1043,10 @@ if __name__=="__main__":
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Get the count for SOL.GZ files" )
     parser.add_argument("--lpcheck",help="check to see if file is properly terminated")
+    parser.add_argument("--s3cat",help="test reading a file from S3. should decompress files ending .gz")
     args     = parser.parse_args()
     if args.lpcheck:
         print(f"lpfile_properly_terminated({args.lpcheck})=",lpfile_properly_terminated(args.lpcheck))
+    if args.s3cat:
+        for line in dopen(args.s3cat, mode='r'):
+            print(line)

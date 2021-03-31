@@ -49,6 +49,8 @@ except ImportError:
     """,file=sys.stderr)
     exit(1)
 
+NUMBER_OF_WORKERS_TIMES_40="(Number of Workers) * 40"
+
 DAS_ROOT   = dirname(dirname(dirname(dirname(abspath(__file__)))))
 if DAS_ROOT not in sys.path:
     sys.path.append(DAS_ROOT)
@@ -445,10 +447,11 @@ def do_spark(args):
     """one of the great errors in the desing of the DAS was that we didn't use a python program to launch spark, instead we use a run_cluster script.
     Here we do not repeat that same mistake.
     """
-    try:
-        num_executors = int(args.num_executors)
-    except ValueError:
+    if args.num_executors == NUMBER_OF_WORKERS_TIMES_40:
         num_executors = (len(all_hosts())-2)*40
+    else:
+        num_executors = int(args.num_executors)
+
 
     cmd = []
     if args.rescan:
@@ -544,7 +547,7 @@ if __name__ == "__main__":
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
     parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
-    parser.add_argument("--num_executors", help="number of spark executors to use",default="(number of workers)*40")
+    parser.add_argument("--num_executors", help="number of spark executors to use",default=NUMBER_OF_WORKERS_TIMES_40)
     args = parser.parse_args()
 
     if args.env:

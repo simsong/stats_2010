@@ -23,6 +23,7 @@ import psutil
 import socket
 import fcntl
 import multiprocessing
+import operator
 from os.path import dirname,basename,abspath
 
 # Set up path, among other things
@@ -477,10 +478,11 @@ def rescan(auth, args):
         print("================================================================")
         print("================================================================")
 
+        print("Checking spark to see if it's working...")
         d = sc.parallelize(range(10000))
-        import operator
-        print("reduce:",d.reduce(operator.add))
-        exit(0)
+        val = d.reduce(operator.add)
+        if val != 49995000:
+            raise RuntimeError(f"spark not operational (got {val} wanted 49995000)")
 
     # Figure out what needs to be processed
 
@@ -495,7 +497,7 @@ def rescan(auth, args):
             args.append(county)
     rows = DBMySQL.csfr(auth, cmd, args, asDicts='True')
 
-    ### DEBUG CODE. LIMIT TO 10 ROWS
+    print("### DEBUG CODE. LIMIT TO 10 ROWS")
     rows = rows[0:10]
 
 

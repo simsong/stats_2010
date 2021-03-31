@@ -155,13 +155,13 @@ QUERIES = [
      """SELECT * FROM
              (SELECT COUNT(*) AS lp_created FROM {reident}tracts WHERE lp_end IS NOT NULL) a
               LEFT JOIN
-              (select count(*) AS lp_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.lp_end is NULL ) a
+              (select count(*) AS lp_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.lp_end is NULL ) b
          ON 1=1"""),
     ("SOL Files create and  Remaining",
      """SELECT * FROM
-             (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) b
+             (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) c
                LEFT JOIN
-              (select count(*) AS sol_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL) b
+              (select count(*) AS sol_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL) d
         ON 1=1 """),
 
     ("LP files in progress",

@@ -147,35 +147,40 @@ def do_mysql():
     os.execlp(*cmd)
 
 QUERIES = [
-    ('Current Time', 'select now()'),
-    ("LP and SOL Files created (out of 73507)",
+    ('Current Time', 'SELECT now()'),
+    ("Completed States:",
+     """SELECT DISTINCT(stusab) from {reident}tracts where stusab not in (SELECT DISTINCT(stusab) from {reident}tracts where sol_end is not NULL)"""),
+
+    ("LP Files created and remaining ",
      """SELECT * FROM
-             (SELECT COUNT(*) as lp_created from {reident}tracts WHERE lp_end IS NOT NULL) a
+             (SELECT COUNT(*) AS lp_created FROM {reident}tracts WHERE lp_end IS NOT NULL) a
               LEFT JOIN
-             (select count(*) as sol_created from {reident}tracts WHERE sol_end IS NOT NULL) b
+              (select count(*) AS lp_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.lp_end is NULL ) a
          ON 1=1"""),
+    ("SOL Files create and  Remaining",
+     """SELECT * FROM
+             (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) b
+               LEFT JOIN
+              (select count(*) AS sol_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL) b
+        ON 1=1 """),
 
     ("LP files in progress",
-     """SELECT t.state,t.county,t.tract,t.lp_start,t.lp_host,unix_timestamp() - unix_timestamp(t.lp_start) as age,t.hostlock
-     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
-                                       AND g.sumlev='140' and g.pop100>0
-     WHERE lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
+     """SELECT t.stusab,t.county,t.tract,t.lp_start,t.lp_host,timediff(t.lp_start,now()) AS age,t.hostlock
+     FROM {reident}tracts t WHERE t.pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
 
     ("SOLs in progress",
-     """SELECT t.state,t.county,t.tract,t.sol_start,t.sol_host,unix_timestamp() - unix_timestamp(t.sol_start) as age,hostlock
-     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
-                                       AND g.sumlev='140' and g.pop100>0
-     WHERE t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
+     """SELECT t.stusab,t.county,t.tract,t.sol_start,t.sol_host,timediff(t.sol_start,now()) AS age,hostlock
+     FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
 
     ("Number of LP files created in past hour:",
-     """select count(*) as `count`,lp_host from {reident}tracts
-     WHERE unix_timestamp() - unix_timestamp(lp_end) < 3600
+     """select count(*) AS `count`,lp_host FROM {reident}tracts
+     WHERE timediff(now(),lp_end) < "01:00:00"
      GROUP BY lp_host
      """),
 
     ("Number of SOL files created in past hour:",
-     """select count(*) as `count`,sol_host FROM {reident}tracts
-     WHERE unix_timestamp() - unix_timestamp(sol_end) < 3600
+     """select count(*) AS `count`,sol_host FROM {reident}tracts
+     WHERE timediff(now(),sol_end) < "01:00:00"
      GROUP BY sol_host"""),
 
     ]

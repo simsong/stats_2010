@@ -133,24 +133,30 @@ def do_mysql():
 
 QUERIES = [
     ('Current Time', 'SELECT now()'),
-    ("LP and SOL Files created and remaining",
+    ("Completed States:",
+     """SELECT DISTINCT(stusab) from {reident}tracts where stusab not in (SELECT DISTINCT(stusab) from {reident}tracts where sol_end is not NULL)"""),
+
+    ("LP and SOL Files created",
      """SELECT * FROM
              (SELECT COUNT(*) as lp_created from {reident}tracts WHERE lp_end IS NOT NULL) a
               LEFT JOIN
              (select count(*) as sol_created from {reident}tracts WHERE sol_end IS NOT NULL) b
          ON 1=1"""),
+    ("LP Files Remaining",
+     """select count(*) as lp_remaining
+         FROM {reident}tracts t WHERE t.pop100>0 AND t.lp_end is NULL """),
+
+    ("SOL Files Remaining",
+     """select count(*) as lp_remaining
+         FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL """),
 
     ("LP files in progress",
      """SELECT t.stusab,t.county,t.tract,t.lp_start,t.lp_host,timediff(t.lp_start,now()) as age,t.hostlock
-     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
-                                       AND g.sumlev='140' and g.pop100>0
-     WHERE lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
+     FROM {reident}tracts t WHERE t.pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
 
     ("SOLs in progress",
      """SELECT t.stusab,t.county,t.tract,t.sol_start,t.sol_host,timediff(t.sol_start,now()) as age,hostlock
-     FROM {reident}tracts t LEFT JOIN {reident}geo g ON t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract
-                                       AND g.sumlev='140' and g.pop100>0
-     WHERE t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
+     FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
 
     ("Number of LP files created in past hour:",
      """select count(*) as `count`,lp_host from {reident}tracts

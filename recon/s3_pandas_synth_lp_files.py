@@ -360,34 +360,24 @@ class LPTractBuilder:
 
         state_code    = dbrecon.state_fips(self.stusab)
         geo_id        = self.sf1_tract_data[0][GEOID]
-        lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
-        use_s3        = lpfilenamegz.startswith("s3://")
-        tmpgzfilename = lpfilenamegz.replace(".gz",".tmp.gz")
         if args.output:
             outfilename = args.output
         else:
-            outfilename   = tmpgzfilename
-            lpfileexists  = dbrecon.dpath_exists(lpfilenamegz)
+            lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
 
-            if dbrecon.is_db_done('lp',self.stusab, self.county, self.tract):
-                logging.warning(f"note: LP file exists in database: {self.stusab}{self.county}{self.tract}  exists in file system: {lpfileexists}; "
-                                "will not create another one.")
+            # Check to see if file is already finished.
+            if dbrecon.lpfile_properly_terminated(lpfilenamegz):
+                logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
+                dbrecon.db_done(self.auth,'lp',self.stusab, self.county, self.tract, clear_start=True)
                 return
-            lpdir      = LPDIR(stusab=self.stusab,county=self.county)
-            dmakedirs(lpdir)
 
-            # file exists and it is good. Note that in the database
-            try:
-                print(f"checking to see if {lpfilenamegz} is propertly terminated")
-                if dbrecon.lpfile_properly_terminated(lpfilenamegz):
-                    logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
-                    dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-                    return
-            except FileNotFoundError as e:
-                # Intentional fall through
-                pass
+            # If outputting to S3, make the output file a named temp
+            if lpfilenamegz.startswith('s3://'):
+                outfilename = tempfile.NamedTemporaryFile(suffix='.gz',delete=False).name
+            else:
+                outfilename = lpfilenamegz.replace(".gz",".tmp.gz")
 
-
+        dmakedirs(os.path.dirname(outfilename))
         t0         = time.time()
         logging.info(f"{state_code}{self.county}{self.tract} tract_data_size:{sys.getsizeof(self.sf1_tract_data):,} ; "
                      "block_data_size:{sys.getsizeof(self.sf1_block_data):,} ")
@@ -457,11 +447,19 @@ class LPTractBuilder:
             f.write('\n')
         f.write('End\n')
         f.close()
-        dbrecon.db_done('lp',self.stusab, self.county, self.tract)
-        DBMySQL.csfr(self.auth,
-                     f"UPDATE {REIDENT}tracts SET lp_gb=%s,hostlock=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+
+
+        # if we were just asked to create the output file, notify of that and return
+        if args.output:
+            logging.info("%s created",args.output)
+            return
+
+        # otherwise, rename the file (which may upload it to s3), and update the databse
+        dbrecon.drename(outfilename, lpfilenamegz)
+        dbrecon.db_done(self.auth,'lp', self.stusab, self.county, self.tract)
+        DBMySQL.csfr(self.auth, f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
                      (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
-        # TODO: I removed "rowcount=1" from above, as it was generating intermittent fails.
+
         atexit.unregister(self.db_fail)
 
         if args.debug:
@@ -471,27 +469,6 @@ class LPTractBuilder:
             dbrecon.add_dfxml_tag('synth_lp_files','', {'success':'1'})
             exit(0)
 
-        # Rename the temp file to the gzfile
-        # If running on S3, make sure the object exists
-        try:
-            dbrecon.dwait_exists(outfilename)
-        except FileNotFoundError as e:
-            logging.warning("1. Will not fix database. Let s4_ discover the lp file isn't there.")
-            logging.warning("Runtime error: %s",e)
-            return
-
-        try:
-            dbrecon.drename(outfilename, lpfilenamegz)
-        except FileNotFoundError as e:
-            logging.warning("2. drename failed on %s->%s",outfilename,lpfilenamegz)
-            logging.warning("Runtime error: %s",e)
-            return
-        # And wait for the lpfilenamegz to exist
-        try:
-            dbrecon.dwait_exists(lpfilenamegz)
-        except RuntimeError as e:
-            logging.warning("3. Will not fix database. Let s4_ discover the lp file isn't there.")
-            logging.warning("Runtime error: %s",e)
         logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
 
 
@@ -533,8 +510,8 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
     else:
         rows = DBMySQL.csfr(auth,
                             f"""
-                            SELECT t.tract FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (g.sumlev='140') AND (g.pop100>0)
+                            SELECT t.tract FROM {REIDENT}tracts t
+                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (t.pop100>0)
                             """,(stusab,county))
         tracts_needing_lp_files = [row[0] for row in rows]
         logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)
@@ -550,10 +527,11 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
                 lpgz_filename = dbrecon.LPFILENAMEGZ(stusab=stusab,county=county,tract=tractgen)
                 if dpath_exists(lpgz_filename) and dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
                     logging.warning(f"{lpgz_filename} exists but is too small ({dgetsize(lpgz_filename)}); deleting")
-                    remove_lpfile(stusab=stusab,county=county,tract=tractgen)
+                    remove_lpfile(auth, stusab, county, tractgen)
                 else:
                     logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
-                                    f"- tract {tractgen} not in {tracts_needing_lp_files}")
+                                    f"- tract {tractgen} not in tracts needing lp files: {' '.join(tracts_needing_lp_files)}")
+                    logging.warning(f"Use --force to force")
                     return
             tracts = [tractgen]
 
@@ -583,7 +561,7 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
 
     try:
         sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )
-        sf1_tract_reader = csv.DictReader(dopen( sf1_tract_data_file,'r'))
+        sf1_tract_reader    = csv.DictReader(dopen( sf1_tract_data_file,'r'))
     except FileNotFoundError as e:
         print(e)
         logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {stusab} {county} ")
@@ -666,18 +644,34 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
     logging.info("getting tract data for %s %s",stusab,county)
     sf1_tract_list=[]
     error_count = 0
-    for s in sf1_tract_reader:
-        if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
-            geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
-            for k,v in list(s.items()):
-                if k[:3]=='PCT' and geo_id[:1]!='S':
-                    try:
-                        sf1_tract_list.append([geo_id,k,float(v)])
-                    except ValueError as e:
-                        logging.error(f"state:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
-                        error_count += 1
-                        if error_count>MAX_SF1_ERRORS:
-                            return
+    none_errors = 0
+    for (ct,s) in enumerate(sf1_tract_reader):
+        if s['STATE'] is None:
+            logging.error("s is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
+            none_errors += 1
+            continue
+        try:
+            if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
+                geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
+                for k,v in list(s.items()):
+                    if k[:3]=='PCT' and geo_id[:1]!='S':
+                        try:
+                            sf1_tract_list.append([geo_id,k,float(v)])
+                        except ValueError as e:
+                            logging.error(f"stusab:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
+                            error_count += 1
+                            if error_count>MAX_SF1_ERRORS:
+                                return
+        except TypeError as e:
+            logging.error("s['STATE'] is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
+            logging.error(e)
+            none_errors += 1
+            continue
+
+
+
+    if none_errors>0:
+        raise RuntimeError("none_errors > 0 ")
 
     sf1_tract = pd.DataFrame.from_records(sf1_tract_list, columns=[GEOID,TABLEVAR,'value'])
     make_attributes_categories(sf1_tract)

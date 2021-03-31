@@ -77,8 +77,6 @@ def make_county_list(stusab:str):
         state_county_list_filename = STATE_COUNTY_FILENAME_TEMPLATE.format(stusab=stusab, state_code=state_code)
 
         logging.info(f"Creating {geofile_csv_filename}")
-        dmakedirs( os.path.dirname(geofile_csv_filename) ) # make sure we can create the output file
-
         csvfile = dopen(geofile_csv_filename, 'w')
         writer  = csv.DictWriter(csvfile, fieldnames=names)
         writer.writeheader()
@@ -135,7 +133,7 @@ def make_county_list(stusab:str):
     DBMySQL.csfr(auth,
                  f"""
                  INSERT INTO {REIDENT}tracts (stusab,state,county,tract)
-                 SELECT stusab,state,county,tract FROM {REIDENT}geo where sumlev=140 and stusab=%s
+                 SELECT stusab,state,county,tract,pop100 FROM {REIDENT}geo where sumlev=140 and stusab=%s
                  """,(stusab,))
 
     if args.csv:

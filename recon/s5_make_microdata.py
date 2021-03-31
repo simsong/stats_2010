@@ -23,6 +23,7 @@ from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,REIDENT
 
 def make_csv_file( pair ):
     # Make sure we have a solution file for every tract
+    auth = dbrecon.auth()
     (stusab, county, overwrite) = pair
     county_csv_filename = dbrecon.COUNTY_CSV_FILENAME(stusab=stusab, county=county)
     county_csv_filename_tmp = county_csv_filename+".tmp"
@@ -78,7 +79,7 @@ def make_csv_file( pair ):
                             raise ValueError(f"invalid count={count} in line: {line}")
                 logging.info(f"Ending {state_code}{county}{tract} tract pop: {tract_total}")
             # done with this tract
-            dbrecon.db_done('csv', stusab, county, tract)
+            dbrecon.db_done(auth, 'csv', stusab, county, tract)
         # done with all tracts
 
     dbrecon.dwait_exists(county_csv_filename_tmp)

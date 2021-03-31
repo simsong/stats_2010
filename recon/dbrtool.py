@@ -8,6 +8,17 @@ HELP="""
 Manipulate the reconstruction database. Database authenticaiton
 credentials come from KMS if they are not in the environment.
 
+Typically your sequence of operation is:
+
+$ $(./drbtool.py --env)
+$ ./drbtool.py --register db10
+$ ./drbtool.py --reident db10 --step1 --step2
+$ ./drbtool.py --reident db10 --run  [--spark]
+
+If you run into problems, check your database with:
+$./drbtool.py --reident db10 --rescah --spark
+
+
 Use --env to generate bash statements to put them in your environment. This is
 easily done with:
 
@@ -23,6 +34,7 @@ import io
 import re
 import logging
 import subprocess
+import glob
 
 
 try:
@@ -56,12 +68,14 @@ try:
 except ImportError:
     logging.warning("ssh_remote and kms not available")
 
+EMR_CONTROL='/mnt/gits/das-vm-config/das_decennial/programs/emr_control.py'
 
 
 import dbrecon
 import constants
 
 import ctools.s3
+import ctools.cspark
 import ctools.dbfile as dbfile
 from ctools.dbfile import DBMySQL
 
@@ -81,6 +95,7 @@ S4_J2 = "32"
 
 # Step5 parallelism
 S5_J1 = "1"
+REFRESH_PARALLELISM = "50"
 
 FAST=True
 
@@ -189,7 +204,7 @@ def get_recon_status(auth, reident=None):
         tables = []
         for(name,query) in QUERIES:
             column_names = []
-            rows = DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True,debug=True)
+            rows = DBMySQL.csfr(auth, query.replace("{reident}",reident+"_"), (), asDicts=True)
             tables.append((name,rows))
         ret['queries'].append((reident,tables))
     return ret
@@ -270,10 +285,11 @@ def do_register(auth, reident):
     db.create_schema(new_schema.getvalue())
 
 
-def run(cmd):
+def run(cmd, check=True):
+    """Run a command. Stdout gets piped through"""
     print()
     print("$ " + " ".join(cmd))
-    subprocess.run(cmd, cwd=RECON_DIR, check=True)
+    subprocess.run(cmd, cwd=RECON_DIR, check=check)
 
 def do_step1(auth, reident, state, *, force=False):
     print(f"Step 1 - s1_make_geo_files.py")
@@ -304,14 +320,12 @@ def do_step5(auth, reident, state, county):
     cmd = [sys.executable, 's5_make_microdata.py', '--config', RECON_CONFIG, '--j1', S5_J1, state, county]
     run(cmd)
 
-
 def list_counties(auth, stusab):
     logging.error("A county must be specified. Try one of these:")
     rows = dbfile.DBMySQL.csfr(auth,f"SELECT DISTINCT county FROM {REIDENT}geo where stusab=%s and sumlev='050'",
                                (stusab,))
     for row in rows:
         logging.error("\t%s",row[0])
-
 
 def list_tracts(auth,stusab, county):
     logging.error("One or more tracts must be specified. Try one of these (or type 'all'):")
@@ -358,13 +372,12 @@ def do_info(path):
 def all_hosts():
     pat = re.compile("(ip-[^ :]+)")
     ret = []
-    for line in subprocess.check_output(['yarn','node','--list'],
-                                        stderr=open('/dev/null','w'),encoding='utf-8').split('\n'):
-            m = pat.search(line)
-            if m:
-                ret.append(m.group(1))
+    cmd = ['yarn','node','--list']
+    for line in subprocess.check_output(cmd, stderr=open('/dev/null','w'), encoding='utf-8').split('\n'):
+        m = pat.search(line)
+        if m:
+            ret.append(m.group(1))
     return ret
-
 
 
 def do_setup(host):
@@ -380,32 +393,26 @@ def do_setup(host):
     print(p)
 
 
-def host_status(host,*, idle_message=""):
+IDLE='IDLE'
+CORE='CORE'
+IN_USE='IN_USE'
+def host_status(host):
     """Print the status of host and return True if it is ready to run"""
-    lines = ssh_remote.run_command_on_host(host, 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux')
-    if "TASK" in lines:
-        if "scheduler.py" not in lines:
-            print("idle:",host, idle_message)
-            return True
-        else:
-            print("\tin use:", host)
-    else:
-        print("\tCORE:",host)
-    return False
-
-
-def uptime_host(host):
-    lines = ssh_remote.run_command_on_host(host,'uptime', pipeerror=True).split('\n')
-    uptime = [line for line in lines if 'load average' in line]
+    cmd = 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime'
+    response = ssh_remote.run_command_on_host(host,cmd, pipeerror='True')
+    uptime   = [line for line in response.split('\n') if 'load average' in line]
     if uptime:
-        print(host, uptime[0])
+        uptime = ' '.join(uptime[0].split()[2:])
     else:
-        print(host, "NO OBVIOUS UPTIME")
+        uptime = ''
+    if "TASK" in response:
+        if "scheduler.py" not in response:
+            return (IDLE, f"idle: {host} {uptime}")
+        else:
+            return (IN_USE, f"in use: {host} {uptime}")
+    else:
+        return (CORE, f"CORE: {host} {uptime}")
 
-
-def launch_if_needed(host):
-    if host_status(host,idle_message='LAUNCHING') or args.force:
-        do_launch(host, desc=args.desc, reident=args.reident)
 
 def fast_all(callback):
     """Run the callback on every machine, with the parameter being the hostname, each in their own process."""
@@ -426,8 +433,35 @@ def fast_all(callback):
         os.waitpid(p,0)
 
 
+def show_file(path):
+    if path.startswith('s3://'):
+        cmd = ['aws','s3','ls',path]
+    else:
+        cmd = ['ls','-l',path]
+    run(cmd, check=False)
+
+
+def do_spark(args):
+    """one of the great errors in the desing of the DAS was that we didn't use a python program to launch spark, instead we use a run_cluster script.
+    Here we do not repeat that same mistake.
+    """
+    try:
+        num_executors = int(args.num_executors)
+    except ValueError:
+        num_executors = (len(all_hosts())-2)*40
+
+    cmd = []
+    if args.rescan:
+        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark'])
+
+    print("LAUNCH: ",cmd)
+    ctools.cspark.spark_submit(pyfiles = glob.glob("*.py"),
+                               pydirs = "ctools",
+                               num_executors = args.num_executors,
+                               executor_cores = 2,
+                               argv = cmd)
+
 def do_launch(host, *, debug=False, desc=False, reident):
-    print(">launch ",host)
     cmd=(
         'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
         'ln -s das-vm-config/dbrecon/stats_2010/recon;'
@@ -459,6 +493,14 @@ def do_launch(host, *, debug=False, desc=False, reident):
         else:
             exit(0)
 
+def launch_if_needed(host):
+    status = host_status(host)[0]
+    if status==IDLE or (status==IN_USE and args.force):
+        do_launch(host, desc=args.desc, reident=args.reident)
+        print("Launch: ",host)
+
+def print_host_status(host):
+    print(host_status(host)[1])
 
 if __name__ == "__main__":
     import argparse
@@ -470,23 +512,29 @@ if __name__ == "__main__":
     g.add_argument("--status", action='store_true', help='Print stats about the current runs')
     g.add_argument("--register", action='store_true', help="register a new REIDENT for database reconstruction.")
     g.add_argument("--drop", action='store_true', help="drop a REIDENT from database")
-    g.add_argument("--show", action='store_true', help="Show all reidents in database")
+    g.add_argument("--show", action='store_true', help="Show everything known about reisdents, and optionally a stusab, county, tract")
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
     g.add_argument("--run", help="Run the scheduler",action='store_true')
     g.add_argument("--setup", help="Setup a driver machine to run recon")
     g.add_argument("--setup_all", help="Setup all driver machines to run recon",action='store_true')
-    g.add_argument("--uptime_all", help="Run uptime on all machines",action='store_true')
     g.add_argument("--launch", help="Run --run on a specific machine(s) (sep by comma)")
     g.add_argument("--launch_all", help="Run --run on every Task that is not running a scheduler", action='store_true')
-    g.add_argument("--status_all", help="report each machine status", action='store_true')
+    g.add_argument("--cluster_status", help="report each machine status", action='store_true')
+    g.add_argument("--resize", help="Resize cluster", type=int)
+    g.add_argument("--rescan", help="Validate all LP and SOL files in S3 against the database", action='store_true')
+    g.add_argument("--step3", help="manually run Step 3 and make LP files. Normally run this through the controller. This is for testing", action='store_true')
+    g.add_argument("--step4", help="manually run Step 4 and make SOL files. Normally run this through the controller. This is for testing", action='store_true')
+    g.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
+
+
+    parser.add_argument("--reident", help="specify the reconstruction identification")
+    parser.add_argument("--spark", help="Run certian commands under spark",action='store_true')
 
     parser.add_argument("--step1", help="Run step 1 - make the county list. Defaults to all states unless state is specified. Only needs to be run once per state", action='store_true')
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
-    parser.add_argument("--step3", help="manually run Step 3 and make LP files. Normally run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--step4", help="manually run Step 4 and make SOL files. Normally run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
-    parser.add_argument("--reident", help="specify the reconstruction identification")
+
+
     parser.add_argument("--stusab", help="which stusab to process", default='all')
     parser.add_argument("--county", help="required for step3 and step4")
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
@@ -496,6 +544,7 @@ if __name__ == "__main__":
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
     parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
+    parser.add_argument("--num_executors", help="number of spark executors to use",default="(number of workers)*40")
     args = parser.parse_args()
 
     if args.env:
@@ -520,9 +569,6 @@ if __name__ == "__main__":
             do_setup( host )
         exit(0)
 
-    if args.uptime_all:
-        fast_all(uptime_host)
-        exit(0)
 
     if args.launch:
         if not args.reident:
@@ -539,8 +585,14 @@ if __name__ == "__main__":
         fast_all(launch_if_needed)
         exit(0)
 
-    if args.status_all:
-        fast_all(host_status)
+    if args.cluster_status:
+        fast_all(print_host_status)
+        exit(0)
+
+    if args.resize is not None:
+        confirm = input(f"Resize cluster to {args.resize} nodes?").strip()
+        if confirm[0:1]=='y':
+            subprocess.check_call([sys.executable,EMR_CONTROL,'--task',str(args.resize)])
         exit(0)
 
     ################################################################
@@ -548,12 +600,8 @@ if __name__ == "__main__":
 
     if 'MYSQL_HOST' not in os.environ:
         logging.warning('MYSQL_HOST is not in your environment!')
-        logging.warning('Next time, please  run $(./dbrtool.py --env) to create the environment variables')
-        logging.warning('starting sub-shell with environment variables set')
-        for(k,v) in get_mysql_env().items():
-            os.environ[k] = v
-        os.execlp(os.getenv('SHELL'),os.getenv('SHELL'))
-
+        logging.warning('Please  run $(./dbrtool.py --env)')
+        exit(0)
 
     if args.mysql:
         do_mysql()
@@ -564,8 +612,28 @@ if __name__ == "__main__":
         logging.getLogger().setLevel(logging.INFO)
 
     if args.show:
-        print("\n".join(get_reidents(auth)))
+        print("reidents:")
+        reidents = get_reidents(auth)
+        print("\n".join(reidents))
+        if args.stusab and args.county and args.tract:
+            if args.reident:
+                reidents = [args.reident]
+            for reident in reidents:
+                print(f"\n================ {reident} ================")
+                dbrecon.set_reident(reident)
+                print(f"reident: {reident} {args.stusab} {args.county} {args.tract}")
+                for fname in [dbrecon.LPFILENAMEGZ( stusab=args.stusab,county=args.county,tract=args.tract),
+                              dbrecon.SOLFILENAMEGZ(stusab=args.stusab,county=args.county,tract=args.tract)]:
+                    show_file(fname)
+                    print()
+                print("Database:")
+                rows = DBMySQL.csfr(auth,f"select * from {reident}_tracts where stusab=%s and county=%s and tract=%s",
+                               (args.stusab,args.county,args.tract),asDicts=True)
+                for row in rows:
+                    for (k,v) in row.items():
+                        print(f"{k:15} {v}")
         exit(0)
+
     if args.status:
         ret = get_recon_status(auth, args.reident)
         print(json.dumps(ret,default=str,indent=4))
@@ -579,7 +647,6 @@ if __name__ == "__main__":
         dbrecon.REIDENT = os.environ['REIDENT'] = REIDENT = args.reident+"_"
     else:
         print("Please specify --reident\n",file=sys.stderr)
-        parser.print_help()
         exit(1)
 
     if args.register:
@@ -604,6 +671,11 @@ if __name__ == "__main__":
         run(cmd)
 
 
+    # Check if we are using spark!
+    ################################################################
+    if args.spark:
+        do_spark(args)
+
     ################################################################
     # We can run multiple steps if we want! For testing, of course
     if args.step3 or args.step4 or args.step5:
@@ -627,15 +699,18 @@ if __name__ == "__main__":
 
     if args.step3:
         if args.force:
-            dbrecon.remove_lpfile(stusab=args.stusab, county=args.county, tract=args.tract)
+            dbrecon.remove_lpfile(auth, args.stusab, args.county, args.tract)
         do_step3(auth, args.reident, args.stusab, args.county, args.tract)
 
     if args.step4:
         if args.force:
-            dbrecon.remove_solfile(stusab=args.stusab, county=args.county, tract=args.tract)
+            dbrecon.remove_solfile(auth, args.stusab, args.county, args.tract)
         do_step4(auth, args.reident, args.stusab, args.county, args.tract.split(","))
 
     if args.step5:
         if args.force:
-            dbrecon.remove_csvfile(stusab=args.stusab, county=args.county, tract=args.tract)
+            dbrecon.remove_csvfile(auth, args.stusab, args.county, args.tract)
         do_step5(auth, args.reident, args.stusab, args.county)
+
+    if args.rescan:
+        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG, '--j1', REFRESH_PARALLELISM])

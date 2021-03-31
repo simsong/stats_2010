@@ -30,6 +30,7 @@ import psutil
 import boto3
 import botocore
 import subprocess
+import inspect
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
@@ -50,8 +51,7 @@ from dfxml.python.dfxml.writer import DFXMLWriter
 
 REIDENT = os.getenv('REIDENT')
 
-
-RETRIES = 10
+DB_RETRIES = 10
 RETRY_DELAY_TIME = 10
 DEFAULT_QUIET=True
 # For handling the config file
@@ -59,9 +59,17 @@ SRC_DIRECTORY   = os.path.dirname( os.path.abspath(__file__))
 CONFIG_FILENAME = "config.ini"
 CONFIG_PATH     = os.path.join(SRC_DIRECTORY, CONFIG_FILENAME)    # can be changed
 
-S3ZPUT  = os.path.join(MY_DIR, 's3zput') # script that uploads a file to s3 with compression
+S3ZPUT  = os.path.join( MY_DIR, 's3zput') # script that uploads a file to s3 with compression
 S3ZCAT  = os.path.join( MY_DIR, 's3zcat') # script that downloads and decompresses a file from s3
+ZCAT    = 'zcat'                          # regular zcat program
+GZIP    = 'gzip'                # compressor
+GZIP_OPT = '-1f'                # compression options
 
+def set_reident(reident):
+    global REIDENT
+    import dbrecon
+    dbrecon.REIDENT = REIDENT = os.environ['REIDENT'] = reident + "_"
+    os.environ['REIDENT_NO_SEP'] = reident
 
 ##
 ## Functions that return paths.
@@ -213,7 +221,7 @@ class DB:
         except ImportError as e:
             from pymysql.err import ProgrammingError,InterfaceError,OperationalError
 
-        for i in range(1,RETRIES):
+        for i in range(1,DB_RETRIES):
             try:
                 db = DB()
                 db.connect()
@@ -241,11 +249,11 @@ class DB:
                 return result
             except InterfaceError as e:
                 logging.error(e)
-                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{DB_RETRIES}: {cmd} {vals} ")
                 pass
             except OperationalError as e:
                 logging.error(e)
-                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{RETRIES}: {cmd} {vals} ")
+                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{DB_RETRIES}: {cmd} {vals} ")
                 pass
             time.sleep(RETRY_DELAY_TIME)
         raise e
@@ -280,6 +288,25 @@ class DB:
         return self.dbs.close()
 
 ################################################################
+### The USA Geography object.
+### tracks geographies. We should have created this originally.
+################################################################
+class USAG:
+    __slots__ = ['stusab','state','county','tract']
+    def __init__(self, stusab, county, tract, block=None):
+        self.stusab = stusab(stusab)
+        self.state = state_fips(stusab)
+        self.county = county
+        self.tract  = tract
+        self.block  = block
+    def __repr__(self):
+        v = " "+self.block if self.block is not None else ""
+        return f"<{self.self} {self.stusab} {self.county} {self.tract}{v}>"
+    def __eq__(self,a):
+        return (self.stusab == a.stusab) and (self.county==a.county) and (self.tract == a.tract) and (self.block==a.block)
+
+
+################################################################
 ### Understanding LP and SOL files #############################
 ################################################################
 
@@ -296,7 +323,7 @@ def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
                     pass
                 else:
                     if errors==0:
-                        logging.error("non-integer solutions in file "+sol_filenamegz)
+                        logging.error("Invalid pop count variables in "+sol_filenamegz)
                     logging.error("line {}: {}".format(num,line))
                     count += round(float(line.split()[1]))
                     errors += 1
@@ -304,14 +331,14 @@ def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
         raise RuntimeError(f"errors: {errors}")
     return count
 
-def get_final_pop_from_sol(stusab, county, tract, delete=True):
+def get_final_pop_from_sol(auth, stusab, county, tract, delete=True):
     sol_filenamegz = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
         if delete:
             dpath_unlink(sol_filenamegz)
-        DB.csfr(f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
                 (stusab,county,tract))
         return None
     return count
@@ -341,18 +368,21 @@ def db_start(what,stusab, county, tract):
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {stusab} {county} {tract} ")
 
-def db_done(what, stusab, county, tract):
+def db_done(auth, what, stusab, county, tract, clear_start=False):
     assert what in [LP,SOL, CSV]
-    DB.csfr(f"UPDATE {REIDENT}tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
-            (hostname(),stusab,county,tract),rowcount=1)
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+                 (hostname(),stusab,county,tract),rowcount=1)
+    if clear_start:
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set {what}_start=NULL,{what}_host=NULL where stusab=%s and county=%s and tract=%s",
+                (hostname(),stusab,county,tract),rowcount=1)
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
-def is_db_done(what, stusab, county, tract):
+def is_db_done(what, stusab, county, tract, clear_start=False):
     assert what in [LP,SOL, CSV]
     row = DB.csfr(
         f"""
-        SELECT {what}_end FROM {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (g.sumlev='140') AND (g.pop100>0) LIMIT 1
+        SELECT {what}_end FROM {REIDENT}tracts t
+        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.tract=%s) and ({what}_end IS NOT NULL) AND (t.pop100>0) LIMIT 1
         """,
                   (stusab,county,tract))
     return len(row)==1
@@ -368,59 +398,6 @@ def db_clean(auth):
             p = psutil.Process(pid)
         except psutil.NoSuchProcess:
             db_unlock(auth,stusab,county,tract)
-
-def rescan_files(stusab, county, tract, check_final_pop=False, quiet=True):
-    raise RuntimeError("don't do at the moment. The database is more accurate than the file system.")
-    logging.info(f"rescanning {stusab} {county} {tract} in database.")
-    lpfilenamegz  = LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
-    solfilenamegz = SOLFILENAMEGZ(stusab=stusab,county=county, tract=tract)
-
-    rows = DB.csfr(f"SELECT lp_start,lp_end,sol_start,sol_end,final_pop "
-                       "FROM {REIDENT}tracts where stusab=%s and county=%s and tract=%s LIMIT 1",
-                       (stusab,county,tract),quiet=quiet)
-    if len(rows)!=1:
-        raise RuntimeError(f"{stusab} {county} {tract} is not in database")
-
-    (lp_start,lp_end,sol_start,sol_end,final_pop_db) = rows[0]
-    logging.info(f"lp_start={lp_start} lp_end={lp_end} sol_start={sol_start} "
-                 f"sol_end={sol_end} final_pop_db={final_pop_db}")
-    if dpath_exists(lpfilenamegz):
-        if not quiet:
-            print(f"{lpfilenamegz} exists")
-        if lp_end is None:
-            logging.warning(f"{lpfilenamegz} exists but is not in database. Adding")
-            DB.csfr(f"UPDATE {REIDENT}tracts set lp_end=%s where stusab=%s and county=%s and tract=%s",
-                    (filename_mtime(lpfilenamegz).isoformat()[0:19],stusab,county,tract),quiet=quiet)
-    else:
-        if not quiet:
-            print(f"{lpfilenamegz} does not exist")
-        if (lp_start is not None) or (lp_end is not None):
-            logging.warning(f"{lpfilenamegz} does not exist, but the database says it does. Deleting")
-            DB.csfr(f"""
-            UPDATE {REIDENT}tracts set lp_start=NULL,lp_end=NULL
-            WHERE stusab=%s and county=%s and tract=%s
-            """,
-                    (stusab,county,tract),quiet=quiet)
-
-    if dpath_exists(solfilenamegz):
-        if sol_end is None:
-            logging.warning(f"{solfilenamegz} exists but is not in database. Adding")
-            DB.csfr(f"UPDATE {REIDENT}tracts set sol_end=%s where stusab=%s and county=%s and tract=%s",
-                    (filename_mtime(solfilenamegz).isoformat()[0:19],stusab,county,tract))
-
-        if check_final_pop:
-            final_pop_file = get_final_pop_from_sol(stusab,county,tract)
-            if final_pop_db!=final_pop_file:
-                logging.warning(f"final pop in database {final_pop_db} != {final_pop_file} "
-                                f"for {stusab} {county} {tract}. Correcting")
-                DB.csfr(f"UPDATE {REIDENT}tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",
-                        (final_pop_file,stusab,county,tract))
-    else:
-        if sol_end is not None:
-            logging.warning(f"{solfilenamegz} exists but database says it does not. Removing.")
-            DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL,sol_end=NULL,final_pop=NULL "
-                    "WHERE stusab=%s AND county=%s AND tract=%s",
-                    (stusab,county,tract),quiet=quiet)
 
 ################################################################
 ### functions that return directory and file locations  ########
@@ -514,6 +491,7 @@ def sf1_zipfilename(stusab):
 
 
 def auth():
+    """Returns a new, clean database connection for ctools.dbfile"""
     return DBMySQLAuth.FromConfig(os.environ)
 
 
@@ -597,8 +575,8 @@ def tracts_for_state_county(*,stusab,county):
     """
     rows = DB.csfr(
         f"""
-        SELECT tract from {REIDENT}tracts t LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab AND t.county=g.county AND t.tract=g.tract)
-        WHERE (t.stusab=%s) and (t.county=%s) AND (g.sumlev='140') AND (g.pop100>0)
+        SELECT tract from {REIDENT}tracts t
+        WHERE (t.stusab=%s) and (t.county=%s) AND (t.pop100>0)
         """,(stusab,county))
     return [row[0] for row in rows]
 
@@ -620,31 +598,36 @@ def lpfile_properly_terminated(fname):
             last4 = f.read(4)
             return last4 in (b'End\n',b'\nEnd')
     # Otherwise, scan the file
-    try:
-        with dopen(fname,'rb') as f:
-            lastline = ''
-            for line in f:
-                lastline = line
-            return b'End' in lastline
-    except AttributeError as e:
-        logging.error("e=%s",e)
-        return False
-    return True
+    # Note: dopen() can't be used as a context manager
+    f = dopen(fname,'r')
+    lastline = None
+    while True:
+        line = f.readline()
+        if line=='':
+            break
+        line = line.strip()
+        if line=='':
+            continue
+        lastline = line
+    return lastline == 'End'
 
-def remove_lpfile(*,stusab,county,tract):
+
+def remove_lpfile(auth,stusab,county,tract):
+    # Remove the LP file and its solution
     lpgz_filename = LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     dpath_unlink(lpgz_filename)
-    DB.csfr(f"UPDATE {REIDENT}tracts SET lp_start=NULL, lp_end=NULL, lp_gb=NULL, lp_host=NULL WHERE stusab=%s AND county=%s AND tract=%s",
-            (stusab,county,tract))
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set lp_start=NULL, lp_end=NULL, lp_gb=NULL  where stusab=%s and county=%s and tract=%s",
+                 (stusab,county,tract))
+    remove_solfile(auth,stusab, county, tract)
 
-
-def remove_solfile(*,stusab,county,tract):
+def remove_solfile(auth,stusab,county,tract):
     solgz_filename = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     dpath_unlink(solgz_filename)
-    DB.csfr(f"UPDATE {REIDENT}tracts SET sol_start=NULL, sol_end=NULL, sol_gb=NULL, sol_host=NULL WHERE stusab=%s AND county=%s AND tract=%s",
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL, sol_end=NULL, sol_gb=NULL WHERE stusab=%s AND county=%s AND tract=%s",
             (stusab,county,tract))
+    remove_csvfile(auth,stusab,county,tract)
 
-def remove_csvfile(*,stusab,county,tract):
+def remove_csvfile(auth,stusab,county,tract):
     csv_filename = COUNTY_CSV_FILENAME(stusab=stusab,county=county)
     for fn in [csv_filename, csv_filename+'.tmp']:
         try:
@@ -700,6 +683,7 @@ def state_has_any_files(stusab, county_code, filetype=LP):
 def argparse_add_logging(parser):
     clogging.add_argument(parser)
     parser.add_argument("--config", help="config file")
+    parser.add_argument("--reident", help='set reident at command line')
     parser.add_argument("--stdout", help="Also log to stdout", action='store_true')
     parser.add_argument("--logmem", action='store_true',
                         help="enable memory debugging. Print memory usage. "
@@ -753,6 +737,9 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
     logging.info(f"START {hostname()} {sys.executable} {' '.join(sys.argv)} log level: {loglevel}")
 
 def setup_logging_and_get_config(*,args,**kwargs):
+    if args.reident:
+        set_reident(args.reident)
+        inspect.stack()[1].frame.f_globals['REIDENT']=os.getenv('REIDENT')
     config = GetConfig().get_config()
     setup_logging(config=config,**kwargs)
     return config
@@ -766,12 +753,13 @@ def log_error(*,error=None, filename=None, last_value=None):
     reident = os.getenv('REIDENT').replace('_','')
     DB.csfr(f"INSERT INTO errors (`host`,`error`,`argv0`,`reident`,`file`,`last_value`) VALUES (%s,%s,%s,%s,%s,%s)",
             (hostname(), error, sys.argv[0], reident, filename, last_value), quiet=True)
-    print("LOG ERROR:",error,file=sys.stderr)
+    logging.error(error)
 
 def logging_exit():
     if hasattr(sys,'last_value'):
         msg = f'PID{os.getpid()}: {sys.last_value}'
         logging.error(msg)
+        logging.error("%s",sys.argv)
         log_error(error=msg, filename=__file__, last_value=str(sys.last_value))
 
 
@@ -821,7 +809,7 @@ def dpath_unlink(path):
     if path.startswith('s3://'):
         (bucket,key) = s3.get_bucket_key(path)
         r = boto3.client('s3').delete_object(Bucket=bucket, Key=key)
-        print("delete",bucket,key,r)
+        print(f"aws s3 rm s3://{bucket}/{key}")
     else:
         return os.unlink(path)
 
@@ -849,8 +837,12 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     """An open function that can open from S3 and from inside of zipfiles.
     Don't use this for new projects; use ctools.dconfig.dopen instead"""
     logging.info("  dopen('{}','{}','{}', zipfilename={})".format(path,mode,encoding,zipfilename))
-    path = dpath_expand(path)
 
+    # If we are writing but not writing to S3, make sure the directory exists
+    if mode[0]=='w' and path[0:5]!='s3://':
+        dmakedirs( os.path.dirname(path))
+
+    path = dpath_expand(path)
     # immediate passthrough if zipfilename is None and s3 is requested
     if path[0:5]=='s3://' and zipfilename is None:
         if mode.startswith('r') and not s3.s3exists(path):
@@ -927,7 +919,7 @@ def dwait_exists(src):
         raise RuntimeError("not implemented yet to wait for unix files")
 
 def drename(src,dst):
-    logging.info('drename({},{})'.format(src,dst))
+    logging.info('drename(%s -> %s)',src,dst)
     if src.startswith('s3://') and dst.startswith('s3://'):
         try:
             (src_bucket, src_key) = s3.get_bucket_key(src)
@@ -939,8 +931,22 @@ def drename(src,dst):
         except botocore.errorfactory.NoSuchKey as e:
             raise FileNotFoundError(src)
 
-    if src.startswith('s3://') or dst.startswith('s3://'):
+    if dst.startswith('s3://'):
+        (dst_bucket, dst_key) = s3.get_bucket_key(dst)
+        with open(src,'rb') as f:
+            err_hold = None
+            for retry in range(1,4):
+                try:
+                    boto3.client('s3').upload_fileobj(f, dst_bucket, dst_key)
+                    return
+                except botocore.exceptions.ClientError as err:
+                    logging.error("Boto3 error: %s  retry %s",err,retry)
+                    err_hold = err
+            raise err_hold
+
+    if src.startswith('s3://'):
         raise RuntimeError('drename does not implement renaming local file to S3')
+
     return os.rename( dpath_expand(src), dpath_expand(dst) )
 
 def dmakedirs(dpath):
@@ -951,9 +957,13 @@ def dmakedirs(dpath):
     if path[0:5]=='s3://':
         return
     logging.info("mkdirs({})".format(path))
-    os.makedirs(path,exist_ok=True)
+    try:
+        os.makedirs(path,exist_ok=True)
+    except FileExistsError as e:
+        pass
 
 def dgetsize(dpath):
+    """Return the size of a file path. If it is not found, return 0. Safer than None."""
     path = dpath_expand(dpath)
     if path.startswith("s3://"):
         (bucket,key) = s3.get_bucket_key(path)
@@ -961,9 +971,12 @@ def dgetsize(dpath):
             return boto3.resource('s3').Object(bucket,key).content_length
         except botocore.exceptions.ClientError as err:
             if err.response['Error']['Code']=='404':
-                raise FileNotFoundError(path) from err
+                return 0
             raise
-    return os.path.getsize(path)
+    try:
+        return os.path.getsize(path)
+    except FileNotFoundError as e:
+        return 0
 
 def dsystem(x):
     logging.info("system({})".format(x))
@@ -1019,5 +1032,7 @@ if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Get the count for SOL.GZ files" )
-    parser.add_argument("gzfile",nargs="*")
+    parser.add_argument("--lpcheck",help="check to see if file is properly terminated")
     args     = parser.parse_args()
+    if args.lpcheck:
+        print(f"lpfile_properly_terminated({args.lpcheck})=",lpfile_properly_terminated(args.lpcheck))

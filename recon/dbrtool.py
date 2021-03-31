@@ -70,7 +70,9 @@ try:
 except ImportError:
     logging.warning("ssh_remote and kms not available")
 
-EMR_CONTROL='/mnt/gits/das-vm-config/das_decennial/programs/emr_control.py'
+DAS_VM_CONFIG = dirname(dirname(dirname(dirname(abspath(__file__)))))
+print(DAS_VM_CONFIG)
+EMR_CONTROL= os.path.join( DAS_VM_CONFIG,'das_decennial/programs/emr_control.py')
 
 
 import dbrecon

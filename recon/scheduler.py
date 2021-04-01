@@ -25,6 +25,7 @@ import fcntl
 import multiprocessing
 import operator
 import uuid
+import datetime
 from os.path import dirname,basename,abspath
 
 # Set up path, among other things
@@ -513,10 +514,10 @@ def rescan(auth, args):
         config['environment'][var] = os.getenv(var)
     config_rows = [ (config, row) for row in rows]
 
-    print(f"tracts requiring rescanning: {len(config_rows)}")
+    print(f"*** Tracts requiring rescanning: {len(config_rows)}")
     cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
     r2  = DBMySQL.csfr(auth, cmd, sqlargs)[0][0]
-    print(f"Total tracts: {r2}.")
+    print(f"*** Total tracts: {r2}.")
 
     if not args.spark:
         print(f"Processing locally with {args.j1} threads. Expected completion in {len(config_rows)*3/10000} hours")
@@ -524,27 +525,25 @@ def rescan(auth, args):
             p.map(rescan_row, config_rows)
         return
 
-    print("Processing with spark. Creating RDDs...")
-    # Create an RDD for each
-    rdds = []
-    for config_row in config_rows:
-        rdds.append(sc.parallelize([config_row]))
+    print("*** Processing with spark...")
+    output_path = os.path.join(os.getenv('DAS_S3ROOT'), '2010-re/{reident}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-rescan')
+    output_path_txt = output_path+".txt"
+    print("*** Will write to",output_path)
 
-    # Create a union with all the results and process the RDDs
-    results_rdd = sc.union(rdds).flatMap(rescan_row)
-    results = results_rdd.collect()
-    if len(results)==0:
-        print("all files validate!")
-    else:
-        print("The following files were deleted by spark:")
-        print("\n".join(results))
+    # Create an RDD that has all of the rows, and partition it so that there are roughly 5 rows per partition.
+    rows_rdd = sc.parallelize(config_rows).repartition( len(config_rows)//10 )
 
+    # Run the mapper
+    results_rdd = rows_rdd.flatMap( rescan_row )
+
+    # Save the results to S3 first
+
+    results_rdd.saveAsTextFile(output_path)
+    print("Combining to a single file and saving again")
+    results_1partition = results_rdd.coalesce(1)
+    results_1partition.saveAsTextFile(output_path_txt)
 
     # This would save the results on S3:
-    #output_path = os.path.join(os.getenv('DAS_S3ROOT'), 'tmp/' + str(uuid.uuid4()))
-    #print("Will write to",output)
-    #results_rdd.saveAsTextFile(output)
-    #print("Spark union is finished! Output in ",output)
     print("\n\n\n\n")
     print("================================================================")
     print("================================================================")

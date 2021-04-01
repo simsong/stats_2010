@@ -461,8 +461,12 @@ def do_spark(args):
 
     print("LAUNCH: ",cmd)
     REQUIRED_FILES = glob.glob("*.py") + glob.glob("ctools/*.py") + glob.glob("dfxml/*py")
+
+    # Let spark set the number of executors automatically
+    # num_executors = num_executors,
+
+
     ctools.cspark.spark_submit(files_to_zip = REQUIRED_FILES,
-                               num_executors = args.num_executors,
                                executor_cores = 2,
                                argv = cmd)
 

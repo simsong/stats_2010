@@ -507,14 +507,15 @@ def rescan(auth, args):
 
     # This idea borrowed from DAS. Put in the config file all of the information that the worker will need.
     # Move over environment variables in a special section called [environment]
+    # Limit rows to
     config = dbrecon.GetConfig().config
 
     config['paths']['reident'] = REIDENT
     for var in config['environment']['vars'].split(','):
         config['environment'][var] = os.getenv(var)
-    config_rows = [ (config, row) for row in rows]
+    config_rows = [ (config, row) for row in rows[0:args.rescan_limit]]
 
-    print(f"*** Tracts requiring rescanning: {len(config_rows)}")
+    print(f"*** Tracts to rescan: {len(config_rows)}")
     cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
     r2  = DBMySQL.csfr(auth, cmd, sqlargs)[0][0]
     print(f"*** Total tracts: {r2}.")
@@ -526,7 +527,8 @@ def rescan(auth, args):
         return
 
     print("*** Processing with spark...")
-    output_path = os.path.join(os.getenv('DAS_S3ROOT'), '2010-re/{reident}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-rescan')
+    output_path = os.path.join(os.getenv('DAS_S3ROOT'),
+                               f'2010-re/{REIDENT}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-rescan')
     output_path_txt = output_path+".txt"
     print("*** Will write to",output_path)
 
@@ -598,6 +600,7 @@ if __name__=="__main__":
     parser.add_argument("--debug", action='store_true', help="debug mode")
     parser.add_argument("--j1", help="number of threads for rescan", type=int, default=10)
     parser.add_argument("--spark", help="run under spark", action='store_true')
+    parser.add_argument("--rescan_limit", help="Specify a limit for the number of tracts pto process in --rescan", type=int, default=1000000)
     args   = parser.parse_args()
 
 

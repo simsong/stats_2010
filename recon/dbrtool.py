@@ -71,7 +71,6 @@ except ImportError:
     logging.warning("ssh_remote and kms not available")
 
 DAS_VM_CONFIG = dirname(dirname(dirname(dirname(abspath(__file__)))))
-print(DAS_VM_CONFIG)
 EMR_CONTROL= os.path.join( DAS_VM_CONFIG,'das_decennial/programs/emr_control.py')
 
 
@@ -457,7 +456,7 @@ def do_spark(args):
 
     cmd = []
     if args.rescan:
-        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark'])
+        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark','--rescan_limit',str(args.rescan_limit)])
 
     print("LAUNCH: ",cmd)
     REQUIRED_FILES = glob.glob("*.py") + glob.glob("ctools/*.py") + glob.glob("dfxml/*py")
@@ -552,6 +551,7 @@ if __name__ == "__main__":
     parser.add_argument('--nodes', help='Show YARN nodes', action='store_true')
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
     parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
+    parser.add_argument("--rescan_limit", type=int, default=1000000, help='Limit when rescanning')
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
     parser.add_argument("--num_executors", help="number of spark executors to use",default=NUMBER_OF_WORKERS_TIMES_40)
     args = parser.parse_args()
@@ -722,4 +722,5 @@ if __name__ == "__main__":
         do_step5(auth, args.reident, args.stusab, args.county)
 
     if args.rescan:
-        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG, '--j1', REFRESH_PARALLELISM])
+        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG,
+             '--j1', REFRESH_PARALLELISM, '--rescan_limit', str(args.rescan_limit)])

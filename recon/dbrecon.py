@@ -33,6 +33,7 @@ import subprocess
 import inspect
 import gzip
 import codecs
+import tempfile
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
@@ -315,7 +316,7 @@ class USAG:
 def get_final_pop_for_gzfile(sol_filenamegz, requireInt=False):
     count = 0
     errors = 0
-    with dopen(sol_filenamegz,'r') as f:
+    with dopen(sol_filenamegz,'r',download=True) as f:
         for (num,line) in enumerate(f,1):
             if line.startswith('C'):
                 line = line.strip()
@@ -604,7 +605,8 @@ def lpfile_properly_terminated(fname):
             return last4 in (b'End\n',b'\nEnd')
     # Otherwise, scan the file
     # Note: dopen() can't be used as a context manager
-    f = dopen(fname,'r')
+    # This should be changed so that the temp files downloaded are automatically deleted
+    f = dopen(fname, 'r', download=True)
     lastline = None
     while True:
         line = f.readline()
@@ -838,7 +840,7 @@ def dlistdir(path):
     except FileNotFoundError as e:
         return []
 
-def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
+def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None, download=False):
     """An open function that can open from S3 and from inside of zipfiles.
     Don't use this for new projects; use ctools.dconfig.dopen instead"""
     logging.info("  dopen('{}','{}','{}', zipfilename={})".format(path,mode,encoding,zipfilename))
@@ -850,21 +852,32 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None):
     path = dpath_expand(path)
     # immediate passthrough if zipfilename is None and s3 is requested
     if path[0:5]=='s3://' and zipfilename is None:
-        if mode.startswith('r') and not s3.s3exists(path):
-            raise FileNotFoundError(path)
-        if mode=='rb':
-            return s3.S3File(path, mode=mode)
-        if mode.startswith('w') and path.endswith('.gz'):
-            p = subprocess.Popen([ S3ZPUT, '/dev/stdin', path], stdin=subprocess.PIPE, encoding=encoding)
-            return p.stdin
-        if mode.startswith('r') and path.endswith('.gz'):
-            (bucket,key) = s3.get_bucket_key(path)
-            obj = boto3.resource('s3').Object(bucket,key)
-            f   = gzip.GzipFile(fileobj=obj.get()['Body'])
-            if mode.endswith('b'):
-                return f
-            else:
+        (bucket,key) = s3.get_bucket_key(path)
+        if mode.startswith('r'):
+            if not s3.s3exists(path):
+                raise FileNotFoundError(path)
+            if download:
+                with tempfile.NamedTemporaryFile(mode='wb',delete=False) as tf:
+                    boto3.client('s3').download_file(bucket, key, tf.name)
+                    if mode=='r' and path.endswith('.gz'):
+                        return codecs.getreader(encoding)(gzip.GzipFile(tf.name,'rb'),errors='ignore')
+                    if mode=='rb':
+                        encoding = None
+                    return open(tf.name, mode=mode, encoding=encoding)
+            if path.endswith('.gz'):
+                obj = boto3.resource('s3').Object(bucket,key)
+                f   = gzip.GzipFile(fileobj=obj.get()['Body'])
+                if mode.endswith('b'):
+                    return f
                 return codecs.getreader(encoding)(f, errors='ignore')
+            if mode=='rb':
+                return s3.S3File(path, mode=mode)
+
+        if mode.startswith('w'):
+            if path.endswith('.gz'):
+                p = subprocess.Popen([ S3ZPUT, '/dev/stdin', path], stdin=subprocess.PIPE, encoding=encoding)
+                return p.stdin
+        # fall-through: just use s3open
         return s3.s3open(path, mode=mode, encoding=encoding)
 
     if 'b' in mode:

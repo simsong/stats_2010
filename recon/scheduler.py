@@ -528,13 +528,23 @@ def rescan(auth, args):
     # Create an RDD for each
     rdds = []
     for config_row in config_rows:
-        rdds.append(sc.parallelize([config_row]).flatMap(rescan_row))
+        rdds.append(sc.parallelize([config_row]))
 
     # Create a union with all the results and process the RDDs
-    output = os.path.join(os.getenv('DAS_S3ROOT'), 'tmp/' + uuid.uuid4())
-    print("Will write to",output)
-    sc.union(rdds).coalesce(1).saveAsTextFile(output)
-    print("Spark union is finished! Output in ",output)
+    results_rdd = sc.union(rdds).flatMap(rescan_row)
+    results = results_rdd.collect()
+    if len(results)==0:
+        print("all files validate!")
+    else:
+        print("The following files were deleted by spark:")
+        print("\n".join(results))
+
+
+    # This would save the results on S3:
+    #output_path = os.path.join(os.getenv('DAS_S3ROOT'), 'tmp/' + str(uuid.uuid4()))
+    #print("Will write to",output)
+    #results_rdd.saveAsTextFile(output)
+    #print("Spark union is finished! Output in ",output)
     print("\n\n\n\n")
     print("================================================================")
     print("================================================================")

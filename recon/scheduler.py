@@ -24,6 +24,7 @@ import socket
 import fcntl
 import multiprocessing
 import operator
+import uuid
 from os.path import dirname,basename,abspath
 
 # Set up path, among other things
@@ -530,13 +531,10 @@ def rescan(auth, args):
         rdds.append(sc.parallelize([config_row]).flatMap(rescan_row))
 
     # Create a union with all the results and process the RDDs
-    results = sc.union(rdds).collect()
-    print("Spark union is finished!")
-    if len(results)==0:
-        print("all files validate!")
-    else:
-        print("The following files were deleted by spark:")
-        print("\n".join(results))
+    output = os.path.join(os.getenv('DAS_S3ROOT'), 'tmp/' + uuid.uuid4())
+    print("Will write to",output)
+    sc.union(rdds).coalesce(1).saveAsTextFile(output)
+    print("Spark union is finished! Output in ",output)
     print("\n\n\n\n")
     print("================================================================")
     print("================================================================")

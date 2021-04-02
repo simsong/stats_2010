@@ -60,6 +60,8 @@ SCHEMA_FILENAME="schema.sql"
 PYTHON_START_TIME = 1
 MIN_LP_WAIT   = 120             # wait two minutes between launches
 MIN_SOL_WAIT  = 60              # wait one minute between launch
+#SPARK_TRACTS_PER_PARTITION = 3
+SPARK_TRACTS_PER_PARTITION = 1
 
 # Failsafes: don't start an LP or SOL unless we have this much free
 MIN_FREE_MEM_FOR_LP  = 400*GiB  # we've seen LP generation take up to 350GiB
@@ -448,22 +450,32 @@ def rescan_row(config_row):
     for var in config['environment']['vars'].split(','):
         os.environ[var] = config['environment'][var]
 
-    row['stusab'] = row['stusab'].lower()
+    stusab = row['stusab'].lower()
+    county = row['county']
+    tract  = row['tract']
     logging.info(f"rescan_row {row}")
-    lpfilenamegz  = dbrecon.LPFILENAMEGZ(stusab=row['stusab'],county=row['county'],tract=row['tract'])
-    solfilenamegz = dbrecon.SOLFILENAMEGZ(stusab=row['stusab'],county=row['county'],tract=row['tract'])
+    lpfilenamegz  = dbrecon.LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
+    solfilenamegz = dbrecon.SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
 
     ret = []
     auth = dbrecon.auth()
-    if row['sol_end'] and dbrecon.dgetsize(solfilenamegz) < dbrecon.MIN_SOL_SIZE:
-        logging.warning(f"{solfilenamegz} not existing or too small. Removing.")
-        dbrecon.remove_solfile(auth, row['stusab'], row['county'], row['tract'])
-        ret.append(solfilenamegz)
+    if row['sol_end']:
+        if dbrecon.validate_solfile(solfilenamegz):
+            DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set sol_validated=NOW()  where stusab=%s and county=%s and tract=%s",
+                         (stusab,county,tract))
+        else:
+            logging.warning(f"{solfilenamegz} not existing or too small. Removing.")
+            dbrecon.remove_solfile(auth, stusab, county, tract)
+            ret.append(solfilenamegz)
 
-    if row['lp_end'] and not dbrecon.lpfile_properly_terminated(lpfilenamegz):
-        logging.warning(f"{lpfilenamegz} is not properly terminated. Removing")
-        dbrecon.remove_lpfile(auth, row['stusab'], row['county'], row['tract'])
-        ret.append(lpfilenamegz)
+    if row['lp_end']:
+        if dbrecon.validate_lpfile(lpfilenamegz):
+            DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set lp_validated=NOW()  where stusab=%s and county=%s and tract=%s",
+                         (stusab,county,tract))
+        else:
+            logging.warning(f"{lpfilenamegz} is not properly terminated. Removing")
+            dbrecon.remove_lpfile(auth, stusab, county, tract)
+            ret.append(lpfilenamegz)
 
     del auth                    # be sure its disconnected
     return ret
@@ -495,7 +507,7 @@ def rescan(auth, args):
     # Figure out what needs to be processed
 
     restrict = "AND ((lp_end IS NOT NULL) or (sol_end IS NOT NULL)) "
-    cmd = f"SELECT * from {REIDENT}tracts where (pop100>0) {restrict} "
+    cmd = f"SELECT * from {REIDENT}tracts where (pop100>0) {restrict} and ((lp_validated is NULL) OR (sol_validated is NULL)) "
     sqlargs = []
     if stusab:
         cmd += " and (stusab = %s)"
@@ -503,6 +515,7 @@ def rescan(auth, args):
         if county:
             cmd += " and (county=%s)"
             sqlargs.append(county)
+    cmd += f' LIMIT {args.rescan_limit}'
     rows = DBMySQL.csfr(auth, cmd, sqlargs, asDicts='True')
 
     # This idea borrowed from DAS. Put in the config file all of the information that the worker will need.
@@ -513,30 +526,27 @@ def rescan(auth, args):
     config['paths']['reident'] = REIDENT
     for var in config['environment']['vars'].split(','):
         config['environment'][var] = os.getenv(var)
-    config_rows = [ (config, row) for row in rows[0:args.rescan_limit]]
+    config_rows = [ (config, row) for row in rows]
 
     print(f"*** Tracts to rescan: {len(config_rows)}")
-    cmd=cmd.replace("stusab,county,tract","count(*)").replace(restrict,"")
-    r2  = DBMySQL.csfr(auth, cmd, sqlargs)[0][0]
-    print(f"*** Total tracts: {r2}.")
 
     if not args.spark:
-        print(f"Processing locally with {args.j1} threads. Expected completion in {len(config_rows)*3/10000} hours")
+        print(f"Processing locally with --j1={args.j1} threads. Expected completion in {len(config_rows)*3/10000} hours")
         with multiprocessing.Pool(args.j1) as p:
             p.map(rescan_row, config_rows)
         return
 
     print("*** Processing with spark...")
     output_path = os.path.join(os.getenv('DAS_S3ROOT'),
-                               f'2010-re/{REIDENT}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-rescan')
+                               f'2010-re/{REIDENT[:-1]}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-rescan')
     output_path_txt = output_path+".txt"
     print("*** Will write to",output_path)
 
     # Create an RDD that has all of the rows, and partition it so that there are roughly 5 rows per partition.
-    rows_rdd = sc.parallelize(config_rows).repartition( len(config_rows)//10 )
+    rows_rdd = sc.parallelize(config_rows).repartition( len(config_rows) // SPARK_TRACTS_PER_PARTITION ).persist()
 
     # Run the mapper
-    results_rdd = rows_rdd.flatMap( rescan_row )
+    results_rdd = rows_rdd.flatMap( rescan_row ).persist()
 
     # Save the results to S3 first
 

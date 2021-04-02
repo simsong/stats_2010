@@ -28,7 +28,7 @@ import atexit
 import dbrecon
 
 from dbrecon import DB,GB,MB
-from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
+from dbrecon import validate_lpfile,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
 from ctools.total_size import total_size
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
@@ -366,7 +366,7 @@ class LPTractBuilder:
             lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
 
             # Check to see if file is already finished.
-            if dbrecon.lpfile_properly_terminated(lpfilenamegz):
+            if dbrecon.validate_lpfile(lpfilenamegz):
                 logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
                 dbrecon.db_done(self.auth,'lp',self.stusab, self.county, self.tract, clear_start=True)
                 return

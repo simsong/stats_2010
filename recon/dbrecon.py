@@ -592,7 +592,7 @@ def tracts_for_state_county(*,stusab,county):
 
 MIN_LP_SIZE  =  100      # smaller than this, the file must be invalid
 MIN_SOL_SIZE = 1000      # smaller than this, the file is invalid
-def lpfile_properly_terminated(fname):
+def validate_lpfile(fname):
     # Small files are not valid LP files
     if dgetsize(fname) < MIN_LP_SIZE:
         return False
@@ -626,6 +626,29 @@ def remove_lpfile(auth,stusab,county,tract):
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set lp_start=NULL, lp_end=NULL, lp_gb=NULL  where stusab=%s and county=%s and tract=%s",
                  (stusab,county,tract))
     remove_solfile(auth,stusab, county, tract)
+
+################################################################
+### SOLFile Manipulation
+################################################################
+def validate_solfile(fname):
+    """Validating the solfile requires looking at all the variables and making sure each is a 0 or a 1.
+    That's a lot of work. This approach just looks at the log file.
+    Some of the logfiles were written out as compressed without a .gz, so look for both and try to decompress each
+    """
+    for possible_log_file in [fname.replace(".sol.gz",".log.gz"),
+                              fname.replace(".sol.gz",".log")]:
+        if dgetsize(possible_log_file) > 0:
+            data = dopen(possible_log_file,'rb').read()
+            if b'Optimal solution found' in data:
+                return True
+            try:
+                if b'Optimal solution found' in gzip.decompress(data):
+                    return True
+            except OSError as e:
+                pass
+    return False
+
+
 
 def remove_solfile(auth,stusab,county,tract):
     solgz_filename = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
@@ -1055,11 +1078,14 @@ if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Get the count for SOL.GZ files" )
-    parser.add_argument("--lpcheck",help="check to see if file is properly terminated")
+    parser.add_argument("--lpcheck",help="check to see if LP file is valid")
+    parser.add_argument("--solcheck",help="check to see if SOL file is valid")
     parser.add_argument("--s3cat",help="test reading a file from S3. should decompress files ending .gz")
     args     = parser.parse_args()
     if args.lpcheck:
-        print(f"lpfile_properly_terminated({args.lpcheck})=",lpfile_properly_terminated(args.lpcheck))
+        print(f"validate_lpfile({args.lpcheck})=",validate_lpfile(args.lpcheck))
+    if args.solcheck:
+        print(f"validate_lpfile({args.solcheck})=",validate_solfile(args.solcheck))
     if args.s3cat:
         for line in dopen(args.s3cat, mode='r'):
             print(line)

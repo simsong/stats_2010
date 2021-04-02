@@ -190,11 +190,11 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
         DBMySQL.csfr(auth,cmd, vals+[stusab,county,tract])
     del env                     # free the memory and release the Gurobi token
 
-    # either compress or upload the tmp_logfile
+    # save the logfile locally or uploaded in compressed form.
     if log_filename.startswith('s3://'):
-        subprocess.check_call([ S3ZPUT, tmp_log_filename, log_filename])
+        subprocess.check_call([ S3ZPUT, tmp_log_filename, log_filename+'.gz'])
     else:
-        subprocess.check_call([ GZIP, GZIP_OPT], stdin=open(tmp_log_filename,'rb'), stdout=open(log_filename,'wb'))
+        subprocess.check_call([ GZIP, GZIP_OPT], stdin=open(tmp_log_filename,'rb'), stdout=open(log_filename+'.gz','wb'))
     os.unlink(tmp_log_filename)
     if tempname is not None:
         os.unlink(tempname)

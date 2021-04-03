@@ -35,7 +35,7 @@ import re
 import logging
 import subprocess
 import glob
-
+import multiprocessing
 
 try:
     import pymysql
@@ -419,21 +419,8 @@ def host_status(host):
 
 def fast_all(callback):
     """Run the callback on every machine, with the parameter being the hostname, each in their own process."""
-    procs = []
-    for host in all_hosts():
-        p = os.fork()
-        if p==0:
-            callback(host)
-            exit(0)
-        elif p>0:
-            procs.append(p)
-        else:
-            raise RuntimeError("fork")
-        if len(procs) == args.limit:
-            print("Limit reached.",file=sys.stderr)
-            break
-    for p in procs:
-        os.waitpid(p,0)
+    with multiprocessing.Pool(50) as p:
+        p.map(callback, all_hosts())
 
 
 def show_file(path):
@@ -448,22 +435,20 @@ def do_spark(args):
     """one of the great errors in the desing of the DAS was that we didn't use a python program to launch spark, instead we use a run_cluster script.
     Here we do not repeat that same mistake.
     """
-    if args.num_executors == NUMBER_OF_WORKERS_TIMES_40:
-        num_executors = (len(all_hosts())-2)*40
-    else:
-        num_executors = int(args.num_executors)
-
-
-    cmd = []
+    cmd = ['scheduler.py','--spark','--limit',str(args.limit),'--reident',args.reident, '--nolock','--pop100',args.pop100]
     if args.rescan:
-        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark','--rescan_limit',str(args.rescan_limit)])
+        cmd.append('--rescan')
+    elif args.step3:
+        cmd.append('--step3')
+    elif args.step4:
+        cmd.append('--step4')
+    else:
+        logging.error('--spark requires --rescan, --step3 or --step4')
 
     print("LAUNCH: ",cmd)
     REQUIRED_FILES = glob.glob("*.py") + glob.glob("ctools/*.py") + glob.glob("dfxml/*py")
 
-    # Let spark set the number of executors automatically
-    # num_executors = num_executors,
-
+    # Let spark set the number of executors automatically. It seems to do this anyway.
 
     ctools.cspark.spark_submit(files_to_zip = REQUIRED_FILES,
                                executor_cores = 2,
@@ -531,8 +516,8 @@ if __name__ == "__main__":
     g.add_argument("--cluster_status", help="report each machine status", action='store_true')
     g.add_argument("--resize", help="Resize cluster", type=int)
     g.add_argument("--rescan", help="Validate all LP and SOL files in S3 against the database", action='store_true')
-    g.add_argument("--step3", help="manually run Step 3 and make LP files. Normally run this through the controller. This is for testing", action='store_true')
-    g.add_argument("--step4", help="manually run Step 4 and make SOL files. Normally run this through the controller. This is for testing", action='store_true')
+    g.add_argument("--step3", help="Run Step 3 and make LP files. You can run singles for testing, or with --spark", action='store_true')
+    g.add_argument("--step4", help="RUn Step 4 and make SOL files. You can run singles for testing, or run with --spark", action='store_true')
     g.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
 
 
@@ -543,6 +528,10 @@ if __name__ == "__main__":
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
 
 
+    g = parser.add_mutually_exclusive_group()
+    g.add_argument("--big", help="Generate LP files for big counties. Requires --step3 and --spark", action='store_true')
+    g.add_argument("--small", help="Generate small LP files for big counties. Requires --step3 and --spark", action='store_true')
+
     parser.add_argument("--stusab", help="which stusab to process", default='all')
     parser.add_argument("--county", help="required for step3 and step4")
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
@@ -550,10 +539,10 @@ if __name__ == "__main__":
     parser.add_argument('--force', action='store_true', help='delete output files if they exist, and force launching on all clusters')
     parser.add_argument('--nodes', help='Show YARN nodes', action='store_true')
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
-    parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
-    parser.add_argument("--rescan_limit", type=int, default=1000000, help='Limit when rescanning')
+    parser.add_argument("--limit", type=int, default=1000000, help='Limit when rescanning or launching processes')
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
     parser.add_argument("--num_executors", help="number of spark executors to use",default=NUMBER_OF_WORKERS_TIMES_40)
+    parser.add_argument("--pop100", help="--spark --step3 and --step4, specifies the max(pop100) to work with",default=">0")
     args = parser.parse_args()
 
     if args.env:
@@ -689,7 +678,7 @@ if __name__ == "__main__":
     # We can run multiple steps if we want! For testing, of course
     if args.step3 or args.step4 or args.step5:
         if args.stusab=='all':
-            logging.error("cannot run step3, step4 or step5 on all stusabs; use the scheduler.")
+            logging.error("cannot run step3, step4 or step5 on all stusabs unless --spark is provided or unless you run the scheduler directly.")
             exit(1)
         if not args.county:
             list_counties(auth, args.stusab)
@@ -723,4 +712,4 @@ if __name__ == "__main__":
 
     if args.rescan:
         run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG,
-             '--j1', REFRESH_PARALLELISM, '--rescan_limit', str(args.rescan_limit)])
+             '--j1', REFRESH_PARALLELISM, '--limit', str(args.limit)])

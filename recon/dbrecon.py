@@ -348,9 +348,20 @@ def get_final_pop_from_sol(auth, stusab, county, tract, delete=True):
 
 ################################################################
 ##
-## This implements the hostlock system.
-## The hostlock is used by the scheduler to make sure that the same LP or SOL isn't scheduled
-## simulatenously on two different nodes.
+"""
+This implements the hostlock system.
+The hostlock is used by the scheduler to make sure that the same LP or SOL isn't scheduled
+simulatenously on two different nodes. A host gets a lock by setting:
+ {what}_start = now()
+ {what}_host  = the host
+
+ where {what} = lp or sol.
+
+I'm not sure why we also have a hostloc and pid, because that doesn't seem to be needed.
+I think that it takes advantage of the fact that you aren't building the LP and the SOL at the same time.
+
+Under spark, we don't use db_start, just db_done.
+"""
 
 
 def db_lock(stusab, county, tract):
@@ -371,8 +382,12 @@ def db_start(what,stusab, county, tract):
             rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {stusab} {county} {tract} ")
 
-def db_done(auth, what, stusab, county, tract, clear_start=False):
-    assert what in [LP,SOL, CSV]
+def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False):
+    assert what in [LP, SOL, CSV]
+    if start:
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set {what}_start=%s where stusab=%s and county=%s and tract=%s",
+                     (start,stusab,county,tract),rowcount=1)
+
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set {what}_end=now(),{what}_host=%s,hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
                  (hostname(),stusab,county,tract),rowcount=1)
     if clear_start:

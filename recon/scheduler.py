@@ -38,6 +38,8 @@ from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 import ctools.cspark as cspark
 import ctools.lock
+import s3_pandas_synth_lp_files
+
 
 HELP="""
 Try one of the following commands:
@@ -70,7 +72,6 @@ MIN_FREE_MEM_FOR_SOL = 20*GiB
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
 
 REPORT_FREQUENCY = 60           # report this often into sysload table
-
 PROCESS_DIE_TIME = 5            # how long to wait for a process to die
 LONG_SLEEP= 300          # sleep for this long (seconds) when there are no resources
 PS_LIST_FREQUENCY = 30   # big status report every 30 seconds
@@ -78,6 +79,8 @@ PS_LIST_FREQUENCY = 30   # big status report every 30 seconds
 S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
 LP_J1    = 1                    # let this program schedule
+
+SPARK_SMALL_LP_MAX_POP100 = 3000 # anything over 3000 requires large
 
 def load():
     return os.getloadavg()[0]
@@ -171,19 +174,20 @@ class PSTree():
     def youngest(self):
         return sorted(self.plist, key=lambda p:self.total_user_time(p))[0]
 
-
 #
 # Note: change running() into a dictionary where the start time is the key
 # Then report for each job how long it has been running.
 # Modify this to track the total number of bytes by all child processes
 
-def run(auth, debug=False):
-    os.set_blocking(sys.stdin.fileno(), False)
+def run(auth, args):
+    assert args.spark == False
+    debug           = args.debug
     running         = set()
     last_ps_list    = 0
     last_lp_launch  = 0
     last_sol_launch = 0
     halting         = False
+    os.set_blocking(sys.stdin.fileno(), False)
 
     def running_lp():
         """Return a list of the runn LP makers"""
@@ -437,7 +441,83 @@ def kill_running_s3_s4():
             p.wait()
 
 ################################################################
-## rescan stuff follows
+## Spark support
+
+
+def spark_load_env(config):
+    """To be run on a spark worker. Bring over the environment variables that were stashed in the config file on the Driver node."""
+    dbrecon.GetConfig().set_config(config)
+    dbrecon.set_reident(config['paths']['reident'])
+    for var in config['environment']['vars'].split(','):
+        os.environ[var] = config['environment'][var]
+
+def spark_save_env(config):
+    """Save the environment variables in the config file specified  by the config file."""
+    config['paths']['reident'] = REIDENT
+    for var in config['environment']['vars'].split(','):
+        config['environment'][var] = os.getenv(var)
+
+def get_spark_sc():
+    if not cspark.spark_running():
+        raise RuntimeError("--spark provided but not running under spark")
+
+    # pylint: disable=E0401
+    from pyspark.sql import SparkSession
+    spark = SparkSession.builder.getOrCreate()
+    sc    = spark.sparkContext
+    return (spark,sc)
+
+################################################################
+## Spark step 3
+
+
+def spark_output_path(what):
+    return os.path.join(os.getenv('DAS_S3ROOT'),
+                        f'2010-re/{REIDENT[:-1]}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-' + what)
+
+
+def spark_build_lpfile(config_row):
+    (config,row) = config_row
+    spark_load_env(config)
+    s3_pandas_synth_lp_files.make_state_county_files(auth, row['stusab'], row['county'], db_start_at_end=True)
+
+def spark_step34(auth, args):
+    """Run step 3 or step4 under spark. We ignore files in progress, just get them all."""
+
+    (spark,sc) = get_spark_sc()
+
+    t0 = time.time()
+    cmd = f"""
+    SELECT stusab, county,MAX(pop100) AS max_tract_pop
+    FROM {REIDENT}tracts GROUP BY stusab, county where lp_end is NULL
+    HAVING max_tract_pop {args.pop100}
+    LIMIT {args.limit}
+    """
+    rows = DBMySQL.csfr(auth, cmd, asDicts=True)
+    print("*** Counties to process: ",len(rows))
+
+    for row in rows:
+        print(row)
+    exit(0)
+
+    config = dbrecon.GetConfig().config
+    spark_save_env(config)
+
+    # Tuples that contain the config and the row to process
+    config_rows = [ (config, row) for row in rows]
+    rows_rdd    = sc.parallelize(config_rows).repartition( len(config_rows) // SPARK_TRACTS_PER_PARTITION ).persist()
+    results_rdd = rows_rdd.flatMap( spark_build_lpfile ).persist()
+    results     = results_rdd.collect()
+    if results:
+        print("LP Files created:")
+        print("\n".join(results))
+    else:
+        print("No LP Files Created")
+    print("Elapsed time: ",time.time()-t0)
+
+
+################################################################
+## rescan stuff follows. It can be both local and spark. Spark runs faster, but seems less reliable.
 
 
 def rescan_row(config_row):
@@ -445,10 +525,7 @@ def rescan_row(config_row):
     If they are present, validate them. If they do not validate, update the database.
     """
     (config,row) = config_row
-    dbrecon.GetConfig().set_config(config)
-    dbrecon.set_reident(config['paths']['reident'])
-    for var in config['environment']['vars'].split(','):
-        os.environ[var] = config['environment'][var]
+    spark_load_env(config)
 
     stusab = row['stusab'].lower()
     county = row['county']
@@ -482,16 +559,13 @@ def rescan_row(config_row):
 
 def rescan(auth, args):
     """Get a list of the tracts that require scanning and check each one."""
+    t0 = time.time()
     stusab = args.stusab
     county = args.county
 
     if args.spark:
-        if not cspark.spark_running():
-            raise RuntimeError("--spark provided but not running under spark")
-        # pylint: disable=E0401
-        from pyspark.sql import SparkSession
-        spark = SparkSession.builder.getOrCreate()
-        sc    = spark.sparkContext
+        (spark,sc) = get_spark_sc()
+
 
         print("================================================================")
         print("================================================================")
@@ -515,17 +589,16 @@ def rescan(auth, args):
         if county:
             cmd += " and (county=%s)"
             sqlargs.append(county)
-    cmd += f' LIMIT {args.rescan_limit}'
+    cmd += f' LIMIT {args.limit}'
     rows = DBMySQL.csfr(auth, cmd, sqlargs, asDicts='True')
 
     # This idea borrowed from DAS. Put in the config file all of the information that the worker will need.
     # Move over environment variables in a special section called [environment]
     # Limit rows to
     config = dbrecon.GetConfig().config
+    spark_save_env(config)
 
-    config['paths']['reident'] = REIDENT
-    for var in config['environment']['vars'].split(','):
-        config['environment'][var] = os.getenv(var)
+    # Tuples that contain the config and the row to process
     config_rows = [ (config, row) for row in rows]
 
     print(f"*** Tracts to rescan: {len(config_rows)}")
@@ -534,28 +607,34 @@ def rescan(auth, args):
         print(f"Processing locally with --j1={args.j1} threads. Expected completion in {len(config_rows)*3/10000} hours")
         with multiprocessing.Pool(args.j1) as p:
             p.map(rescan_row, config_rows)
+        print("Elapsed time: ",time.time()-t0)
         return
 
     print("*** Processing with spark...")
-    output_path = os.path.join(os.getenv('DAS_S3ROOT'),
-                               f'2010-re/{REIDENT[:-1]}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-rescan')
+    output_path = spark_output_path('rescan')
     output_path_txt = output_path+".txt"
     print("*** Will write to",output_path)
 
     # Create an RDD that has all of the rows, and partition it so that there are roughly 5 rows per partition.
-    rows_rdd = sc.parallelize(config_rows).repartition( len(config_rows) // SPARK_TRACTS_PER_PARTITION ).persist()
-
-    # Run the mapper
+    rows_rdd    = sc.parallelize(config_rows).repartition( len(config_rows) // SPARK_TRACTS_PER_PARTITION ).persist()
     results_rdd = rows_rdd.flatMap( rescan_row ).persist()
 
-    # Save the results to S3 first
+    # Get the results; they should be small
 
-    results_rdd.saveAsTextFile(output_path)
-    print("Combining to a single file and saving again")
-    results_1partition = results_rdd.coalesce(1)
-    results_1partition.saveAsTextFile(output_path_txt)
+    #results_rdd.saveAsTextFile(output_path)
+    #print("Combining to a single file and saving again")
+    #results_1partition = results_rdd.coalesce(1)
+    #results_1partition.saveAsTextFile(output_path_txt)
+
+    results = results_rdd.collect()
+    if results:
+        print("Deleted files:")
+        print("\n".join(results))
+    else:
+        print("No files deleted")
 
     # This would save the results on S3:
+    print("Elapsed time: ",time.time()-t0)
     print("\n\n\n\n")
     print("================================================================")
     print("================================================================")
@@ -608,9 +687,13 @@ if __name__=="__main__":
     parser.add_argument("--county", help="county for rescanning")
     parser.add_argument("--desc", action='store_true', help="Run most populus tracts first, otherwise do least populus tracts first")
     parser.add_argument("--debug", action='store_true', help="debug mode")
-    parser.add_argument("--j1", help="number of threads for rescan", type=int, default=10)
+    parser.add_argument("--j1",    help="number of threads for rescan", type=int, default=10)
     parser.add_argument("--spark", help="run under spark", action='store_true')
-    parser.add_argument("--rescan_limit", help="Specify a limit for the number of tracts pto process in --rescan", type=int, default=1000000)
+    parser.add_argument("--step3", help='just run step3 (requires --spark)', action='store_true')
+    parser.add_argument("--step4", help='just run step4 (requires --spark)', action='store_true')
+    parser.add_argument("--limit", help="Specify a limit for the number of tracts to process in --rescan, --step3 or --step4", type=int, default=1000000)
+    parser.add_argument("--nolock", help="Do not lock the script.", action='store_true')
+    parser.add_argument("--pop100", help="--spark --step3 and --step4, specifies the max(pop100) to work with",default=">0")
     args   = parser.parse_args()
 
 
@@ -633,17 +716,35 @@ if __name__=="__main__":
             print(row)
         exit(0)
 
-    ctools.lock.lock_script( abspath(__file__))
+    if not args.nolock:
+        ctools.lock.lock_script( abspath(__file__))
+
+    if args.spark:
+        if (args.step3 and args.step4) or (args.rescan and args.step3) or (args.rescan and args.step4):
+            logging.error("--spark can only be used with  one of --rescan, --step2 or --step3")
+            exit(1)
+        if args.step3 or args.step4:
+            spark_step34(auth, args)
+        elif args.rescan:
+            rescan(auth, args)
+        else:
+            logging.error("--spark requires --rescan, --step2 or --step3")
+            exit(1)
+        exit(0)
 
     if args.rescan:
         rescan(auth, args)
+
     elif args.clean:
         clean(auth)
+
     elif args.set_none_running:
         set_none_running(auth,HOSTNAME)
+
     elif args.set_none_running_anywhere:
         set_none_running(auth, None)
+
     else:
         kill_running_s3_s4()
         set_none_running(auth,HOSTNAME)
-        run(auth, args.debug)
+        run(auth, args)

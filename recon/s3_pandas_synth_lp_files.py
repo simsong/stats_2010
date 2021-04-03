@@ -24,6 +24,7 @@ import time
 import tempfile
 import subprocess
 import atexit
+import datetime
 
 import dbrecon
 
@@ -65,6 +66,8 @@ TABLEVAR = 'tablevar'
 # do not make it a category, as it appears that the column is distinct
 # in each row of the tables that use it
 GEO_TABLE = 'geo_table'
+
+ALL='all'
 
 #
 # These are all of the possible values that each attribute can take on:
@@ -117,7 +120,7 @@ def get_p01_counts( level, data_dict):
                 p01_counts[q[GEOID]] = q['value']
     return p01_counts
 
-def update_constraints(f, level, n_con, summary_nums, geo_id):
+def update_constraints(f, level, n_con, summary_nums, geo_id, debug=False):
     tuple_list=[]
     constraint_list=[]
 
@@ -159,7 +162,7 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
     # 1GB-10GB.
 
     lp = pd.merge(tuple_frame, con_frame, how='inner', on=merge_list, copy=False)
-    if args.debug:
+    if debug:
         mem_info("tuple_frame",tuple_frame)
         mem_info("con_frame",con_frame)
         mem_info('lp',lp)
@@ -172,7 +175,7 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
     gc.collect()
 
     lp_df    = lp_short.groupby([GEO_TABLE, 'value']).agg(lambda x: ' + '.join(x))
-    if args.debug:
+    if debug:
         mem_info("lp_short",lp_short)
         mem_info("lp_df",lp_df)
     del lp_short
@@ -190,7 +193,7 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
 class LPTractBuilder:
     """Build the LP files for a given tract"""
 
-    def __init__(self,stusab, county, tract, sf1_tract_data, sf1_block_data):
+    def __init__(self, stusab, county, tract, sf1_tract_data, sf1_block_data, *, debug=False, db_start_at_end=False):
         self.master_tuple_list=[]
         self.stusab = stusab
         self.county     = county
@@ -198,10 +201,12 @@ class LPTractBuilder:
         self.sf1_tract_data = sf1_tract_data
         self.sf1_block_data = sf1_block_data
         self.auth       = dbrecon.auth()
+        self.debug      = debug
+        self.db_start_at_end = False # run db_start at the end of the tract building, rather than the start
 
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
-        if not args.debug:
+        if not self.debug:
             DBMySQL.csfr(self.auth,
                          f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
                          (self.stusab,self.county,self.tract),rowcount=1)
@@ -229,7 +234,7 @@ class LPTractBuilder:
         @param summary_nums updated.
         @param master_tuple_list - updated
         """
-        if args.debug:
+        if self.debug:
             logging.info("get_constraint_summary  level: {} p01_data: {:,}B "
                          "data_dict: {:,}B summary_nums: {:,}B".
                   format(level,total_size(p01_data,verbose=False),total_size(data_dict,verbose=False),
@@ -365,7 +370,7 @@ class LPTractBuilder:
         else:
             lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
 
-            # Check to see if file is already finished.
+            # Check to see if file is already finished, indicate that, and indicate that I don't know when it was started
             if dbrecon.validate_lpfile(lpfilenamegz):
                 logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
                 dbrecon.db_done(self.auth,'lp',self.stusab, self.county, self.tract, clear_start=True)
@@ -379,11 +384,14 @@ class LPTractBuilder:
 
         dmakedirs(os.path.dirname(outfilename))
         t0         = time.time()
+        start      = datetime.datetime.now()
         logging.info(f"{state_code}{self.county}{self.tract} tract_data_size:{sys.getsizeof(self.sf1_tract_data):,} ; "
                      "block_data_size:{sys.getsizeof(self.sf1_block_data):,} ")
 
-        if not args.debug:
-            dbrecon.db_start('lp', self.stusab, self.county, self.tract)
+        # When I was developing this, I didn't want to update the database when debugging
+        if (self.debug == False):
+            if (self.db_start_at_end==False):
+                dbrecon.db_start('lp', self.stusab, self.county, self.tract)
             atexit.register(self.db_fail)
 
         if args.dry_run:
@@ -418,7 +426,7 @@ class LPTractBuilder:
 
         # loop through blocks in the tract to get block constraints and the master tuple list
         logging.info(f"block_summary_nums: {total_size(block_summary_nums):,}")
-        if args.debug:
+        if self.debug:
             logging.warning(f"block_summary_nums: {total_size(block_summary_nums):,}")
 
         del block_summary_nums
@@ -435,7 +443,7 @@ class LPTractBuilder:
         n_con = update_constraints(f, 'tract', n_con, tract_summary_nums,geo_id)
         logging.info(f"tract_summary_nums: {total_size(tract_summary_nums):,}")
         logging.info(f"master_tuple_list: {total_size(self.master_tuple_list):,}")
-        if args.debug:
+        if self.debug:
             logging.info(f"tract_summary_nums: {total_size(tract_summary_nums):,}")
             logging.info(f"master_tuple_list: {total_size(self.master_tuple_list):,}")
         del tract_summary_nums
@@ -456,13 +464,13 @@ class LPTractBuilder:
 
         # otherwise, rename the file (which may upload it to s3), and update the databse
         dbrecon.drename(outfilename, lpfilenamegz)
-        dbrecon.db_done(self.auth,'lp', self.stusab, self.county, self.tract)
+        dbrecon.db_done(self.auth,'lp', self.stusab, self.county, self.tract, start=start)
         DBMySQL.csfr(self.auth, f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
                      (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
 
         atexit.unregister(self.db_fail)
 
-        if args.debug:
+        if self.debug:
             logging.info("debug completed.")
             logging.info("Elapsed seconds: {}".format(int(time.time()-t0)))
             dbrecon.print_maxrss()
@@ -494,11 +502,12 @@ def build_tract_lp_tuple(tracttuple):
         DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
 
 """Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
-def make_state_county_files(auth, stusab, county, tractgen='all'):
+def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False):
     """
     Reads the data files for the state and county, then call build_tract_lp to build the LP files for each tract.
     All of the tract LP files are built from the same data model, so they can be built in parallel with shared memory.
     Consults the database to see which files need to be rebuilt, and only builds those files.
+    For the large counties, this can take > 350GB
     """
     assert (stusab[0].isalpha()) and (len(stusab)==2)
     assert (county[0].isdigit()) and (len(county)==3)
@@ -515,7 +524,7 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
                             """,(stusab,county))
         tracts_needing_lp_files = [row[0] for row in rows]
         logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)
-        if tractgen=='all':
+        if tractgen==ALL:
             if len(tracts_needing_lp_files)==0:
                 logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
                                 f"- No more tracts need LP files")
@@ -693,7 +702,7 @@ def make_state_county_files(auth, stusab, county, tractgen='all'):
         sf1_tract_dict[tract].append(d)
     logging.info("%s %s total_size(sf1_block_dict)=%s total_size(sf1_tract_dict)=%s",
                  stusab,county,total_size(sf1_block_dict),total_size(sf1_tract_dict))
-    if args.debug:
+    if debug:
         logging.info("sf1_block_dict total memory: {:,} bytes".format(total_size(sf1_block_dict)))
         logging.info("sf1_tract_dict has data for {} tracts.".format(len(sf1_tract_dict)))
         logging.info("sf1_tract_dict total memory: {:,} bytes".format(total_size(sf1_tract_dict)))
@@ -770,11 +779,11 @@ if __name__=="__main__":
     if args.tract:
         if not args.debug:
             dbrecon.db_lock(args.state, args.county, args.tract)
-        make_state_county_files(auth, args.state, args.county, args.tract)
+        make_state_county_files(auth, args.state, args.county, args.tract, debug=args.debug)
 
     else:
         # We are doing a single state/county pair. We may do each tract multithreaded. Lock the tracts...
         DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
                 (dbrecon.hostname(),os.getpid(),args.state,args.county))
-        make_state_county_files(auth, args.state, args.county)
+        make_state_county_files(auth, args.state, args.county, debug=args.debug)
     logging.info("s3_pandas_synth_lp_files.py finished")

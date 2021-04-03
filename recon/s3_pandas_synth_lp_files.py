@@ -2,7 +2,9 @@
 #
 """
 Read the processed SF1 dat and syntheize the LP file that will be input to the optimizer.
-This is currently done with pandas and by buffering much in memory, both of which are quite memory intensive. 
+This is currently done with pandas and by buffering much in memory, both of which are quite memory intensive.
+
+I tried to simplify this, but I was never able to figure out what it was actually doing.
 """
 
 from collections import defaultdict
@@ -21,12 +23,14 @@ import sys
 import time
 import tempfile
 import subprocess
-
-from total_size import total_size
+import atexit
 
 import dbrecon
+
+from total_size import total_size
 from dbrecon import DB,GB,MB
-from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info
+from dbrecon import lpfile_properly_terminated,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
+from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 assert pd.__version__ > '0.19'
 
@@ -55,7 +59,7 @@ HISP  = 'hisp'
 GEOID = 'geoid'
 TABLE_NUM = 'table_num'
 CELL_NUMBER = 'cell_number'
-TABLEVAR = 'tablevar'           
+TABLEVAR = 'tablevar'
 
 # geo_table is a column that has cell_number and geoid concatenated
 # do not make it a category, as it appears that the column is distinct
@@ -90,9 +94,9 @@ def make_attributes_categories(df):
             df[a] = df[a].astype('category')
     return df
 
-    
+
 ################################################################
-## 
+##
 ## code to build the LP files
 ##
 ################################################################
@@ -102,9 +106,9 @@ def make_attributes_categories(df):
 def get_p01_counts( level, data_dict):
     p01_counts = {}
     for s in data_dict:
-        if level=='block': 
+        if level=='block':
             q1=data_dict[s]
-        elif level=='tract': 
+        elif level=='tract':
             q1=data_dict
         else:
             raise RuntimeError("invalid level: {}".format(level))
@@ -140,8 +144,8 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
     gc.collect()
     con_frame = pd.DataFrame(con_frame_list, columns=['value'] + ATTRIBUTES + [TABLE_NUM,GEOID,CELL_NUMBER])
     con_frame[GEO_TABLE] = con_frame[CELL_NUMBER] + '_' + con_frame[GEOID]
-    make_attributes_categories(con_frame) 
-    
+    make_attributes_categories(con_frame)
+
     ## Note: we must make con_frame into categories *after* GEO_TABLE is added, because you cannot add categories
 
     if level=='block':
@@ -186,19 +190,21 @@ def update_constraints(f, level, n_con, summary_nums, geo_id):
 class LPTractBuilder:
     """Build the LP files for a given tract"""
 
-    def __init__(self,state_abbr, county, tract, sf1_tract_data, sf1_block_data):
+    def __init__(self,stusab, county, tract, sf1_tract_data, sf1_block_data):
         self.master_tuple_list=[]
-        self.state_abbr = state_abbr
+        self.stusab = stusab
         self.county     = county
         self.tract      = tract
         self.sf1_tract_data = sf1_tract_data
         self.sf1_block_data = sf1_block_data
+        self.auth       = dbrecon.auth()
 
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         if not args.debug:
-            DB.csfr("UPDATE tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
-                    (self.state_abbr,self.county,self.tract),rowcount=1)
+            DBMySQL.csfr(self.auth,
+                         f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
+                         (self.stusab,self.county,self.tract),rowcount=1)
 
     def get_constraint_summary(self, level, p01_data, data_dict, summary_nums):
         """
@@ -315,7 +321,7 @@ class LPTractBuilder:
                     # Previously this was done with list comprehension; it was changed to a generator.
                     #
 
-                    s_tuple_list = (['{}_{}_{}_{}'.format(s[GEOID], s['sex'], s['start_age'], p), 
+                    s_tuple_list = (['{}_{}_{}_{}'.format(s[GEOID], s['sex'], s['start_age'], p),
                                     s['sex'], age, wh, bl, AI, As, nh, so, hisp]
                                     for p in range(0, int(s['value']))
                                     for wh in Wh
@@ -326,7 +332,7 @@ class LPTractBuilder:
                                     for so in Sor
                                     for hisp in Hisp
                                     for age in [x for x in range(int(s['start_age']), int(s['end_age']) + 1)])
-                    
+
                     #
                     # Now we use the generator create the master_tuple_list.
                     # This is the slow operation because we are evaluating the generator that we created above.
@@ -352,38 +358,32 @@ class LPTractBuilder:
         Modified to write gzipped LP files because the LP files are so large
         """
 
-        state_code    = dbrecon.state_fips(self.state_abbr)
+        state_code    = dbrecon.state_fips(self.stusab)
         geo_id        = self.sf1_tract_data[0][GEOID]
-        lpfilenamegz  = LPFILENAMEGZ(state_abbr=self.state_abbr,county=self.county,tract=self.tract)
-        tmpgzfilename = lpfilenamegz.replace(".gz",".tmp.gz")
         if args.output:
             outfilename = args.output
         else:
-            outfilename   = tmpgzfilename
-            lpfileexists  = dbrecon.dpath_exists(lpfilenamegz)
+            lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
 
-            if dbrecon.is_db_done('lp',self.state_abbr, self.county, self.tract):
-                logging.warning(f"note: LP file exists in database: {self.state_abbr}{self.county}{self.tract}  exists in file system: {lpfileexists}; "
-                                "will not create another one.")
+            # Check to see if file is already finished.
+            if dbrecon.lpfile_properly_terminated(lpfilenamegz):
+                logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
+                dbrecon.db_done(self.auth,'lp',self.stusab, self.county, self.tract, clear_start=True)
                 return
-            lpdir      = LPDIR(state_abbr=self.state_abbr,county=self.county)
-            dmakedirs(lpdir)  
 
-            # file exists and it is good. Note that in the database
-            try:
-                if dbrecon.lpfile_properly_terminated(lpfilenamegz):
-                    logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
-                    dbrecon.db_done('lp',self.state_abbr, self.county, self.tract)
-                    return
-            except FileNotFoundError as e:
-                pass
+            # If outputting to S3, make the output file a named temp
+            if lpfilenamegz.startswith('s3://'):
+                outfilename = tempfile.NamedTemporaryFile(suffix='.gz',delete=False).name
+            else:
+                outfilename = lpfilenamegz.replace(".gz",".tmp.gz")
 
+        dmakedirs(os.path.dirname(outfilename))
         t0         = time.time()
         logging.info(f"{state_code}{self.county}{self.tract} tract_data_size:{sys.getsizeof(self.sf1_tract_data):,} ; "
                      "block_data_size:{sys.getsizeof(self.sf1_block_data):,} ")
 
         if not args.debug:
-            dbrecon.db_start('lp', self.state_abbr, self.county, self.tract)
+            dbrecon.db_start('lp', self.stusab, self.county, self.tract)
             atexit.register(self.db_fail)
 
         if args.dry_run:
@@ -399,11 +399,11 @@ class LPTractBuilder:
         # Get the constraints from the block dict for all the blocks in the tract
         block_summary_nums = {}
         for block in self.sf1_block_data:
-            self.get_constraint_summary('block', self.sf1_block_data, self.sf1_block_data[block], 
+            self.get_constraint_summary('block', self.sf1_block_data, self.sf1_block_data[block],
                                         block_summary_nums)
-        logging.info(f"{self.state_abbr} {self.county} {self.tract}: done getting block summary constraints")
+        logging.info(f"{self.stusab} {self.county} {self.tract}: done getting block summary constraints")
 
-        # 
+        #
         # Create the output LP file and write header
         #
         f = dopen(outfilename,'w')
@@ -425,10 +425,10 @@ class LPTractBuilder:
 
         tract_summary_nums = {}
         self.get_constraint_summary('tract', self.sf1_tract_data, self.sf1_tract_data, tract_summary_nums)
-        logging.info(f"{self.state_abbr} {self.county} {self.tract}: done with tract summary")
+        logging.info(f"{self.stusab} {self.county} {self.tract}: done with tract summary")
 
         # for tracts, need to add the master_tuple_list just once
-        for i in self.master_tuple_list: 
+        for i in self.master_tuple_list:
             tract_summary_nums[geo_id]['tuple_list'].append(i)
 
         # Loop through the tract constraints to write to file.
@@ -447,11 +447,20 @@ class LPTractBuilder:
             f.write('\n')
         f.write('End\n')
         f.close()
-        if not args.debug:
-            dbrecon.db_done('lp',self.state_abbr, self.county, self.tract)
-            dbrecon.DB.csfr("UPDATE tracts set lp_gb=%s,hostlock=NULL where stusab=%s and county=%s and tract=%s",
-                            (dbrecon.maxrss()//GB,self.state_abbr, self.county, self.tract), rowcount=1)
-            atexit.unregister(self.db_fail)
+
+
+        # if we were just asked to create the output file, notify of that and return
+        if args.output:
+            logging.info("%s created",args.output)
+            return
+
+        # otherwise, rename the file (which may upload it to s3), and update the databse
+        dbrecon.drename(outfilename, lpfilenamegz)
+        dbrecon.db_done(self.auth,'lp', self.stusab, self.county, self.tract)
+        DBMySQL.csfr(self.auth, f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
+                     (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
+
+        atexit.unregister(self.db_fail)
 
         if args.debug:
             logging.info("debug completed.")
@@ -460,9 +469,8 @@ class LPTractBuilder:
             dbrecon.add_dfxml_tag('synth_lp_files','', {'success':'1'})
             exit(0)
 
-        # Rename the temp file to the gzfile
-        dbrecon.drename(outfilename, lpfilenamegz)
-        
+        logging.info("build_tract_lp %s %s %s finished",self.stusab,self.county,self.tract)
+
 
 # Make the tract LP files.
 #
@@ -471,52 +479,70 @@ class LPTractBuilder:
 # functions.
 #
 def build_tract_lp_tuple(tracttuple):
-    (state_abbr, county, tract, sf1_tract_data, sf1_block_data) = tracttuple
-    
-    try:
-        lptb = LPTractBuilder(state_abbr, county, tract, sf1_tract_data, sf1_block_data)
-        lptb.build_tract_lp()
-    except MemoryError as e:
-        if not args.debug:
-            dbrecon.DB.csfr("UPDATE tracts set hostlock=NULL,lp_start=NULL,lp_end=NULL where stusab=%s and county=%s and tract=%s",
-                            (state_abbr, county, tract))
-        logging.error(f"MEMORY ERROR in {state_abbr} {county} {tract}: {e}")
+    (stusab, county, tract, sf1_tract_data, sf1_block_data) = tracttuple
 
-"""Support for multi-threading. tracttuple contains the state_abbr, county, tract, and sf1_tract_dict"""
-def make_state_county_files(state_abbr, county, tractgen='all'):
+    try:
+        lptb = LPTractBuilder(stusab, county, tract, sf1_tract_data, sf1_block_data)
+        lptb.build_tract_lp()
+        logging.info("build_tract_lp_tuple completed")
+    except MemoryError as e:
+        logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
+        cmd = f"""
+        UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
+        WHERE stusab=%s and county=%s and tract=%s
+        """
+        DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
+
+"""Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
+def make_state_county_files(auth, stusab, county, tractgen='all'):
     """
     Reads the data files for the state and county, then call build_tract_lp to build the LP files for each tract.
     All of the tract LP files are built from the same data model, so they can be built in parallel with shared memory.
     Consults the database to see which files need to be rebuilt, and only builds those files.
     """
-    assert state_abbr[0].isalpha()
-    assert county[0].isdigit()
-    logging.info(f"make_state_county_files({state_abbr},{county},{tractgen})")
+    assert (stusab[0].isalpha()) and (len(stusab)==2)
+    assert (county[0].isdigit()) and (len(county)==3)
+    logging.info(f"make_state_county_files({stusab},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
-    if args.debug:
+    if args.force:
         tracts = [tractgen]
     else:
-        rows = DB.csfr("SELECT tract FROM tracts WHERE stusab=%s AND county=%s AND (lp_end IS NULL)",(state_abbr,county))
+        rows = DBMySQL.csfr(auth,
+                            f"""
+                            SELECT t.tract FROM {REIDENT}tracts t
+                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (t.pop100>0)
+                            """,(stusab,county))
         tracts_needing_lp_files = [row[0] for row in rows]
+        logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)
         if tractgen=='all':
             if len(tracts_needing_lp_files)==0:
-                logging.warning(f"make_state_county_files({state_abbr},{county},{tractgen}) "
+                logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
                                 f"- No more tracts need LP files")
                 return
             tracts = tracts_needing_lp_files
         else:
             if tractgen not in tracts_needing_lp_files:
-                logging.warning(f"make_state_county_files({state_abbr},{county},{tractgen}) "
-                                f"- tract {tractgen} not in {tracts_needing_lp_files}")
-                return
+                # Check to see if the tract file is large enough
+                lpgz_filename = dbrecon.LPFILENAMEGZ(stusab=stusab,county=county,tract=tractgen)
+                if dpath_exists(lpgz_filename) and dgetsize(lpgz_filename) < dbrecon.MIN_LP_SIZE:
+                    logging.warning(f"{lpgz_filename} exists but is too small ({dgetsize(lpgz_filename)}); deleting")
+                    remove_lpfile(auth, stusab, county, tractgen)
+                else:
+                    logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
+                                    f"- tract {tractgen} not in tracts needing lp files: {' '.join(tracts_needing_lp_files)}")
+                    logging.warning(f"Use --force to force")
+                    return
             tracts = [tractgen]
-    
-    state_code = dbrecon.state_fips(state_abbr)
+
+    state_code = dbrecon.state_fips(stusab)
 
     ### Has the variables and the collapsing values we want (e.g, to collapse race, etc)
     ### These data frames are all quite small
     sf1_vars       = pd.read_csv(dopen(dbrecon.SF1_RACE_BINARIES), quoting=2)
+
+    assert len(sf1_vars) > 0
+
     make_attributes_categories(sf1_vars)
 
     sf1_vars_block = sf1_vars[(sf1_vars['level']=='block')]
@@ -526,13 +552,19 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ### These files are not that large
 
     try:
-        sf1_block_reader = csv.DictReader(dopen(
-            dbrecon.SF1_BLOCK_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
-        sf1_tract_reader = csv.DictReader(dopen(
-            dbrecon.SF1_TRACT_DATA_FILE(state_abbr=state_abbr,county=county),'r'))
+        sf1_block_data_file = dpath_expand( dbrecon.SF1_BLOCK_DATA_FILE(stusab=stusab,county=county) )
+        sf1_block_reader = csv.DictReader(dopen( sf1_block_data_file,'r'))
     except FileNotFoundError as e:
         print(e)
-        logging.error(f"ERROR. NO BLOCK DATA FILE for {state_abbr} {county} ")
+        logging.error(f"ERROR. NO BLOCK DATA FILE {sf1_block_data_file} for {stusab} {county} ")
+        return
+
+    try:
+        sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )
+        sf1_tract_reader    = csv.DictReader(dopen( sf1_tract_data_file,'r'))
+    except FileNotFoundError as e:
+        print(e)
+        logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {stusab} {county} ")
         return
 
     ## make sf1_block_list, looks like this:
@@ -542,7 +574,7 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ## ...                 ...       ...    ...
     ## 121903  020130001003156  P039I019    0.0
     ## 121904  020130001003156  P039I020    0.0
-    ##       
+    ##
     ## This is the cartesian product of all of the blocks and all of
     ## the tablevars in the tables that cover these blocks.  'value'
     ## is the value for that variable for that geoid, as read from the
@@ -558,29 +590,39 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ##
     ## TODO: Improve this by turning the geoids and tablevars into categories.
     ##
-    logging.info("building sf1_block_list for %s %s",state_abbr,county)
-    sf1_block_list=[]
+    logging.info("building sf1_block_list for %s %s",stusab,county)
+    sf1_block_list = []
     for s in sf1_block_reader:
-        temp_list=[]
+        temp_list = []
         if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
             geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)+str(s['BLOCK'])
             for k,v in list(s.items()):
-                if k[:1]=='P' and geo_id[:1]!='S' and v.strip()!='': 
+                if k[:1]=='P' and geo_id[:1]!='S' and v.strip()!='':
                     sf1_block_list.append([geo_id,k,float(v)])
 
+    assert len(sf1_block_list) > 0
     sf1_block     = pd.DataFrame.from_records(sf1_block_list, columns=[GEOID,TABLEVAR,'value'])
+    assert len(sf1_block)>0
+
     make_attributes_categories(sf1_block)
 
-    sf1_block_all = pd.merge(sf1_block, sf1_vars_block, how='inner', 
+    sf1_block_all = pd.merge(sf1_block, sf1_vars_block, how='inner',
                              left_on=[TABLEVAR], right_on=[CELL_NUMBER])
+
+    #print(f"sf1_block:\n{sf1_block}")
+    #print(f"sf1_vars_block:\n{sf1_vars_block}")
+    #print(f"sf1_block_all:\n{sf1_block_all}")
+
     sf1_block_all['value'].fillna(0)
 
     ## make sf1_block_dict.
     ## This is a dictionary of dictionaries of lists where:
     ## sf1_block_dict[tract][block] = list of sf1_block rows from the SF1 data that match each block
 
-    logging.info("collecting tract and block data for %s %s",state_abbr,county)
+    logging.info("collecting tract and block data for %s %s",stusab,county)
     sf1_block_records = sf1_block_all.to_dict(orient='records')
+    assert len(sf1_block_records) > 0
+
     sf1_block_dict = {}
     for d in sf1_block_records:
         tract=d[GEOID][5:11]  # tracts are six digits
@@ -599,21 +641,37 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     ## This is a dictionary of lists where
     ## sf1_block_dict[tract] = list of sf1_tract rows from the SF1 data that match each tract
 
-    logging.info("getting tract data for %s %s",state_abbr,county)
+    logging.info("getting tract data for %s %s",stusab,county)
     sf1_tract_list=[]
     error_count = 0
-    for s in sf1_tract_reader:
-        if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
-            geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
-            for k,v in list(s.items()):
-                if k[:3]=='PCT' and geo_id[:1]!='S':
-                    try:
-                        sf1_tract_list.append([geo_id,k,float(v)])
-                    except ValueError as e:
-                        logging.error(f"state:{state_abbr} county:{county} geo_id:{geo_id} k:{k} v:{v}")
-                        error_count += 1
-                        if error_count>MAX_SF1_ERRORS:
-                            return
+    none_errors = 0
+    for (ct,s) in enumerate(sf1_tract_reader):
+        if s['STATE'] is None:
+            logging.error("s is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
+            none_errors += 1
+            continue
+        try:
+            if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
+                geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)
+                for k,v in list(s.items()):
+                    if k[:3]=='PCT' and geo_id[:1]!='S':
+                        try:
+                            sf1_tract_list.append([geo_id,k,float(v)])
+                        except ValueError as e:
+                            logging.error(f"stusab:{stusab} county:{county} geo_id:{geo_id} k:{k} v:{v}")
+                            error_count += 1
+                            if error_count>MAX_SF1_ERRORS:
+                                return
+        except TypeError as e:
+            logging.error("s['STATE'] is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
+            logging.error(e)
+            none_errors += 1
+            continue
+
+
+
+    if none_errors>0:
+        raise RuntimeError("none_errors > 0 ")
 
     sf1_tract = pd.DataFrame.from_records(sf1_tract_list, columns=[GEOID,TABLEVAR,'value'])
     make_attributes_categories(sf1_tract)
@@ -624,6 +682,8 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
     sf1_tract_all['value'].fillna(0)
 
     sf1_tract_records = sf1_tract_all.to_dict(orient='records')
+
+    # Try to reclaim the memory
     del sf1_tract_all
     gc.collect()
 
@@ -632,31 +692,39 @@ def make_state_county_files(state_abbr, county, tractgen='all'):
         tract=d[GEOID][5:]
         sf1_tract_dict[tract].append(d)
     logging.info("%s %s total_size(sf1_block_dict)=%s total_size(sf1_tract_dict)=%s",
-                 state_abbr,county,total_size(sf1_block_dict),total_size(sf1_tract_dict))
+                 stusab,county,total_size(sf1_block_dict),total_size(sf1_tract_dict))
     if args.debug:
         logging.info("sf1_block_dict total memory: {:,} bytes".format(total_size(sf1_block_dict)))
         logging.info("sf1_tract_dict has data for {} tracts.".format(len(sf1_tract_dict)))
         logging.info("sf1_tract_dict total memory: {:,} bytes".format(total_size(sf1_tract_dict)))
-    
+
+
     ################################################################
-    ### 
+    ###
     ### We have now made the data for this county.
     ### We now make LP files for a specific set of tracts, or all the tracts.
 
-    tracttuples = [(state_abbr, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract]) for tract in tracts]
+    ### 2021-03-25 patch:
+    ### Remove tracts not in the sf1_tract_dict and in the sf1_block_dict.
+    ### This was a problem for the water tracts, although we now do not pull them into the 'tracts' list from the SQL.
+
+    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract])
+                   for tract in tracts
+                   if (tract in sf1_tract_dict) and (tract in sf1_block_dict)]
 
     if args.j2>1:
         with multiprocessing.Pool( args.j2 ) as p:
             p.map(build_tract_lp_tuple, tracttuples)
     else:
         list(map(build_tract_lp_tuple, tracttuples))
+    logging.info("make_state_county_files %s %s done",stusab,county)
 
 if __name__=="__main__":
     from argparse import ArgumentParser,ArgumentDefaultsHelpFormatter
     parser = ArgumentParser( formatter_class = ArgumentDefaultsHelpFormatter,
                              description="Synthesize LP files for all of the tracts in the given state and county." )
     dbrecon.argparse_add_logging(parser)
-    parser.add_argument("--j1", 
+    parser.add_argument("--j1",
                         help="Specifies number of threads for state-county parallelism. "
                         "These threads do not share memory. Specify 1 to disable parallelism.",
                         type=int,default=DEFAULT_J1)
@@ -667,33 +735,46 @@ if __name__=="__main__":
     parser.add_argument("--dry_run", help="don't actually write out the LP files",action='store_true')
     parser.add_argument("--debug", help="Run in debug mode. Do not update database and write output to file specified by --output",action='store_true')
     parser.add_argument("--output", help="Specify output file. Requires that a single state/county/tract be specified")
+    parser.add_argument("--force", help="Generate all tract files, even if they exist", action='store_true')
 
     parser.add_argument("state",  help="2-character state abbreviation.")
     parser.add_argument("county", help="3-digit county code")
-    parser.add_argument("tract",  help="If provided, just synthesize for this specific 4-digit tract code. Otherwise do all in the county",nargs="?")
-    
+    parser.add_argument("tract",  help="If provided, just synthesize for this specific 6-digit tract code. Otherwise do all in the county",nargs="?")
+
     DB.quiet = True
     args     = parser.parse_args()
-    config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03syn")
-    
+    config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03pan")
+    args.state = args.state.lower()
+
     assert dbrecon.dfxml_writer is not None
 
-    if args.debug and args.output is None:
-        raise RuntimeError("--debug requires --output")
+    if args.debug:
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+        logging.info("Info logging")
+        logging.debug("Debug logging")
 
-    if args.output:
+    if args.output or args.debug:
         logging.info("Memory debugging mode. Setting j1=1 and j2=1")
         args.j1 = 1
         args.j2 = 1
+
+    auth = DBMySQLAuth.FromConfig(os.environ)
 
     # If we are doing a specific tract
     if args.tract:
         if not args.debug:
             dbrecon.db_lock(args.state, args.county, args.tract)
-        make_state_county_files(args.state, args.county, args.tract)
+        make_state_county_files(auth, args.state, args.county, args.tract)
 
     else:
         # We are doing a single state/county pair. We may do each tract multithreaded. Lock the tracts...
-        DB.csfr("UPDATE tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
                 (dbrecon.hostname(),os.getpid(),args.state,args.county))
-        make_state_county_files(args.state, args.county)
+        make_state_county_files(auth, args.state, args.county)
+    logging.info("s3_pandas_synth_lp_files.py finished")

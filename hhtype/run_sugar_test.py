@@ -34,16 +34,16 @@ v -1 -2 -3 -4 -5 -6 7 8 9 -10 -11 -12 -13 14 15 0
 
 ### This is what sugar thinks of the above
 SUGAR_OUT="""s SATISFIABLE
-a SIZE	7
-a MARRIED	0
-a MARRIED_SAME_SEX	0
-a MARRIED_OPPOSITE_SEX	0
-a MULTIG	1
-a CHILD_UNDER_18	1
-a OWN_CHILD_UNDER_6_ONLY	1
-a OWN_CHILD_BETWEEN_6_AND_17	1
-a OWN_CHILD_IN_BOTH_RANGES	0
-a OWN_CHILD_UNDER_18	0
+a SIZE  7
+a MARRIED       0
+a MARRIED_SAME_SEX      0
+a MARRIED_OPPOSITE_SEX  0
+a MULTIG        1
+a CHILD_UNDER_18        1
+a OWN_CHILD_UNDER_6_ONLY        1
+a OWN_CHILD_BETWEEN_6_AND_17    1
+a OWN_CHILD_IN_BOTH_RANGES      0
+a OWN_CHILD_UNDER_18    0
 a
 """
 
@@ -65,7 +65,7 @@ def test_python_decoders():
         mapvars = python_get_mapvars(f.name)
         print(mapvars)
         assert mapvars==PYTHON_MAP_VARS
-        
+
         satvars = python_decode_picosat_and_extract_satvars(solver_output_lines=PICOSAT_OUT.split("\n"), mapvars=mapvars)
         logging.error("satvars: %s",satvars)
         logging.error("SUGARSA: %s",SUGAR_VARS)

@@ -1,10 +1,11 @@
 from copy import deepcopy
-import math
 from functools import reduce
 from string import ascii_uppercase
 from geocode import GeoCode
 from collections import defaultdict
-import pprint
+import time
+# from pyspark.sql.types import StructField, StructType, StringType
+
 
 default_HHGQ = range(8)
 default_SEX = range(2)
@@ -58,18 +59,38 @@ def get_correct_builder(table_name, values):
     raise ValueError(f"No Builder found for table {table_name}")
 
 
+def get_spark(app_name):
+    from pyspark.sql import SparkSession
+    spark = SparkSession.builder.appName(app_name).getOrCreate()
+    return spark
+
+
 class Histogram:
-    def __init__(self, histogram, full_geo_code=None):
+    def __init__(self, histogram, full_geo_code=None, row=None, summary_level=None):
+
+        # self.headers = ['geoid', 'hhgq', 'sex', 'age', 'hisp', 'cenrace', 'citizen']
+        # self.schema = StructType([
+        #     StructField(self.headers[0], StringType(), False),
+        #     StructField(self.headers[1], StringType(), False),
+        #     StructField(self.headers[2], StringType(), False),
+        #     StructField(self.headers[3], StringType(), False),
+        #     StructField(self.headers[4], StringType(), False),
+        #     StructField(self.headers[5], StringType(), False),
+        #     StructField(self.headers[6], StringType(), False)
+        # ])
+
         self.full_geo_code = "" if full_geo_code is None else full_geo_code
         self.geo_code_parts = {}
         self.histogram = histogram
         # self.create_geocode(row, summary_level)
         self.histogram_expanded = None
 
+        if row is not None and summary_level is not None:
+            self.create_geocode(row, summary_level)
         self.histogram.insert(0, [self.full_geo_code])
 
     def generate_expanded_histogram(self):
-        self.histogram_expanded = Histogram.cartesian_iterative(self.histogram)
+        return Histogram.cartesian_iterative(self.histogram)
 
     def create_geocode(self, row, summary_level):
         geo_levels = ['STATE', 'COUNTY', 'TRACT']
@@ -103,39 +124,56 @@ class Builder:
             for key, value in self.map.items():
                 average_contained_cell_size = self.compute_average_contained_cell_size(row[key], self.map[key])
                 if average_contained_cell_size <= cell_size_num:
-                    current_histogram = Histogram(row, summary_level, deepcopy(self.map[key]))
+                    current_histogram = Histogram(row=row, histogram=deepcopy(self.map[key]), summary_level=summary_level)
                     to_return.append(current_histogram)
         print(f"Table Name: {table_name} Length to return: {len(to_return)}")
         return to_return
 
-    def process_block_results(self, summary_level, results, table_name, cell_size_num, scale_map, code_2010):
-        # This is a test function trying to implement the new block level scaling
+    def rdd_approach(self, block_map, result_dict, summary_level, cell_size_num, table_name, rdd=None):
+        print(f"Starting Table: {table_name}. Size {len(block_map.keys())}")
+        start_time = time.time()
+        map = defaultdict(lambda: defaultdict(int))
+        for index, (key, value) in enumerate(block_map.items()):
+            try:
+                for old_geo_code, old_geo_code_weight in value.items():
+                    row_value = result_dict[str(old_geo_code)]
+                    for variable_name, variable_histogram in self.map.items():
+                        map[str(key)][variable_name] += (row_value[variable_name] * old_geo_code_weight)
+            except Exception as e:
+                print("Failed to find", e)
+            if index % 100000 == 0:
+                print(f"{index} Block Map")
+        print(f"PreProcessing Table Done: {table_name}. Size {len(map.keys())}")
         to_return = []
-        map = defaultdict(int)
-        for row in results.collect():
-            geocode_2000 = GeoCode(row['STATE'], row['COUNTY'], row['TRACT'],
-                                   row['BLOCK'])
-            for key, value in self.map.items():
-                print(f'Original Size {str(row[key])}. New Size {str(row[key] * scale_map[str(geocode_2000)] )}')
-                map[key] += (row[key] * scale_map[str(geocode_2000)])
-        pp = pprint.PrettyPrinter(indent=4)
-        pp.pprint(map)
-        print(f"Map Length {len(map.keys())}")
-        for k, v in map.items():
-            average_contained_cell_size = self.compute_average_contained_cell_size(v, self.map[k])
-            if average_contained_cell_size <= cell_size_num:
-                current_histogram = Histogram(deepcopy(self.map[k]), full_geo_code=code_2010)
-                to_return.append(current_histogram)
-        print(f"Table Name: {table_name} Length to return: {len(to_return)}")
-        return to_return
+        for index, (new_geoid, old_geoid_info) in enumerate(map.items()):
+            for table_variable_name, scaled_variable_value in old_geoid_info.items():
+                average_contained_cell_size = self.compute_average_contained_cell_size(scaled_variable_value,
+                                                                                       self.map[table_variable_name])
+                # > if you want to include non close to zero. <= Is you want to include close to zero
+                if average_contained_cell_size > cell_size_num:
+                    current_histogram = Histogram(deepcopy(self.map[table_variable_name]), full_geo_code=str(new_geoid))
+                    to_return.append(current_histogram)
+            if index % 100 == 0:
+                print(f"Index {index} {len(to_return)}")
+        end_time = time.time()
+        print(f"Time {end_time - start_time}")
+        spark = get_spark("rdd_approach")
+        new_rdd = spark.sparkContext.parallelize(to_return)
+        start_time = time.time()
+        rdd = new_rdd if rdd is None else spark.sparkContext.union([rdd, new_rdd])
+        rdd.cache()
+        end_time = time.time()
+        print(f"Time for Union {end_time - start_time}")
+        print(f'Table {table_name} New {rdd.count()}')
+        return rdd
 
-    def compute_average_contained_cell_size(self, count, cell_array):
+    @staticmethod
+    def compute_average_contained_cell_size(count, cell_array):
         try:
             cell_array_lengths = [len(current) for current in cell_array]
             result = reduce((lambda x, y: x * y), cell_array_lengths)
             return count / result
         except Exception:
-            print(cell_array)
             raise ValueError('Could not convert this array.')
 
     def build_map(self, index, variable):
@@ -178,6 +216,7 @@ class P4_Builder(Builder):
         copy_default[4] = [index]
         self.map[variable] = copy_default
 
+
 class P5_Builder(Builder):
 
     def __init__(self, variables):
@@ -190,6 +229,7 @@ class P5_Builder(Builder):
         copy_default = deepcopy(self.default_P5)
         copy_default[4] = [index]
         self.map[variable] = copy_default
+
 
 class P6_Builder(Builder):
 
@@ -245,6 +285,7 @@ class P12_Builder(Builder):
                     copy_default[2] = self.buckets[index - len(self.bucket_ends)]
         self.map[variable] = copy_default
 
+
 class P14_Builder(Builder):
 
     def __init__(self, variables):
@@ -268,6 +309,7 @@ class P14_Builder(Builder):
                     copy_default[2] = [index - 19]
         self.map[variable] = copy_default
 
+
 class P16_Builder(Builder):
 
     def __init__(self, variables):
@@ -281,6 +323,7 @@ class P16_Builder(Builder):
     def build_map(self, index, variable):
         copy_default = deepcopy(self.default_P16)
         self.map[variable] = copy_default
+
 
 class P37_Builder(Builder):
 
@@ -296,6 +339,7 @@ class P37_Builder(Builder):
             "P037009": [[7], default_SEX, default_AGE, default_HISP, default_CENRACE, default_CITIZEN]
         }
         self.create_map(variables)
+
 
 class P12_Letter_Builder(Builder):
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-decode the information in SF1 files. 
+decode the information in SF1 files.
   - Uses PDF converted into CSV format by Adobe Acrobat and Microsoft Excel.
 
 2000 SF1 is distributed as a set of 39 x 52 = 2028 ZIP file, one for each segment, and one for the geoheader.
@@ -9,21 +9,21 @@ decode the information in SF1 files.
 
 Once you have all of the files unpacked, they contain:
 - Geoheader, which maps every LOGRECNO to a Geography.
-  - Note that the geoheader formats are not consistent between products. 
+  - Note that the geoheader formats are not consistent between products.
 
 - Segments (sometimes called file #s), which contains the 5 linkage fields and one or more "tables" arranged
   as a subset of the columsn.
 - So:
-   - The first 3 columns of every file in every state are the same. 
+   - The first 3 columns of every file in every state are the same.
    - Column #4 is the Characteristic Iteration File Sequence Number (CIFSN)
    - Column #5 is the Logical Record Number
 
 File naming conventions were inconsistent in 2000 and changed in 2010. The rules are a mess
 and are contained within the Python file constants.py.
 
-The files within a state are all linked together by LOGRECNO. 
+The files within a state are all linked together by LOGRECNO.
 
-Each is a CSV file, without a header. 
+Each is a CSV file, without a header.
 It is surprising that these CSV files were distributed without any headers.
 The column headings are given by the data dictionary.
 The purpose of this program is to parse the PDF files and recover the headers for every column.
@@ -116,7 +116,7 @@ MISSING_GEOVARIABLES = [{C.YEAR:2000, C.PRODUCT: C.PL94, C.VARIABLE: place_var},
                         {C.YEAR:2010, C.PRODUCT: C.SF1,  C.VARIABLE: sldl_var},
                         {C.YEAR:2010, C.PRODUCT: C.SF1,  C.VARIABLE: puma_var},
                         {C.YEAR:2010, C.PRODUCT: C.SF1,  C.VARIABLE: place_var}]
-                        
+
 
 ## If there are tables that start a segment but there are no corresponding segment starts, put them here.
 MISSING_SEGMENT_STARTS = []
@@ -146,7 +146,7 @@ def open_decennial(ypss):
         except KeyError as f:
             print(str(f))
         raise FileNotFoundError(f"segment {C.segmentfile_name( ypss )} not in file {C.zipfile_name(ypss)}")
-        
+
 
 def is_chapter_line(line):
     return CHAPTER_RE.search(line) and True
@@ -195,7 +195,7 @@ def parse_linkage_desc(line):
 
 def parse_variable_desc(line):
     """If @line describes a variable, return data dictionary
-    reference <name>, <desc>, <segment>, and <maxsize>. Assumes 
+    reference <name>, <desc>, <segment>, and <maxsize>. Assumes
     that lines that describe variables are formualted as:
     <text> <variable-name> <segment> <maxsize>
     """
@@ -256,7 +256,7 @@ def csvspec_lines(fname):
     with open(fname,"r",encoding='utf-8') as f:
         for line in f:
             yield csvspec_prepare_csv_line(line)
-    
+
 def add_named_table(schema, table_name, table_desc, linkage_vars, cifsn):
     """Add the named table to the schema, and add the linkage variables to the table. """
     if not schema.has_table(table_name):
@@ -264,12 +264,12 @@ def add_named_table(schema, table_name, table_desc, linkage_vars, cifsn):
 
         if DEBUG:
             print(f"Creating table {table_name} in file number {cifsn}",file=sys.stderr)
-        table = schema.add_table_named(name=table_name, 
+        table = schema.add_table_named(name=table_name,
                                        desc=table_desc,
                                        delimiter=',',
                                        attrib = {C.CIFSN:cifsn} )
 
-        # Add any memorized linkage variables. 
+        # Add any memorized linkage variables.
         for var in linkage_vars:
             if DEBUG:
                 print(f"Adding saved linkage variable {var.name} to table {table_name}",file=sys.stderr)
@@ -298,8 +298,8 @@ def table_name_from_variable(varname):
 
 def schema_for_spec(csv_filename, *, year, product, debug=False):
     """Take the Census-provided PDF of the spec. Convert it to an Excel Spreadsheet with Adobe Acrobat, then save it as a CSV file.
-    If you cannot convert the entire file, try converting just the Data Dictionary chapter. 
-    Parse the data dictionary and return a schema object for that segment number. 
+    If you cannot convert the entire file, try converting just the Data Dictionary chapter.
+    Parse the data dictionary and return a schema object for that segment number.
     year and product are provided so that patches can be applied.
     """
     schema          = Schema()
@@ -335,26 +335,26 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                 continue
             last_line = line
             continue
-            
+
         m = SEGMENT_START_RE.search(line)
         if m:
             # New segment. Note the segment number we are in and copy
             # over the linkage variables if we have any.  Make sure
             # that the segment number increased.  Tables do not cross
             # segments, so reset the current table and field number
-            # 
+            #
             new_cifsn     = int(m.group(1))
             if new_cifsn == 1:
                 segment_field_number = 0
             else:
                 assert cifsn + 1 == new_cifsn
                 # use memorized linkage variables
-                segment_field_number = len(linkage_vars)    
+                segment_field_number = len(linkage_vars)
             cifsn  = new_cifsn
             table  = None
             continue
-       
-        #print(f"Debug is {debug}; cifsn is {cifsn}") 
+
+        #print(f"Debug is {debug}; cifsn is {cifsn}")
         # If not yet in a file, check for geoheader line
         if cifsn is False:
             m = GEO_VAR_RE.search(line)
@@ -364,9 +364,9 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                 column = int(column) - 1 # we start with column 0, Census starts with column 1
                 v = Variable( name = name,
                               desc = desc,
-                              column = column, 
+                              column = column,
                               width = width,
-                              vtype = TYPE_VARCHAR) 
+                              vtype = TYPE_VARCHAR)
                 if debug:
                     print(f"Adding variable {v} to geotable {geotable}")
                 geotable.add_variable( v )
@@ -384,9 +384,9 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                 (lnk_name, lnk_desc, lnk_cifsn, lnk_maxsize) = lnk
                 if debug:
                     print(f"Discovered linkage variable {lnk_name}",file=sys.stderr)
-                linkage_vars.append( Variable(name  = lnk_name, 
-                                              desc  = lnk_desc, 
-                                              field = segment_field_number,
+                linkage_vars.append( Variable(name  = lnk_name,
+                                              desc  = lnk_desc,
+                                              position = segment_field_number,
                                               width = lnk_maxsize,
                                               vtype = TYPE_VARCHAR) )
                 segment_field_number += 1
@@ -419,7 +419,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
                         print("geotable:")
                         geotable.dump()
                         raise RuntimeError(f"Cannot find {varname}")
-                    
+
 
             ### End patching
 
@@ -429,8 +429,8 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         var = parse_variable_desc(line)
         if not var or var[0] in C.LINKAGE_VARIABLE_NAMES:
             continue
-        
-        # We found a variable that we can process. 
+
+        # We found a variable that we can process.
         (var_name, var_desc, var_cifsn, var_maxsize) = var
         # Compute the table name from the variable
         tnfv = table_name_from_variable(var_name)
@@ -447,7 +447,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
         for wc in WRONG_CIFSN:
             if wc[C.YEAR]==year and wc[C.PRODUCT] == product and wc[C.TABLE] == table.name:
                 var_cifsn = wc[C.CIFSN]
-                
+
         ###
         ### VALIDATE THE VARIABLE. (THIS ALSO VALIDATES OUR PARSING)
         ###
@@ -471,17 +471,16 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
             assert table.attrib['variable_prefix'] == var_prefix
         else:
             table.attrib['variable_prefix'] = var_prefix
-            
+
         # Validate this variable in relationship to the previous variable.
         m = VAR_FIELDS_RE.search(var_name)
         if m and prev_var_m:
             # if vsn=1 and the vtable hasn't changed, make sure that the vseries has increased
             num = m.group('number')
             if ( prev_var_m.group('tablenumber') == m.group('tablenumber') and num==1 ):
-                expected_sequence = chr(ord(prev_var.m.group('sequence'))+1)
+                expected_sequence = chr(ord(prev_var_m.group('sequence'))+1)
                 if expected_sequence != m.group('sequence'):
-                    raise ValueError(f"line {ll}: found VSERIES {vseries} for variable {var_name}; "
-                                     f"expected {expected}.")
+                    raise ValueError(f"line {ll}: found {expected_sequence} for variable {var_name}; ")
 
             # Make sure that the varilable sequence number increased from previous one or is 001
             if num>1:
@@ -502,7 +501,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
 
         v = Variable(name   = var_name,
                      desc   = var_desc,
-                     field  = segment_field_number,
+                     position  = segment_field_number,
                      width  = var_maxsize,
                      vtype  = vtype)
 
@@ -539,7 +538,7 @@ def schema_for_spec(csv_filename, *, year, product, debug=False):
 
     if in_data_dictionary==False:
         raise RuntimeError(f"Parser did not find the data dictionary")
-        
+
     for varname in REQUIRED_GEO_VARS:
         if varname not in geotable.varnames():
             raise RuntimeError(f"Parser did not find geovariable {varname} in geoheader for {year} {product}")
@@ -575,7 +574,7 @@ def get_cvsspec(*,year,product):
             return filename
         checked.append(filename)
     raise FileNotFoundError(f"Cannot find CSV spec for {year} {product}. Reviewed: " + (" ".join(checked)))
-        
+
 class DecennialData:
     def __init__(self,*, dataroot, year, product, debug=False):
         """Inventory the files and return an SF1 object.
@@ -639,8 +638,7 @@ class DecennialData:
                                        C.YEAR:int(filename[7:11]),
                                        C.PRODUCT:C.SF1})
             except ValueError as e:
-                if debug:
-                    print("bad filename:",path)
+                raise ValueError(f"bad filename {path}")
         elif filename.endswith(".uf1"):
             state = filename[0:2]
             try:
@@ -659,13 +657,12 @@ class DecennialData:
                                        C.YEAR:2000,
                                        C.PRODUCT:C.SF1})
             except ValueError as e:
-                if debug:
-                    print("bad filename:",path)
-           
+                print("bad filename:",path)
+
     def unique_selector(self,selector):
         """Return the unique values for a given selector"""
         return set( [obj[selector] for obj in self.files] )
-    
+
     def get_df(self,*, tableName, sqlName):
         """Get a dataframe where the tables are specified by a selector.
         """
@@ -685,8 +682,9 @@ class DecennialData:
             for obj in self.files:
                 print(obj)
             raise RuntimeError(f"No files found looking for year:{self.year} product:{self.product} CIFSN:{cifsn}")
-            
+
         # Create an RDD for each text file
+        # pylint: disable=E0401
         from pyspark.sql import SparkSession
         spark = SparkSession.builder.getOrCreate()
         rdds = [spark.sparkContext.textFile(path) for path in paths]
@@ -698,7 +696,7 @@ class DecennialData:
         df   = spark.createDataFrame( rdd.map( table.parse_line_to_SparkSQLRow ), samplingRatio=1.0 )
         df.registerTempTable( sqlName )
         return df
-            
+
     def find_variable_by_name(self,name):
         """Scans all tables in the schema until a variable name is found. Returns it"""
         for table in self.schema.tables():
@@ -709,7 +707,7 @@ class DecennialData:
         raise KeyError(f"variable {name} not found in any table in schema")
 
     def print_legend(self,df,*,printHeading=True,file=sys.stdout):
-        """Print the legend for the columns in the dataframe. 
+        """Print the legend for the columns in the dataframe.
         Takes advantage of the fact that all column names are unique with the Census Bureau."""
 
         if printHeading:
@@ -728,15 +726,17 @@ class DecennialData:
             print("  ", var.name, var.desc)
         print("")
 
+
 def year_product_iterator():
     for year in C.SEGMENTS_FOR_YEAR_PRODUCT.keys():
         for product in C.SEGMENTS_FOR_YEAR_PRODUCT[year].keys():
             yield (year,product)
 
 
-def build_relationship_table(path, sql_name):
+# pylint: disable=E0401
+def build_relationship_table(path, sql_name, app_name):
     from pyspark.sql import SparkSession
-    spark = SparkSession.builder.getOrCreate()
+    spark = SparkSession.builder.appName(app_name).getOrCreate()
     df = spark.read.csv(path, header=True)
     df.registerTempTable(sql_name)
     print(df)
@@ -746,16 +746,16 @@ def build_relationship_table(path, sql_name):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="""Test program:
-    Extract the schema from the SF1 Chapter 6 and dump the schema. 
+    Extract the schema from the SF1 Chapter 6 and dump the schema.
     Normally this module will be used to generate a Schema object for a specific data dictionary specification.
 
     Examples:
 
     Dump the first 50 lines of the alaska geography file:
       python cb_spec_decoder.py --geofiledump data/2010_pl94/akgeo2010.pl
-    
+
     Output Python classes to decode a geography file:
-      python cb_spec_decoder.py --geoclassdump 
+      python cb_spec_decoder.py --geoclassdump
 """,
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--geofiledump", help='Using the schema, dump the geo information for the provided file')
@@ -800,7 +800,7 @@ if __name__ == "__main__":
                 break
         tt.render(sys.stdout, format='md')
         exit(0)
-            
+
 
     if args.segment:
         for table in schema.tables():
@@ -809,6 +809,3 @@ if __name__ == "__main__":
     if args.schemadump:
         # If args.segment is not provided, then dump the entire schema
         schema.dump()
-    
-
-

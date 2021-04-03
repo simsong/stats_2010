@@ -146,8 +146,7 @@ def geo_geocode3(gh):
 
 
 class GeoCode:
-    """A class for representing v1 geocodes."""
-    def __init__(self, state_code, county_code, tract_code, blk_code, area_land=None):
+    def __init__(self, state_code, county_code, tract_code, blk_code="", area_land=None):
         self.state_code = state_code
         self.county_code = county_code
         self.tract_code = tract_code

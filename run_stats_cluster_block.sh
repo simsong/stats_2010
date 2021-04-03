@@ -46,7 +46,7 @@ echo Running $type
 echo Summary Level $sumlevel
 echo Threshold $threshold
 
-init_cmd="nohup 2>&1 spark-submit --py-files $ZIPFILE --driver-memory 40g --num-executors 360 --executor-memory 5g --executor-cores 4 --driver-cores 10  --conf spark.driver.maxResultSize=0g --conf spark.executor.memoryOverhead=5g --conf spark.local.dir='/mnt/tmp/' --conf spark.eventLog.enabled=true --conf spark.eventLog.dir='/mnt/tmp/logs/' --master yarn --conf spark.submit.deployMode=client --conf spark.network.timeout=3000 block_calculation.py"
+init_cmd="nohup 2>&1 spark-submit --py-files $ZIPFILE --driver-memory 60g --num-executors 360 --executor-memory 10g --executor-cores 4 --driver-cores 10  --conf spark.driver.maxResultSize=0g --conf spark.executor.memoryOverhead=5g --conf spark.local.dir='/mnt/tmp/' --conf spark.eventLog.enabled=true --conf spark.eventLog.dir='/mnt/tmp/logs/' --master yarn --conf spark.submit.deployMode=client --conf spark.network.timeout=3000 block_calculation.py"
 ouput="&> $output &"
 
 cmd_to_run="$init_cmd $param_to_add $ouput"

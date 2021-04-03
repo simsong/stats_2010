@@ -1,4 +1,4 @@
-This is the rewrite of the database reconstruction code.
+This is the experimental rewrite of the database reconstruction code to use a SAT or SMT solver.
 
 __Please read this file through to the end before starting.__
 
@@ -30,7 +30,7 @@ The new coding format creates multiple variables for each person. The coding sta
 
     P1010_x   - a unique identifier for each person on block 1010. x is a decimal number ranging from 0 to the maximum number of people on the block.
 
-For each person, there are 
+For each person, there are
 
     P1010_xA - person x's Age  [0..110]
     P1010_xH - person x's Hispanic code [0,1]
@@ -41,7 +41,7 @@ For each person, there are
     P1010_xs - person x's is Asian [0,1]
     P1010_xh - person x's is Native Hawaiian or Other Pacific Islander [0,1]
     P1010_xo - person x's is Some Other Race [0,1]
-        
+
 Database reconstruction can be performed almost entirely with block-level data (most of the relevant tabels are published at the block level). However, single-year age is only published at the tract level. Thus, the solution approach is to construct constraints for every block in the tract and for the tract as a whole, and then to solve tract-by-tract.
 
 We are now using an SMT solver. There are several to choose from:
@@ -74,26 +74,26 @@ NOTE: We are currently not reconstructing household, but we trivially could do s
 
 For example, if we are processing table P12 (Sex by Age), variable P0120010 (Male, 22 to 24 years old) is described by:
 
-    (and 
+    (and
      (and (>= AGE 22) (<= AGE 24))
      (= (SEX MALE)))
 
 Continuing the above example, for person 000a in 02198_000300_1010, the expansion would be:
 
-     (ite (and (and (>= P1010_00a_A 22) (<= P1010_00a_A 24) 
+     (ite (and (and (>= P1010_00a_A 22) (<= P1010_00a_A 24)
                     (= P1010_00a_S MALE)))
           1 0)
 
 Which is simplifed to:
 (ite (and (>= P1010_00a_A 22)
-          (<= P1010_00a_A 24) 
+          (<= P1010_00a_A 24)
           (=  P1010_00a_S MALE))
      1 0)
 
 If we replace 00a with {pnum} (person number) then the and if the value of P0120010 for 02198_00300_1010 is 10, and if there are 30 people on the block, then assert statement is:
 
 y = [f"""(ite (and (>= P1010_{hex4(pnum)}_A 22)
-            (<= P1010_{hex4(pnum)}_A 24) 
+            (<= P1010_{hex4(pnum)}_A 24)
              (=  P1010_{hex4(pnum)}_S MALE))
           1 0)""" for pnum in range(0,30)]
 
@@ -102,7 +102,7 @@ f"(assert (= 10) (sum {y}))"
 Or, with some more parameterization:
 
 y = [f"""(ite (and (>= P{geocode}_{p4}_A 22)
-            (<= P{geocode}_{p4}_A 24) 
+            (<= P{geocode}_{p4}_A 24)
             (=  P{geocode}_{p4}_S MALE))
           1 0)""" for pnum in range(0,30)]
 

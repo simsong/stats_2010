@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""
+This is a little program that compares two CSV files and reports on their numeric differences.
+There's probably a clever way to do this in pandas, but this worked nicely. It was used 
+to validate the output of the rewritten reconstruction programs to make sure that they
+agreed with the original work done by Tammy Adams.
+"""
+
 
 import sys
 

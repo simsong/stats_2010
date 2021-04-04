@@ -752,6 +752,7 @@ if __name__=="__main__":
 
     if args.rescan:
         rescan(auth, args)
+        exit(0)
 
     elif args.clean:
         clean(auth)

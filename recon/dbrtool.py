@@ -24,8 +24,8 @@ easily done with:
 $(./drbtool.py --env)
 
 Here are some things to try with spark
-$ ./drbtool.py --reident db10 --spark --rescan
-$ ./drbtool.py --reident db10 --spark --step3 --pop100 '<2500' --executor_memory 1g --executor_memoryOverhead 100g
+$ ./dbrtool.py --reident db10 --spark --rescan
+$ ./dbrtool.py --reident db10 --spark --step3 --pop100 '<2500' --executor_memory 1g --executor_memoryOverhead 100g
 
 """
 
@@ -194,7 +194,7 @@ QUERIES = [
 
 
 
-def get_recon_status(auth, reident=None):
+def get_recon_status(auth, reident_=None):
     """Perform database queries regarding the current state of the reconstruction and return results as a JSON file.
     this is used for the dashboard API but can be run from the command line as well.
     :param auth: authentication token.
@@ -206,7 +206,7 @@ def get_recon_status(auth, reident=None):
     ret['tables'] =   [row[0] for row in dbfile.DBMySQL.csfr(auth, "SHOW TABLES")]
     ret['queries'] = []
     ret['reidents'] = [table.replace(SEP_TRACTS,"") for table in ret['tables'] if table.endswith(SEP_TRACTS)]
-    for reident in get_reidents(auth):
+    for reident in ([reident_] if reident_ else get_reidents(auth)):
         tables = []
         for(name,query) in QUERIES:
             column_names = []
@@ -445,9 +445,8 @@ def do_spark(args):
     """
     cmd = ['--executor-memory',args.executor_memory,
            '--executor-cores','1','--driver-cores','10',
-           '--conf','spark.yarn.executor.memoryOverhead='+args.executor_memoryOverhead,
            '--conf','spark.driver.maxResultSize=0g',
-           '--conf','spark.executor.memoryOverhead=1g']
+           '--conf','spark.executor.memoryOverhead='+args.executor_memoryOverhead]
     if args.disable_vmem_check:
         cmd += ['--conf','yarn.nodemanager.vmem-check-enabled=false']
     cmd += ['scheduler.py','--spark','--limit',str(args.limit),'--reident',args.reident, '--nolock','--pop100',args.pop100]
@@ -515,10 +514,10 @@ if __name__ == "__main__":
     g = parser.add_mutually_exclusive_group()
     g.add_argument("--env", action='store_true', help='Generate export functions to put MySQL authentication into your environment')
     g.add_argument("--mysql", action='store_true', help='Provide a MySQL command line')
-    g.add_argument("--status", action='store_true', help='Print stats about the current runs')
+    g.add_argument("--dbquery", action='store_true', help='Show the results of the dbquery. Mostly for debugging')
     g.add_argument("--register", action='store_true', help="register a new REIDENT for database reconstruction.")
     g.add_argument("--drop", action='store_true', help="drop a REIDENT from database")
-    g.add_argument("--show", "--reidents", action='store_true', help="Show everything known about reisdents, and optionally a stusab, county, tract")
+    g.add_argument("--show", "--reidents", '--status', action='store_true', help="Show everything known about reisdents, and optionally a stusab, county, tract")
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
     g.add_argument("--run", help="Run the scheduler",action='store_true')
@@ -622,9 +621,18 @@ if __name__ == "__main__":
         logging.getLogger().setLevel(logging.INFO)
 
     if args.show:
-        print("reidents:")
         reidents = get_reidents(auth)
-        print("\n".join(reidents))
+        if (not args.reident) or (args.reident not in reidents):
+            print("Please specify a reident:")
+            for reident in reidents:
+                print(f"    --reident {reident}")
+            exit(0)
+        ret = get_recon_status(auth, args.reident)
+        for (k,dicts) in ret['queries'][0][1]:
+            print(k)
+            for d in dicts:
+                print(json.dumps(d,default=str))
+            print()
         if args.stusab and args.county and args.tract:
             if args.reident:
                 reidents = [args.reident]
@@ -644,7 +652,7 @@ if __name__ == "__main__":
                         print(f"{k:15} {v}")
         exit(0)
 
-    if args.status:
+    if args.dbquery:
         ret = get_recon_status(auth, args.reident)
         print(json.dumps(ret,default=str,indent=4))
         exit(0)
@@ -686,6 +694,10 @@ if __name__ == "__main__":
     if args.spark:
         do_spark(args)
 
+    if args.rescan:
+        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG, '--rescan', '--j1', REFRESH_PARALLELISM, '--limit', str(args.limit)])
+        exit(0)
+
     ################################################################
     # We can run multiple steps if we want! For testing, of course
     if args.step3 or args.step4 or args.step5:
@@ -721,7 +733,3 @@ if __name__ == "__main__":
         if args.force:
             dbrecon.remove_csvfile(auth, args.stusab, args.county, args.tract)
         do_step5(auth, args.reident, args.stusab, args.county)
-
-    if args.rescan:
-        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG,
-             '--j1', REFRESH_PARALLELISM, '--limit', str(args.limit)])

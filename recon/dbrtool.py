@@ -154,37 +154,36 @@ QUERIES = [
     ("Completed States:",
      """SELECT DISTINCT(stusab) from {reident}tracts where stusab not in (SELECT DISTINCT(stusab) from {reident}tracts where sol_end is not NULL)"""),
 
-    ("LP and SOL Files created",
+    ("LP Files created and remaining ",
      """SELECT * FROM
-             (SELECT COUNT(*) as lp_created from {reident}tracts WHERE lp_end IS NOT NULL) a
+             (SELECT COUNT(*) AS lp_created FROM {reident}tracts WHERE lp_end IS NOT NULL) a
               LEFT JOIN
-             (select count(*) as sol_created from {reident}tracts WHERE sol_end IS NOT NULL) b
+              (select count(*) AS lp_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.lp_end is NULL ) b
          ON 1=1"""),
-    ("LP Files Remaining",
-     """select count(*) as lp_remaining
-         FROM {reident}tracts t WHERE t.pop100>0 AND t.lp_end is NULL """),
-
-    ("SOL Files Remaining",
-     """select count(*) as lp_remaining
-         FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL """),
+    ("SOL Files create and  Remaining",
+     """SELECT * FROM
+             (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) c
+               LEFT JOIN
+              (select count(*) AS sol_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL) d
+        ON 1=1 """),
 
     ("LP files in progress",
-     """SELECT t.stusab,t.county,t.tract,t.lp_start,t.lp_host,timediff(t.lp_start,now()) as age,t.hostlock
+     """SELECT t.stusab,t.county,t.tract,t.lp_start,t.lp_host,timediff(t.lp_start,now()) AS age,t.hostlock
      FROM {reident}tracts t WHERE t.pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
 
     ("SOLs in progress",
-     """SELECT t.stusab,t.county,t.tract,t.sol_start,t.sol_host,timediff(t.sol_start,now()) as age,hostlock
+     """SELECT t.stusab,t.county,t.tract,t.sol_start,t.sol_host,timediff(t.sol_start,now()) AS age,hostlock
      FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
 
     ("Number of LP files created in past hour:",
-     """select count(*) as `count`,lp_host from {reident}tracts
-     WHERE timediff(lp_end,now()) < "01:00:00"
+     """select count(*) AS `count`,lp_host FROM {reident}tracts
+     WHERE timediff(now(),lp_end) < "01:00:00"
      GROUP BY lp_host
      """),
 
     ("Number of SOL files created in past hour:",
-     """select count(*) as `count`,sol_host FROM {reident}tracts
-     WHERE timediff(sol_end,now()) < "01:00:00"
+     """select count(*) AS `count`,sol_host FROM {reident}tracts
+     WHERE timediff(now(),sol_end) < "01:00:00"
      GROUP BY sol_host"""),
 
     ]

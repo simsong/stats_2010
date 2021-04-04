@@ -26,6 +26,8 @@ import multiprocessing
 import operator
 import uuid
 import datetime
+import json
+import glob
 from os.path import dirname,basename,abspath
 
 # Set up path, among other things
@@ -446,16 +448,18 @@ def kill_running_s3_s4():
 
 def spark_load_env(config):
     """To be run on a spark worker. Bring over the environment variables that were stashed in the config file on the Driver node."""
+    global REIDENT
     dbrecon.GetConfig().set_config(config)
     dbrecon.set_reident(config['paths']['reident'])
+    REIDENT = dbrecon.REIDENT = config['paths']['reident']
     for var in config['environment']['vars'].split(','):
         os.environ[var] = config['environment'][var]
 
 def spark_save_env(config):
     """Save the environment variables in the config file specified  by the config file."""
-    config['paths']['reident'] = REIDENT
     for var in config['environment']['vars'].split(','):
         config['environment'][var] = os.getenv(var)
+    config['paths']['reident'] = REIDENT
 
 def get_spark_sc():
     if not cspark.spark_running():
@@ -476,10 +480,22 @@ def spark_output_path(what):
                         f'2010-re/{REIDENT[:-1]}/spark/' + datetime.datetime.now().isoformat()[0:19] + '-' + what)
 
 
+#
+# 21/04/03 23:47:35 WARN YarnSchedulerBackend$YarnSchedulerEndpoint: Requesting driver to remove executor 2 for reason Container killed by YARN for exceeding memory limits.
+# 6.1 GB of 6 GB physical memory used. Consider boosting spark.yarn.executor.memoryOverhead or disabling yarn.nodemanager.vmem-check-enabled because of YARN-4714.
+
 def spark_build_lpfile(config_row):
     (config,row) = config_row
     spark_load_env(config)
-    s3_pandas_synth_lp_files.make_state_county_files(auth, row['stusab'], row['county'], db_start_at_end=True)
+    stusab = row['stusab'].lower()
+    county = row['county']
+    # We tried this and it didn't work:
+    s3_pandas_synth_lp_files.make_state_county_files(auth, stusab, county, db_start_at_end=True, reident=REIDENT, sf1_vars=dbrecon.sf1_vars())
+    #cmd = [sys.executable,'s3_pandas_synth_lp_files.py','--dry_run','--reident',REIDENT,stusab,county]
+    #return glob.glob("*") + glob.glob("*/*")
+    #return ["cmd="+str(cmd)]
+    #subprocess.call(cmd)
+    return [(stusab,county)]
 
 def spark_step34(auth, args):
     """Run step 3 or step4 under spark. We ignore files in progress, just get them all."""
@@ -495,12 +511,12 @@ def spark_step34(auth, args):
     HAVING max_tract_pop {args.pop100}
     LIMIT {args.limit}
     """
+    auth = dbrecon.auth()       # need a new auth because the old one can't be serialized and sent to the worker
     rows = DBMySQL.csfr(auth, cmd, asDicts=True)
-    print("*** Counties to process: ",len(rows))
+    print("*** Counties to process: ")
 
     for row in rows:
-        print(row)
-    exit(0)
+        print("*** "," ".join([str(x) for x in row.values()]))
 
     config = dbrecon.GetConfig().config
     spark_save_env(config)
@@ -508,11 +524,11 @@ def spark_step34(auth, args):
     # Tuples that contain the config and the row to process
     config_rows = [ (config, row) for row in rows]
     rows_rdd    = sc.parallelize(config_rows).repartition( len(config_rows) // SPARK_TRACTS_PER_PARTITION ).persist()
-    results_rdd = rows_rdd.flatMap( spark_build_lpfile ).persist()
+    results_rdd = rows_rdd.map( spark_build_lpfile ).persist()
     results     = results_rdd.collect()
     if results:
         print("LP Files created:")
-        print("\n".join(results))
+        print("\n".join([str(x) for x in results]))
     else:
         print("No LP Files Created")
     print("Elapsed time: ",time.time()-t0)
@@ -537,7 +553,7 @@ def rescan_row(config_row):
     solfilenamegz = dbrecon.SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
 
     ret = []
-    auth = dbrecon.auth()
+    auth = dbrecon.auth()       # need a new auth because the old one can't be serialized and sent to the worker
     if row['sol_end']:
         if dbrecon.validate_solfile(solfilenamegz):
             DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set sol_validated=NOW()  where stusab=%s and county=%s and tract=%s",

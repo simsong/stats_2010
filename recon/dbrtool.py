@@ -13,16 +13,20 @@ Typically your sequence of operation is:
 $ $(./drbtool.py --env)
 $ ./drbtool.py --register db10
 $ ./drbtool.py --reident db10 --step1 --step2
-$ ./drbtool.py --reident db10 --run  [--spark]
+$ ./drbtool.py --reident db10 --run
 
 If you run into problems, check your database with:
-$./drbtool.py --reident db10 --rescah --spark
 
 
 Use --env to generate bash statements to put them in your environment. This is
 easily done with:
 
 $(./drbtool.py --env)
+
+Here are some things to try with spark
+$ ./drbtool.py --reident db10 --spark --rescan
+$ ./drbtool.py --reident db10 --spark --step3 --pop100 '<2500' --executor_memory 1g --executor_memoryOverhead 100g
+
 """
 
 
@@ -430,11 +434,23 @@ def show_file(path):
     run(cmd, check=False)
 
 
+# 21/04/03 23:47:35 WARN YarnSchedulerBackend$YarnSchedulerEndpoint: Requesting driver to remove executor 2 for reason Container killed by YARN for exceeding memory limits.
+# 6.1 GB of 6 GB physical memory used. Consider boosting spark.yarn.executor.memoryOverhead or disabling yarn.nodemanager.vmem-check-enabled because of YARN-4714.
+
+# It appears the memory given is a combination of --executor-memory and memoryOverhead.
+
 def do_spark(args):
     """one of the great errors in the desing of the DAS was that we didn't use a python program to launch spark, instead we use a run_cluster script.
     Here we do not repeat that same mistake.
     """
-    cmd = ['scheduler.py','--spark','--limit',str(args.limit),'--reident',args.reident, '--nolock','--pop100',args.pop100]
+    cmd = ['--executor-memory',args.executor_memory,
+           '--executor-cores','1','--driver-cores','10',
+           '--conf','spark.yarn.executor.memoryOverhead='+args.executor_memoryOverhead,
+           '--conf','spark.driver.maxResultSize=0g',
+           '--conf','spark.executor.memoryOverhead=1g']
+    if args.disable_vmem_check:
+        cmd += ['--conf','yarn.nodemanager.vmem-check-enabled=false']
+    cmd += ['scheduler.py','--spark','--limit',str(args.limit),'--reident',args.reident, '--nolock','--pop100',args.pop100]
     if args.rescan:
         cmd.append('--rescan')
     elif args.step3:
@@ -449,9 +465,7 @@ def do_spark(args):
 
     # Let spark set the number of executors automatically. It seems to do this anyway.
 
-    ctools.cspark.spark_submit(files_to_zip = REQUIRED_FILES,
-                               executor_cores = 2,
-                               argv = cmd)
+    ctools.cspark.spark_submit(files_to_zip = REQUIRED_FILES, pyfiles = ['layouts/sf1_vars_race_binaries.csv'], argv = cmd)
 
 def do_launch(host, *, debug=False, desc=False, reident):
     cmd=(
@@ -527,10 +541,6 @@ if __name__ == "__main__":
     parser.add_argument("--step2", help="Run step 2. Defaults to all states unless state is specified", action='store_true')
 
 
-    g = parser.add_mutually_exclusive_group()
-    g.add_argument("--big", help="Generate LP files for big counties. Requires --step3 and --spark", action='store_true')
-    g.add_argument("--small", help="Generate small LP files for big counties. Requires --step3 and --spark", action='store_true')
-
     parser.add_argument("--stusab", help="which stusab to process", default='all')
     parser.add_argument("--county", help="required for step3 and step4")
     parser.add_argument("--tract",  help="required for step 4. Specify multiple tracts with commas between them")
@@ -542,6 +552,9 @@ if __name__ == "__main__":
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
     parser.add_argument("--num_executors", help="number of spark executors to use",default=NUMBER_OF_WORKERS_TIMES_40)
     parser.add_argument("--pop100", help="--spark --step3 and --step4, specifies the max(pop100) to work with",default=">0")
+    parser.add_argument("--executor_memory", help="how much memory to give executors",default='1g')
+    parser.add_argument("--executor_memoryOverhead", help="how much extra memory to give executors",default='100g')
+    parser.add_argument('--disable-vmem-check', action='store_true', help='set yarn.nodemanager.vmem-check-enabled to false')
     args = parser.parse_args()
 
     if args.env:

@@ -193,7 +193,7 @@ def update_constraints(f, level, n_con, summary_nums, geo_id, debug=False):
 class LPTractBuilder:
     """Build the LP files for a given tract"""
 
-    def __init__(self, stusab, county, tract, sf1_tract_data, sf1_block_data, *, debug=False, db_start_at_end=False):
+    def __init__(self, stusab, county, tract, sf1_tract_data, sf1_block_data, *, debug=False, db_start_at_end=False, output=None, dry_run=None):
         self.master_tuple_list=[]
         self.stusab = stusab
         self.county     = county
@@ -203,6 +203,8 @@ class LPTractBuilder:
         self.auth       = dbrecon.auth()
         self.debug      = debug
         self.db_start_at_end = False # run db_start at the end of the tract building, rather than the start
+        self.output     = output
+        self.dry_run    = dry_run
 
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
@@ -365,8 +367,8 @@ class LPTractBuilder:
 
         state_code    = dbrecon.state_fips(self.stusab)
         geo_id        = self.sf1_tract_data[0][GEOID]
-        if args.output:
-            outfilename = args.output
+        if self.output:
+            outfilename = self.output
         else:
             lpfilenamegz  = LPFILENAMEGZ(stusab=self.stusab,county=self.county,tract=self.tract)
 
@@ -390,11 +392,13 @@ class LPTractBuilder:
 
         # When I was developing this, I didn't want to update the database when debugging
         if (self.debug == False):
+            # db_start_at_end prevents the database from being updated with db_start() until the LP file is created.
+            # We do that under spark.
             if (self.db_start_at_end==False):
                 dbrecon.db_start('lp', self.stusab, self.county, self.tract)
             atexit.register(self.db_fail)
 
-        if args.dry_run:
+        if self.dry_run:
             logging.warning(f"DRY RUN: Will not create {outfilename}")
             return
 
@@ -458,8 +462,8 @@ class LPTractBuilder:
 
 
         # if we were just asked to create the output file, notify of that and return
-        if args.output:
-            logging.info("%s created",args.output)
+        if self.output:
+            logging.info("%s created",self.output)
             return
 
         # otherwise, rename the file (which may upload it to s3), and update the databse
@@ -487,10 +491,10 @@ class LPTractBuilder:
 # functions.
 #
 def build_tract_lp_tuple(tracttuple):
-    (stusab, county, tract, sf1_tract_data, sf1_block_data) = tracttuple
+    (stusab, county, tract, sf1_tract_data, sf1_block_data, db_start_at_end, output, dry_run) = tracttuple
 
     try:
-        lptb = LPTractBuilder(stusab, county, tract, sf1_tract_data, sf1_block_data)
+        lptb = LPTractBuilder(stusab, county, tract, sf1_tract_data, sf1_block_data, db_start_at_end=db_start_at_end, output=output, dry_run=dry_run)
         lptb.build_tract_lp()
         logging.info("build_tract_lp_tuple completed")
     except MemoryError as e:
@@ -502,19 +506,23 @@ def build_tract_lp_tuple(tracttuple):
         DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
 
 """Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
-def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False):
+def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, db_start_at_end=False, force=None, output=None, dry_run=None, reident=None, sf1_vars):
     """
     Reads the data files for the state and county, then call build_tract_lp to build the LP files for each tract.
     All of the tract LP files are built from the same data model, so they can be built in parallel with shared memory.
     Consults the database to see which files need to be rebuilt, and only builds those files.
     For the large counties, this can take > 350GB
     """
+    global REIDENT
     assert (stusab[0].isalpha()) and (len(stusab)==2)
     assert (county[0].isdigit()) and (len(county)==3)
+    stusab = stusab.lower()     # make sure it is lower case
+    if reident:
+        REIDENT = reident
     logging.info(f"make_state_county_files({stusab},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
-    if args.force:
+    if force:
         tracts = [tractgen]
     else:
         rows = DBMySQL.csfr(auth,
@@ -548,7 +556,7 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False):
 
     ### Has the variables and the collapsing values we want (e.g, to collapse race, etc)
     ### These data frames are all quite small
-    sf1_vars       = pd.read_csv(dopen(dbrecon.SF1_RACE_BINARIES), quoting=2)
+
 
     assert len(sf1_vars) > 0
 
@@ -717,7 +725,10 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False):
     ### Remove tracts not in the sf1_tract_dict and in the sf1_block_dict.
     ### This was a problem for the water tracts, although we now do not pull them into the 'tracts' list from the SQL.
 
-    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract])
+    ### TODO: We could just call LPBuilder here, and pass in an array of those, rather than doing the whole tuple thing
+    ### Next time, don't pass around tuples, always pass around objects.
+
+    tracttuples = [(stusab, county, tract, sf1_tract_dict[tract], sf1_block_dict[tract], db_start_at_end, output, dry_run)
                    for tract in tracts
                    if (tract in sf1_tract_dict) and (tract in sf1_block_dict)]
 
@@ -742,18 +753,19 @@ if __name__=="__main__":
                         "These threads share tract and block statistics. Specify 1 to disable parallelism.",
                         type=int,default=DEFAULT_J2)
     parser.add_argument("--dry_run", help="don't actually write out the LP files",action='store_true')
+    parser.add_argument("--db_start_at_end", help="run the db_start and db_end together",action='store_true')
     parser.add_argument("--debug", help="Run in debug mode. Do not update database and write output to file specified by --output",action='store_true')
-    parser.add_argument("--output", help="Specify output file. Requires that a single state/county/tract be specified")
+    parser.add_argument("--output", help="Specify output file. Requires that a single stusab/county/tract be specified")
     parser.add_argument("--force", help="Generate all tract files, even if they exist", action='store_true')
 
-    parser.add_argument("state",  help="2-character state abbreviation.")
+    parser.add_argument("stusab",  help="2-character stusab abbreviation.")
     parser.add_argument("county", help="3-digit county code")
     parser.add_argument("tract",  help="If provided, just synthesize for this specific 6-digit tract code. Otherwise do all in the county",nargs="?")
 
     DB.quiet = True
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03pan")
-    args.state = args.state.lower()
+    args.stusab = args.stusab.lower()
 
     assert dbrecon.dfxml_writer is not None
 
@@ -778,12 +790,12 @@ if __name__=="__main__":
     # If we are doing a specific tract
     if args.tract:
         if not args.debug:
-            dbrecon.db_lock(args.state, args.county, args.tract)
-        make_state_county_files(auth, args.state, args.county, args.tract, debug=args.debug)
+            dbrecon.db_lock(args.stusab, args.county, args.tract)
+        make_state_county_files(auth, args.stusab, args.county, args.tract, debug=args.debug, force=args.force, output=args.output, dry_run=args.dry_run, sf1_vars = dbrecon.sf1_vars())
 
     else:
-        # We are doing a single state/county pair. We may do each tract multithreaded. Lock the tracts...
+        # We are doing a single stusab/county pair. We may do each tract multithreaded. Lock the tracts...
         DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
-                (dbrecon.hostname(),os.getpid(),args.state,args.county))
-        make_state_county_files(auth, args.state, args.county, debug=args.debug)
+                (dbrecon.hostname(),os.getpid(),args.stusab,args.county))
+        make_state_county_files(auth, args.stusab, args.county, debug=args.debug, force=args.force, output=args.output, dry_run=args.dry_run, sf1_vars = dbrecon.sf1_vars())
     logging.info("s3_pandas_synth_lp_files.py finished")

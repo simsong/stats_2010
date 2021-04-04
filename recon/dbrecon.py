@@ -37,6 +37,9 @@ import tempfile
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
+import pandas as pd
+
+
 # Make sure we can read ctools, which is in ..
 
 MY_DIR      = dirname(abspath(__file__))
@@ -485,6 +488,17 @@ def extract_state_county_tract(fname):
     if m:
         return( stusab(m.group('state')), m.group('county'), m.group('tract'))
     return None
+
+def sf1_vars():
+    """Return the pandas datafrom for reading SF1_RACE_BINARIES. Check the layouts directory first. If it is not there, we may be running under Spark. Check the current directory"""
+    tried = []
+    for fn in [SF1_RACE_BINARIES, os.path.basename(SF1_RACE_BINARIES)]:
+        fn = dpath_expand(fn)
+        if os.path.exists(fn):
+            return pd.read_csv(open(fn), quoting=2)
+        tried.append(fn)
+    raise FileNotFoundError(','.join(tried))
+
 
 def sf1_zipfilename(stusab):
     """If the SF1 is on S3, download it to a known location and work from there.
@@ -1062,7 +1076,6 @@ def print_maxrss():
         print(who,'utime:',rusage[0],'stime:',rusage[1],'maxrss:',rusage[2])
 
 def mem_info(what,df,dump=True):
-    import pandas as pd
     print(f'mem_info {what} ({type(df)}):')
     if type(df)!=pd.core.frame.DataFrame:
         print("Total {} memory usage: {:}".format(what,total_size(df)))

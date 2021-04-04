@@ -504,7 +504,7 @@ if __name__ == "__main__":
     g.add_argument("--status", action='store_true', help='Print stats about the current runs')
     g.add_argument("--register", action='store_true', help="register a new REIDENT for database reconstruction.")
     g.add_argument("--drop", action='store_true', help="drop a REIDENT from database")
-    g.add_argument("--show", action='store_true', help="Show everything known about reisdents, and optionally a stusab, county, tract")
+    g.add_argument("--show", "--reidents", action='store_true', help="Show everything known about reisdents, and optionally a stusab, county, tract")
     g.add_argument("--info", help="Provide info on a file")
     g.add_argument("--ls", action='store_true',help="Show the files")
     g.add_argument("--run", help="Run the scheduler",action='store_true')

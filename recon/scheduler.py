@@ -489,7 +489,9 @@ def spark_step34(auth, args):
     t0 = time.time()
     cmd = f"""
     SELECT stusab, county,MAX(pop100) AS max_tract_pop
-    FROM {REIDENT}tracts GROUP BY stusab, county where lp_end is NULL
+    FROM {REIDENT}tracts
+    WHERE lp_end is NULL
+    GROUP BY stusab, county
     HAVING max_tract_pop {args.pop100}
     LIMIT {args.limit}
     """

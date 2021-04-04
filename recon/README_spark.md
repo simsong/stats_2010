@@ -2,46 +2,15 @@ Notes on Spark
 ==============
 
 For making this run on Spark, we make lots of RDDs and combine them with the union operator.
-This allows each to be evaluated separately.
-```
-In [25]: a=sc.parallelize(range(0,10))
 
-In [26]: b=sc.parallelize(range(100,110))
+Spark is complex to tune. We allow specifying the spark parameters:
 
-In [27]: c=sc.parallelize(range(200,210))
+--num_executors - We started with 50, but soon it increased the numbers:
 
-In [28]: sc.union([a,b,c]).collect()
-Out[28]:
-[0,
- 1,
- 2,
- 3,
- 4,
- 5,
- 6,
- 7,
- 8,
- 9,
- 100,
- 101,
- 102,
- 103,
- 104,
- 105,
- 106,
- 107,
- 108,
- 109,
- 200,
- 201,
- 202,
- 203,
- 204,
- 205,
- 206,
- 207,
- 208,
- 209]
+21/03/31 19:13:41 INFO ExecutorMonitor: New executor 453 has registered (new total is 408)
 
-In [29]:
-```
+Looks like it has determined it needs 1.3M tasks, and 196K have completed:
+
+21/03/31 19:25:59 INFO TaskSetManager: Finished task 196258.0 in stage 1.0 (TID 196261) in 3289 ms on ip-10-252-46-204.ite.ti.census.gov (executor 231) (195842/1372624)
+
+--executor_memory

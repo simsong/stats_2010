@@ -5,9 +5,15 @@ import sys
 import hashlib
 import os
 import os.path
+from os.path import abspath,dirname,basename
 
-sys.path.append( os.path.join( os.path.dirname(__file__), ".." ))
+MY_DIR     = dirname(abspath(__file__))
+PARENT_DIR = dirname(MY_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.append(PARENT_DIR)
 
+# this shouldn't be necessary
+#pylint: disable=E0401
 import dbrecon
 
 TEST_CONFIG_FILE="config_test.ini"
@@ -22,7 +28,7 @@ SMALL_TRACT='980000'
 
 
 def test_build_tract_lp():
-    return 
+    return
 
 if __name__=="__main__":
     #call([sys.executable,'s3_pandas_synth_lp_files.py','--debug','--output','/tmp/model_29183980000.lp.gz',SMALL_STUSAB,SMALL_COUNTY,SMALL_TRACT,'--stdout'])
@@ -34,6 +40,6 @@ if __name__=="__main__":
         line2 = f2.readline()
         if line1!=line2:
             print("line1 != line2")
-        if line1=="": 
+        if line1=="":
             break
     print("{} and {} are the same".format(f1.name,f2.name))

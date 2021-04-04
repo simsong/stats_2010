@@ -49,6 +49,8 @@ except ImportError:
     """,file=sys.stderr)
     exit(1)
 
+NUMBER_OF_WORKERS_TIMES_40="(Number of Workers) * 40"
+
 DAS_ROOT   = dirname(dirname(dirname(dirname(abspath(__file__)))))
 if DAS_ROOT not in sys.path:
     sys.path.append(DAS_ROOT)
@@ -68,7 +70,8 @@ try:
 except ImportError:
     logging.warning("ssh_remote and kms not available")
 
-EMR_CONTROL='/mnt/gits/das-vm-config/das_decennial/programs/emr_control.py'
+DAS_VM_CONFIG = dirname(dirname(dirname(dirname(abspath(__file__)))))
+EMR_CONTROL= os.path.join( DAS_VM_CONFIG,'das_decennial/programs/emr_control.py')
 
 
 import dbrecon
@@ -444,19 +447,24 @@ def do_spark(args):
     """one of the great errors in the desing of the DAS was that we didn't use a python program to launch spark, instead we use a run_cluster script.
     Here we do not repeat that same mistake.
     """
-    try:
-        num_executors = int(args.num_executors)
-    except ValueError:
+    if args.num_executors == NUMBER_OF_WORKERS_TIMES_40:
         num_executors = (len(all_hosts())-2)*40
+    else:
+        num_executors = int(args.num_executors)
+
 
     cmd = []
     if args.rescan:
-        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark'])
+        cmd.extend(['scheduler.py','--rescan','--reident',args.reident,'--spark','--rescan_limit',str(args.rescan_limit)])
 
     print("LAUNCH: ",cmd)
-    ctools.cspark.spark_submit(pyfiles = glob.glob("*.py"),
-                               pydirs = "ctools",
-                               num_executors = args.num_executors,
+    REQUIRED_FILES = glob.glob("*.py") + glob.glob("ctools/*.py") + glob.glob("dfxml/*py")
+
+    # Let spark set the number of executors automatically
+    # num_executors = num_executors,
+
+
+    ctools.cspark.spark_submit(files_to_zip = REQUIRED_FILES,
                                executor_cores = 2,
                                argv = cmd)
 
@@ -542,8 +550,9 @@ if __name__ == "__main__":
     parser.add_argument('--nodes', help='Show YARN nodes', action='store_true')
     parser.add_argument('--prep', help='Log into each node and prep it for the dbrecon', action='store_true')
     parser.add_argument('--limit', type=int, default=100, help='When launching, launch no more than this.')
+    parser.add_argument("--rescan_limit", type=int, default=1000000, help='Limit when rescanning')
     parser.add_argument("--desc", help="Run the scheduler, largest tracts first",action='store_true')
-    parser.add_argument("--num_executors", help="number of spark executors to use",default="(number of workers)*40")
+    parser.add_argument("--num_executors", help="number of spark executors to use",default=NUMBER_OF_WORKERS_TIMES_40)
     args = parser.parse_args()
 
     if args.env:
@@ -712,4 +721,5 @@ if __name__ == "__main__":
         do_step5(auth, args.reident, args.stusab, args.county)
 
     if args.rescan:
-        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG, '--j1', REFRESH_PARALLELISM])
+        run([sys.executable, 'scheduler.py', '--config', RECON_CONFIG,
+             '--j1', REFRESH_PARALLELISM, '--rescan_limit', str(args.rescan_limit)])

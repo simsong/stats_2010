@@ -1,13 +1,25 @@
 This directory contains tools for running the database reconstruction software on the DAS EMR clusters.
 
-Note: Even though we are using the EMR clusters, we are not using Spark for the reconstruction or for job management. We're just using EMR so that we can bring up new nodes as required.
+(Note that the stats_2010 carries its own copies of ctools, dfxml and census_etl. Don't try to make it use what's in das-vm-config, as the stats_2010 package needs to exist without das-vm-config.)
 
-The Database reconstruction package uses the MySQL database to keep track of the progress of the reconstruction.
+AWS EMR monitors the free memory on every instance and kills the instance if it runs out of memory. This works great under Spark, which simply starts a new cluster. It's lousy here. And if the MASTER or one of the 2 CORE nodes dies, the cluster becomes unstable and the entire cluster gets killed. So in general, we try to do all of the heavy-living on TASK nodes, because we can kill all of the task nodes and not damage the cluster.
 
-Note that the stats_2010 carries its own copies of ctools, dfxml and census_etl. Don't try to make it use what's in das-vm-config, as the stats_2010 package needs to exist without das-vm-config
+You can control the cluster size with the ./dbrtool.py --resize command. It will only resize the TASK nodes.
 
-Workflow
+
+There are two-workflows for using EMR clusters.
+
+1. Each instance in the cluster is runs its own independent copy of scheduler and they coordinate through the database. This is the method that the original reconstruction was done, and it works, but it may be less efficient.)
+
+2. The entire reconstruction is run through Spark. This shoudl give better overall utilization, and restart when there are crashes, but we don't have it working properly yet.
+
+This file discusses workflow #1, each cluster running stand-alone. The Spark workflow is described in the file README_spark.md.
+
+
+Sharding
 ========
+The Database reconstruction package uses the MySQL database to keep track of the progress of the reconstruction. In the original reconstruction, there was only one reconstruction per database. In this version, a single database can hold multiple reconstructions. Each one has a unique reconstruction experiment identifier, called a REIDENT. The geography is stored in a table called {reident}_geo, the tracts are stored in a table called {reident}_tracts.
+
 Each 2010 reconstruction experiment is given a unique RE identifier,
 here called `REIDENT`.
 
@@ -19,18 +31,17 @@ here called `REIDENT`.
 dbrtool.py --register REIDENT
 ```
 
-All of the database reconstructions operate within the same MySQL
-database. REIDENT is used as the database prefix. It must therefore
-begin with a letter and contain only letters, numbers, and underbars.
+Because the s used as the database prefix, must therefore begin with a
+letter and contain only letters, numbers, and underbars.
 
 All of the database reconstruction tools in stats_2010/recon have been modified so that they read REIDENT from the Unix environment and then use this as a prefix on every SQL table.
 
 Database registration creates and initializes the `REIDENT_tracts`
 table from original `tracts` table.
 
-  - (step0 - downloads from the WWW server. This only needs to be done once, and doesn't need to be run in our EMR environment.)
+  - (step0 - downloads from the WWW server. This only needs to be done once, and doesn't need to be run in our EMR environment. In fact, this command doesn't work in the EMR environment.)
 
-These can be run on either the DRIVER or the WORKER node:
+These can be run on either the DRIVER or a single WORKER node:
 
   - step1 - makes the geofiles underneath the prefix. We make a separate set of geofiles for every REIDENT, because it might change. When run from dbrtool, it takes 1.5 hours. It would go faster if the database server were faster.
 
@@ -126,3 +137,53 @@ However, this is super-gross, so I think that we're probably going to just fix e
 This will require modificaitons to the scheduler so that each tract can be assigned to a specific instance.
 
 However, it's probably going to be easier to use each instance for a different state. It would be nice to break up CA and TX, though. So let's make it so the scheduler can run either for a specific state or a specific county
+
+
+Monitoring
+==========
+
+To get a quick check of the cluster status, use:
+
+```
+./drbtool.py --cluster
+```
+
+To see what still needs to be done, try:
+```
+./drbtool.py --status --reident s005080090050030'
+```
+
+You can combine these with `watch`, like this:
+
+```
+watch './dbrtool.py --cluster;./dbrtool.py --status --reident s005080090050030'
+```
+
+
+TODO
+====
+One of the fundamental mistakes in this project was to use the `datetime` filed in the MySQL database rather than storing Unix timestamps.
+That's because datetime does not include timezone information. It turns out that dbrecon.csfr had this code:
+
+```
+L291:
+        self.dbs.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
+```
+
+and dbfile.py had this code:
+
+```
+L374:
+        # Census standard TZ is America/New_York
+        try:
+            self.cursor().execute('SET @@session.time_zone = "America/New_York"')
+        except self.internalError as e:
+            pass
+```
+
+It's also a problem that the internal errors were simply ignored.
+THis is just bad, sloppy programming all around. We should have stored everything as a time_t.
+
+Fortunately, lp_end and sol_end are basically used as booleans, and
+all of the code is being rewritten to use dbfile exclusively. However,
+this shouldn't be allowed to continue, and it shouldn't be allowed for future projects.

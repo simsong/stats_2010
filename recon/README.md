@@ -21,6 +21,9 @@ but we do not include it here because the `dopen` in
 [dbrecon.py](dbrecon.py) was developed first and is customized for
 this application
 
+(Note that the stats_2010 carries its own copies of ctools, dfxml and census_etl. These explicitly don't uplink to the verisons in das-vm-config, as the stats_2010 package needs to exist without das-vm-config.)
+
+
 The database reconstruction tracts its progress in a MySQL database. Read/write access to such a database server is mandatory. The database server also coordinates the reconstruction efforts, so you can use multiple servers simultaneously.
 
 ## Requirements:

@@ -425,6 +425,13 @@ def fast_all(callback):
     with multiprocessing.Pool(50) as p:
         p.map(callback, all_hosts())
 
+def status_all():
+    with multiprocessing.Pool(50) as p:
+        rows = p.map(host_status, all_hosts())
+    rows.sort()
+    for row in rows:
+        print(row[1])
+
 
 def show_file(path):
     if path.startswith('s3://'):
@@ -503,9 +510,6 @@ def launch_if_needed(host):
     if status==IDLE or (status==IN_USE and args.force):
         do_launch(host, desc=args.desc, reident=args.reident)
         print("Launch: ",host)
-
-def print_host_status(host):
-    print(host_status(host)[1])
 
 if __name__ == "__main__":
     import argparse
@@ -595,7 +599,7 @@ if __name__ == "__main__":
         exit(0)
 
     if args.cluster_status:
-        fast_all(print_host_status)
+        status_all()
         exit(0)
 
     if args.resize is not None:

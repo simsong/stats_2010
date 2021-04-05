@@ -323,7 +323,7 @@ def run(auth, args):
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
-                SELECT t.stusab,t.county,count(*) as tracts,sum(t.pop100) as pop
+                SELECT stusab,county,count(*) as tracts,sum(pop100) as pop
                 FROM {REIDENT}tracts 
                 WHERE (lp_start IS NULL) AND  (pop100>0)
                 GROUP BY state,county

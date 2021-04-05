@@ -454,8 +454,8 @@ def db_clean(auth):
 def get_tracts_needing_lp_files(auth, stusab, county):
     rows = DBMySQL.csfr(auth,
                         f"""
-                        SELECT t.tract FROM {REIDENT}tracts t
-                        WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (t.pop100>0)
+                        SELECT tract FROM {REIDENT}tracts
+                        WHERE (stusab=%s) AND (county=%s) AND (lp_end IS NULL) AND (pop100>0)
                         """,(stusab,county))
     return [row[0] for row in rows]
     
@@ -660,8 +660,8 @@ def tracts_for_state_county(*,stusab,county):
     """
     rows = DB.csfr(
         f"""
-        SELECT tract from {REIDENT}tracts t
-        WHERE (t.stusab=%s) and (t.county=%s) AND (t.pop100>0)
+        SELECT tract from {REIDENT}tracts 
+        WHERE (stusab=%s) and (county=%s) AND (pop100>0)
         """,(stusab,county))
     return [row[0] for row in rows]
 

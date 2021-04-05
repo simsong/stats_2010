@@ -291,13 +291,13 @@ Under spark, we don't use db_start, just db_done.
 
 
 def db_lock(auth, stusab, county, tract):
-    DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+    DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s WHERE stusab=%s and county=%s and tract=%s",
             (hostname(),os.getpid(),stusab,county,tract),
             rowcount=1)
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {stusab} {county} {tract} ")
 
 def db_unlock(auth,stusab, county, tract):
-    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL where stusab=%s and county=%s and tract=%s",
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL WHERE stusab=%s and county=%s and tract=%s",
             (stusab,county,tract),
             rowcount = 1)
 
@@ -341,10 +341,10 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
     if clear_start:
         cmd += f",{what}_start=NULL "
     else:
-        cmd += f"{what}_host=%s, "
+        cmd += f",{what}_host=%s "
         args.append(hostname())
 
-    cmd += " where stusab=%s and county=%s and tract=%s"
+    cmd += " WHERE stusab=%s AND county=%s AND tract=%s"
     args += [stusab,county,tract] 
 
     DBMySQL.csfr(auth, cmd, args, rowcount=1)

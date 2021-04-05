@@ -730,5 +730,4 @@ if __name__=="__main__":
 
     else:
         kill_running_s3_s4()
-        set_none_running(auth,hostname())
         run(auth, args)

@@ -404,7 +404,7 @@ def kill_running_s3_s4():
             print("KILL PID{} {}".format(p.pid, " ".join(cmd)))
             p.kill()
             p.wait()
-    dbrecon.db_unlock_all(auth)
+    dbrecon.db_unlock_all(auth,hostname())
 
 
 ################################################################

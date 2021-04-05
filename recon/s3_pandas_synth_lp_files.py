@@ -28,7 +28,7 @@ import datetime
 
 import dbrecon
 
-from dbrecon import DB,GB,MB,LP,SOL,CSV
+from dbrecon import DBMySQL,GB,MB,LP,SOL,CSV
 from dbrecon import validate_lpfile,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
 from ctools.total_size import total_size
 from ctools.dbfile import DBMySQL,DBMySQLAuth
@@ -758,7 +758,6 @@ if __name__=="__main__":
     parser.add_argument("county", help="3-digit county code")
     parser.add_argument("tract",  help="If provided, just synthesize for this specific 6-digit tract code. Otherwise do all in the county",nargs="?")
 
-    DB.quiet = True
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03pan")
     args.stusab = args.stusab.lower()

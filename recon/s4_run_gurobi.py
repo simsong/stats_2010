@@ -21,7 +21,7 @@ from os.path import dirname,basename,abspath
 import gurobipy
 
 import dbrecon
-from dbrecon import DB,dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT,REIDENT,ZCAT,GZIP,GZIP_OPT,SOL
+from dbrecon import DBMySQL,dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT,REIDENT,ZCAT,GZIP,GZIP_OPT,SOL
 
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 

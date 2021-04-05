@@ -7,8 +7,6 @@ import sys
 import datetime
 import time
 
-sys.path.append( os.path.join(os.path.dirname(__file__),".."))
-
 import dbrecon
 import ctools.tydoc as tydoc
 from dbrecon import DBMySQL

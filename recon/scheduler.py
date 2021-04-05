@@ -35,7 +35,7 @@ import dbrecon
 
 from dbrecon import dopen,dmakedirs,dsystem,hostname
 from dfxml.writer import DFXMLWriter
-from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT,LP
+from dbrecon import LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT,LP
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 import ctools.cspark as cspark

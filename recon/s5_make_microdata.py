@@ -18,7 +18,7 @@ import atexit
 import multiprocessing
 
 import dbrecon
-from dbrecon import DB,DSV
+from dbrecon import DBMySQL,DSV
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,REIDENT
 
 def make_csv_file( pair ):

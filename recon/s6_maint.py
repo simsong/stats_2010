@@ -6,8 +6,6 @@ s6_main.py:
 Various maintenance functions. Feel free to add your own.
 """
 
-import dbrecon
-from dbrecon import DB,GB,MB,DBMySQL
 import glob
 import logging
 import os
@@ -18,10 +16,8 @@ import time
 import atexit
 import re
 
-sys.path.append( os.path.join(os.path.dirname(os.path.abspath(__file__)),".."))
-
 import dbrecon
-from dbrecon import DB
+from dbrecon import GB,MB,DBMySQL
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,REIDENT
 
 from gurobi_logfile_parser import GurobiLogfileParser

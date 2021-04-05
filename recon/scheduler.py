@@ -189,7 +189,16 @@ def run(auth, args):
     last_lp_launch  = 0
     last_sol_launch = 0
     halting         = False
+    check_lp        = args.step3
+    check_sol       = args.step4
+    needed_lp       = 0
+    needed_sol      = 0
     os.set_blocking(sys.stdin.fileno(), False)
+
+    # If neither step3 nor step4 were specified, run both!
+    if (not check_lp) and (not check_sol):
+        check_lp  = True
+        check_sol = True
 
     def running_lp():
         """Return a list of the runn LP makers"""
@@ -301,9 +310,7 @@ def run(auth, args):
 
         # Figure out how many we need to launch
         #
-        if args.nolp:
-            needed_lp = 0
-        else:
+        if check_lp:
             needed_lp =  min(get_config_int('run','max_lp'),args.maxlp) - len(running_lp())
 
         if debug:
@@ -345,21 +352,16 @@ def run(auth, args):
         max_sol    = get_config_int('run','max_sol')
         max_jobs   = get_config_int('run','max_jobs')
         max_sol_launch = get_config_int('run','max_sol_launch')
-        if args.nosol:
-            needed_sol = 0
-        else:
-            needed_sol = max_jobs-len(running)
-            if needed_sol > max_sol:
-                needed_sol = max_sol
+        if check_sol:
+            needed_sol = min(max_jobs-len(running), max_sol)
 
         if debug:
-            print(f"max_sol={max_sol} needed_sol={needed_sol} max_jobs={max_jobs} running={len(running)} get_free_mem()={get_free_mem()} ")
+            print(f"max_sol={max_sol} needed_sol={needed_sol} max_jobs={max_jobs} running={len(running)} get_free_mem()={get_free_mem()}")
 
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             # As before, we only launch one at a time
             # Solve the biggest first, because they take the most time
-
 
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 print(f"Can't launch again for {last_sol_launch+MIN_SOL_WAIT-time.time()} seconds")
@@ -691,11 +693,7 @@ if __name__=="__main__":
     dbrecon.argparse_add_logging(parser)
     parser.add_argument("--testdb",  help="test database connection", action='store_true')
     parser.add_argument("--clean",   help="Look for .lp and .sol files that are too slow and delete them, then remove them from the database", action='store_true')
-    parser.add_argument("--nosol",   help="Do not run the solver", action='store_true')
-
     parser.add_argument("--maxlp",   help="Never run more than this many LP makers", type=int, default=999)
-    parser.add_argument("--rescan",  help="validate and update the database contents against files in the file system. Uses --j1 when not run under spark. SPARK ENABLED.", action='store_true')
-    parser.add_argument("--nolp",    help="Do not run the LP maker", action='store_true')
     parser.add_argument("--set_none_running", help="Update database to indicate there are no outstanding LP files being built or Solutions being solved on this machine.",
                         action='store_true')
     parser.add_argument("--set_none_running-anywhere", help="Run if there are no outstanding LP files being built or solutions being solved on any machine.",
@@ -707,11 +705,12 @@ if __name__=="__main__":
     parser.add_argument("--debug", action='store_true', help="debug mode")
     parser.add_argument("--j1",    help="number of threads for rescan", type=int, default=10)
     parser.add_argument("--spark", help="run under spark", action='store_true')
-    parser.add_argument("--step3", help='just run step3 (requires --spark)', action='store_true')
-    parser.add_argument("--step4", help='just run step4 (requires --spark)', action='store_true')
-    parser.add_argument("--limit", help="Specify a limit for the number of tracts to process in --rescan, --step3 or --step4", type=int, default=1000000)
+    parser.add_argument("--rescan",  help="validate and update the database contents against files in the file system. Uses --j1 when not run under spark. SPARK ENABLED.", action='store_true')
+    parser.add_argument("--step3", help='Run only step 3. SPARK ENABLED. ', action='store_true')
+    parser.add_argument("--step4", help='Run only step 4. SPARK ENABLED', action='store_true')
     parser.add_argument("--nolock", help="Do not lock the script.", action='store_true')
-    parser.add_argument("--pop100", help="--spark --step3 and --step4, specifies the max(pop100) to work with",default=">0")
+    parser.add_argument("--pop100", help="for --spark, pecifies the max(pop100) to work with",default=">0")
+    parser.add_argument("--limit", help="Specify a limit for the number of tracts to process in --rescan, --step3 or --step4", type=int, default=1000000)
     args   = parser.parse_args()
 
 
@@ -739,7 +738,7 @@ if __name__=="__main__":
 
     if args.spark:
         if (args.step3 and args.step4) or (args.rescan and args.step3) or (args.rescan and args.step4):
-            logging.error("--spark can only be used with  one of --rescan, --step2 or --step3")
+            logging.error("--spark can only be used with one of --rescan, --step2 or --step3")
             exit(1)
         if args.step3 or args.step4:
             spark_step34(auth, args)
@@ -751,6 +750,9 @@ if __name__=="__main__":
         exit(0)
 
     if args.rescan:
+        if args.step3 or args.step4:
+            logging.error("--rescan conflicts with --step3 and --step4")
+            exit(1)
         rescan(auth, args)
         exit(0)
 

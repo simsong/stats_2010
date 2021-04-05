@@ -28,7 +28,7 @@ import datetime
 
 import dbrecon
 
-from dbrecon import DB,GB,MB
+from dbrecon import DB,GB,MB,LP,SOL,CSV
 from dbrecon import validate_lpfile,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
 from ctools.total_size import total_size
 from ctools.dbfile import DBMySQL,DBMySQLAuth
@@ -202,7 +202,6 @@ class LPTractBuilder:
         self.tract      = tract
         self.sf1_tract_data = sf1_tract_data
         self.sf1_block_data = sf1_block_data
-        self.auth       = dbrecon.auth()
         self.debug      = debug
         self.db_start_at_end = False # run db_start at the end of the tract building, rather than the start
         self.output     = output
@@ -211,7 +210,7 @@ class LPTractBuilder:
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         if not self.debug:
-            DBMySQL.csfr(self.auth,
+            DBMySQL.csfr(dbrecon.auth(),
                          f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
                          (self.stusab,self.county,self.tract),rowcount=1)
 
@@ -377,7 +376,7 @@ class LPTractBuilder:
             # Check to see if file is already finished, indicate that, and indicate that I don't know when it was started
             if dbrecon.validate_lpfile(lpfilenamegz):
                 logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
-                dbrecon.db_done(self.auth,'lp',self.stusab, self.county, self.tract, clear_start=True)
+                dbrecon.db_done(dbrecon.auth(),'lp',self.stusab, self.county, self.tract, clear_start=True)
                 return
 
             # If outputting to S3, make the output file a named temp
@@ -397,7 +396,7 @@ class LPTractBuilder:
             # db_start_at_end prevents the database from being updated with db_start() until the LP file is created.
             # We do that under spark.
             if (self.db_start_at_end==False):
-                dbrecon.db_start(self, auth, LP, self.stusab, self.county, self.tract)
+                dbrecon.db_start(dbrecon.auth(), LP, self.stusab, self.county, self.tract)
             atexit.register(self.db_fail)
 
         if self.dry_run:
@@ -470,8 +469,8 @@ class LPTractBuilder:
 
         # otherwise, rename the file (which may upload it to s3), and update the databse
         dbrecon.drename(outfilename, lpfilenamegz)
-        dbrecon.db_done(self.auth, LP, self.stusab, self.county, self.tract, start=start)
-        DBMySQL.csfr(self.auth, f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
+        dbrecon.db_done(dbrecon.auth(), LP, self.stusab, self.county, self.tract, start=start)
+        DBMySQL.csfr(dbrecon.auth(), f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
                      (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
 
         atexit.unregister(self.db_fail)

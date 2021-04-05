@@ -859,7 +859,7 @@ def add_dfxml_tag(tag,text=None,attrs={}):
         e.text = text
 
 def log_error(*,error=None, filename=None, last_value=None):
-    reident = os.getenv('REIDENT').replace('_','')
+    reident = os.getenv('REIDENT','').replace('_','')
     DB.csfr(f"INSERT INTO errors (`host`,`error`,`argv0`,`reident`,`file`,`last_value`) VALUES (%s,%s,%s,%s,%s,%s)",
             (hostname(), error, sys.argv[0], reident, filename, last_value), quiet=True)
     logging.error(error)

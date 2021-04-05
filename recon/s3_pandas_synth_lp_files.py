@@ -366,6 +366,7 @@ class LPTractBuilder:
         Modified to write gzipped LP files because the LP files are so large
         """
 
+        print("build_tract_lp")
         state_code    = dbrecon.state_fips(self.stusab)
         geo_id        = self.sf1_tract_data[0][GEOID]
         if self.output:
@@ -375,7 +376,8 @@ class LPTractBuilder:
 
             # Check to see if file is already finished, indicate that, and indicate that I don't know when it was started
             if dbrecon.validate_lpfile(lpfilenamegz):
-                logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
+                print(lpfilenamegz,"validates")
+                logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} validates.")
                 dbrecon.db_done(dbrecon.auth(),'lp',self.stusab, self.county, self.tract, clear_start=True)
                 return
 
@@ -468,6 +470,8 @@ class LPTractBuilder:
             return
 
         # otherwise, rename the file (which may upload it to s3), and update the databse
+        print("**** START=",start)
+
         dbrecon.drename(outfilename, lpfilenamegz)
         dbrecon.db_done(dbrecon.auth(), LP, self.stusab, self.county, self.tract, start=start)
         DBMySQL.csfr(dbrecon.auth(), f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",

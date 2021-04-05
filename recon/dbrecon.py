@@ -333,25 +333,31 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
     """
     assert what in [LP, SOL, CSV]
 
-    cmd  = f"UPDATE {REIDENT}tracts set {what}_end=now(),hostlock=NULL,pid=NULL "
+    print("DB_DONE: start=",start,"clear_start=",clear_start)
+
+    cmd  = f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL "
     args = []
+
     if start:
         cmd += f",{what}_start=%s "
         args.append(start)
+
     if clear_start:
         cmd += f",{what}_start=NULL "
     else:
         cmd += f",{what}_host=%s "
         args.append(hostname())
+        
+    if not is_db_done(auth, what, stusab, county, tract):
+        cmd += ",{what}_end=now() "
 
     cmd += " WHERE stusab=%s AND county=%s AND tract=%s"
     args += [stusab,county,tract] 
 
-    DBMySQL.csfr(auth, cmd, args, rowcount=1)
-
+    DBMySQL.csfr(auth, cmd, args, rowcount=1, debug=True)
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
-def is_db_done(auth, what, stusab, county, tract, clear_start=False):
+def is_db_done(auth, what, stusab, county, tract):
     """Returns true if all LP, SOL, or CSV are made"""
     assert what in [LP,SOL, CSV]
     row = DBMySQL.csfr(auth,

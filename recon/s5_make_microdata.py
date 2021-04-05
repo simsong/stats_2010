@@ -18,7 +18,7 @@ import atexit
 import multiprocessing
 
 import dbrecon
-from dbrecon import DB
+from dbrecon import DB,DSV
 from dbrecon import dopen,dmakedirs,dsystem,dpath_exists,GB,REIDENT
 
 def make_csv_file( pair ):
@@ -57,7 +57,7 @@ def make_csv_file( pair ):
         for tract in tracts:
             tract_total = 0
             logging.info(f"Starting tract {state_code}{county}{tract}")
-            dbrecon.db_start('csv', stusab, county, tract)
+            dbrecon.db_start(auth, CSV, stusab, county, tract)
             with dopen(dbrecon.SOLFILENAMEGZ(stusab=stusab, county=county, tract=tract),"r") as infile:
                 for line in infile:
                     if line[0:2]=='C_': # oldstyle variable

@@ -33,9 +33,9 @@ from os.path import dirname,basename,abspath
 # Set up path, among other things
 import dbrecon
 
-from dbrecon import dopen,dmakedirs,dsystem
+from dbrecon import dopen,dmakedirs,dsystem,hostname
 from dfxml.writer import DFXMLWriter
-from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
+from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT,LP
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 import ctools.cspark as cspark
@@ -55,8 +55,6 @@ DEBUG  - enable/disable debugging
 SQL    - show/hide SQL
 """
 
-
-HOSTNAME = dbrecon.hostname()
 
 # Tuning parameters
 
@@ -117,7 +115,7 @@ def report_load_memory(auth):
             INSERT INTO sysload (t, host, min1, min5, min15, freegb)
             VALUES (NOW(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1
             """,
-            [HOSTNAME] + list(os.getloadavg()) + [get_free_mem()//GiB])
+            [hostname()] + list(os.getloadavg()) + [get_free_mem()//GiB])
         last_report = time.time()
     return free_mem
 
@@ -269,7 +267,7 @@ def run(auth, args):
                 print("")
                 print(lookup('BLACK DOWN-POINTING TRIANGLE')*64)
                 print("{}: {} Free Memory: {} GiB  {}% Load: {}".format(
-                    HOSTNAME,
+                    hostname(),
                     time.asctime(), free_mem//GiB, psutil.virtual_memory().percent, os.getloadavg()))
                 print(f"Remaining LP: {remain['lp']} Remaining SOL: {remain['sol']}")
                 print("Running processes:")
@@ -290,7 +288,7 @@ def run(auth, args):
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))
                 DBMySQL.csfr(auth,f"INSERT INTO errors (host,file,error) VALUES (%s,%s,%s)",
-                                (HOSTNAME,__file__,"Free memory down to {}".format(get_free_mem())))
+                                (hostname(),__file__,"Free memory down to {}".format(get_free_mem())))
                 kill_tree(p)
                 running.remove(p)
                 continue
@@ -326,9 +324,9 @@ def run(auth, args):
             direction = 'DESC' if args.desc else ''
             cmd = f"""
                 SELECT t.stusab,t.county,count(*) as tracts,sum(t.pop100) as pop
-                FROM {REIDENT}tracts t
-                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (t.pop100>0)
-                GROUP BY t.state,t.county
+                FROM {REIDENT}tracts 
+                WHERE (lp_start IS NULL) AND  (pop100>0)
+                GROUP BY state,county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
             make_lps = DBMySQL.csfr(auth, cmd)
@@ -361,14 +359,14 @@ def run(auth, args):
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             # As before, we only launch one at a time
-            # Solve the biggest first, because they take the most time
+            # Always solve the biggest first, because they take the most time, and don't seem to take dramatically more memory.
 
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 print(f"Can't launch again for {last_sol_launch+MIN_SOL_WAIT-time.time()} seconds")
             else:
                 cmd = f"""
                 SELECT stusab,county,tract FROM {REIDENT}tracts
-                WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)
+                WHERE (sol_start IS NULL) AND (lp_end IS NOT NULL) 
                 ORDER BY pop100 desc LIMIT %s
                 """
                 solve_lps = DBMySQL.csfr(auth,cmd,(max_sol_launch,))
@@ -394,43 +392,6 @@ def run(auth, args):
 ################################################################
 ## killer stuff follows
 
-SHOW_RUNNING=False
-def set_none_running(auth, hostname):
-    """Tell the database that there are no processes running, either on this host or on all hosts"""
-
-    hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
-
-    if SHOW_RUNNING:
-        for (stusab,county,tract) in  DBMySQL.csfr(auth,
-                f"""
-                SELECT stusab,county,tract
-                FROM {REIDENT}tracts
-                WHERE lp_start IS NOT NULL AND lp_end IS NULL
-                """ + hostlock):
-            print("CLEARINING LP MAKING ",stusab,county,tract)
-    DBMySQL.csfr(auth,
-        f"""
-        UPDATE {REIDENT}tracts
-        SET lp_start=NULL
-        WHERE lp_start IS NOT NULL AND lp_end IS NULL
-        """ + hostlock)
-
-    if SHOW_RUNNING:
-        for (stusab,county,tract) in DBMySQL.csfr(auth,
-                f"""
-                SELECT stusab,county,tract
-                FROM {REIDENT}tracts
-                WHERE sol_start IS NOT NULL AND sol_end IS NULL
-                """ + hostlock):
-            print("CLEARING SOL MAKING",stusab,county,tract)
-    DBMySQL.csfr(auth,
-        f"""
-        UPDATE {REIDENT}tracts
-        SET sol_start=NULL
-        WHERE sol_start IS NOT NULL AND sol_end IS NULL
-        """ + hostlock)
-    print("Resume...")
-
 def kill_running_s3_s4():
     """Look for any running instances of s3 or s4. If they are found, print and abort"""
     found = 0
@@ -443,6 +404,8 @@ def kill_running_s3_s4():
             print("KILL PID{} {}".format(p.pid, " ".join(cmd)))
             p.kill()
             p.wait()
+    dbrecon.db_unlock_all(auth)
+
 
 ################################################################
 ## Spark support
@@ -760,12 +723,12 @@ if __name__=="__main__":
         clean(auth)
 
     elif args.set_none_running:
-        set_none_running(auth,HOSTNAME)
+        dbrecon.db_unlock_all(auth,hostname())
 
     elif args.set_none_running_anywhere:
-        set_none_running(auth, None)
+        dbrecon.db_unlock_all(auth, None)
 
     else:
         kill_running_s3_s4()
-        set_none_running(auth,HOSTNAME)
+        set_none_running(auth,hostname())
         run(auth, args)

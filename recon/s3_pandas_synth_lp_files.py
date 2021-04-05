@@ -190,6 +190,8 @@ def update_constraints(f, level, n_con, summary_nums, geo_id, debug=False):
     return n_con
 
 
+
+
 class LPTractBuilder:
     """Build the LP files for a given tract"""
 
@@ -395,7 +397,7 @@ class LPTractBuilder:
             # db_start_at_end prevents the database from being updated with db_start() until the LP file is created.
             # We do that under spark.
             if (self.db_start_at_end==False):
-                dbrecon.db_start('lp', self.stusab, self.county, self.tract)
+                dbrecon.db_start(self, auth, LP, self.stusab, self.county, self.tract)
             atexit.register(self.db_fail)
 
         if self.dry_run:
@@ -468,7 +470,7 @@ class LPTractBuilder:
 
         # otherwise, rename the file (which may upload it to s3), and update the databse
         dbrecon.drename(outfilename, lpfilenamegz)
-        dbrecon.db_done(self.auth,'lp', self.stusab, self.county, self.tract, start=start)
+        dbrecon.db_done(self.auth, LP, self.stusab, self.county, self.tract, start=start)
         DBMySQL.csfr(self.auth, f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
                      (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
 
@@ -500,7 +502,7 @@ def build_tract_lp_tuple(tracttuple):
     except MemoryError as e:
         logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
         cmd = f"""
-        UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
+        UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL,lp_host=NULL
         WHERE stusab=%s and county=%s and tract=%s
         """
         DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
@@ -525,12 +527,7 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
     if force:
         tracts = [tractgen]
     else:
-        rows = DBMySQL.csfr(auth,
-                            f"""
-                            SELECT t.tract FROM {REIDENT}tracts t
-                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (t.pop100>0)
-                            """,(stusab,county))
-        tracts_needing_lp_files = [row[0] for row in rows]
+        tracts_needing_lp_files = dbrecon.get_tracts_needing_lp_files(auth, stusab, county)
         logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)
         if tractgen==ALL:
             if len(tracts_needing_lp_files)==0:

@@ -334,7 +334,7 @@ def run(auth, args):
                 GROUP BY state,county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
-            make_lps = DBMySQL.csfr(auth, cmd)
+            make_lps = DBMySQL.csfr(auth, cmd, debug=True)
             if (len(make_lps)==0 and needed_lp>0) or debug:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()

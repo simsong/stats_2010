@@ -786,7 +786,7 @@ if __name__=="__main__":
     # If we are doing a specific tract
     if args.tract:
         if not args.debug:
-            dbrecon.db_lock(args.stusab, args.county, args.tract)
+            dbrecon.db_lock(auth, args.stusab, args.county, args.tract)
         make_state_county_files(auth, args.stusab, args.county, args.tract, debug=args.debug, force=args.force, output=args.output, dry_run=args.dry_run, sf1_vars = dbrecon.sf1_vars())
 
     else:

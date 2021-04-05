@@ -376,7 +376,7 @@ def run(auth, args):
                 for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
                     print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
                     gurobi_threads = get_config_int('gurobi','threads')
-                    dbrecon.db_lock(stusab,county,tract)
+                    dbrecon.db_lock(auth, stusab,county,tract)
                     stusab         = stusab.lower()
                     cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
                     print("$ "+" ".join(cmd))

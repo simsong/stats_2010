@@ -216,83 +216,6 @@ def get_pw():
             if m:
                 os.environ[m.group(1)] = m.group(2)
 
-class DB:
-    """DB class connection class. Note that this is now in ctools.dbfile and should be removed."""
-
-    @staticmethod
-    def csfr(cmd,vals=None,quiet=False,rowcount=None):
-        """Connect, select, fetchall, and retry as necessary"""
-        try:
-            from mysql.connector.errors import ProgrammingError,InterfaceError,OperationalError
-        except ImportError as e:
-            from pymysql.err import ProgrammingError,InterfaceError,OperationalError
-
-        for i in range(1,DB_RETRIES):
-            try:
-                db = DB()
-                db.connect()
-                result = None
-                c = db.cursor()
-                try:
-                    logging.info(f"PID{os.getpid()}: {cmd} {vals}")
-                    if quiet==False:
-                        try:
-                            print(f"PID{os.getpid()}: cmd:{cmd} vals:{vals}")
-                        except BlockingIOError as e:
-                            pass
-                    c.execute(cmd,vals)
-                    if (rowcount is not None) and ( c.rowcount!=rowcount):
-                        logging.error(f"{cmd} {vals} expected rowcount={rowcount} != {c.rowcount}")
-                except ProgrammingError as e:
-                    logging.error(f" cmd: {cmd}")
-                    logging.error(f"vals: {vals}")
-                    logging.error(str(e))
-                    raise e
-                if cmd.strip().upper().startswith("SELECT"):
-                    result = c.fetchall()
-                c.close()       # close the cursor
-                db.close() # close the connection
-                return result
-            except InterfaceError as e:
-                logging.error(e)
-                logging.error(f"PID{os.getpid()}: NO RESULT SET??? RETRYING {i}/{DB_RETRIES}: {cmd} {vals} ")
-                pass
-            except OperationalError as e:
-                logging.error(e)
-                logging.error(f"PID{os.getpid()}: OPERATIONAL ERROR??? RETRYING {i}/{DB_RETRIES}: {cmd} {vals} ")
-                pass
-            time.sleep(RETRY_DELAY_TIME)
-        raise e
-
-    def cursor(self):
-        return self.dbs.cursor()
-
-    def commit(self):
-        return self.dbs.commit()
-
-    def create_schema(self,schema):
-        return self.dbs.create_schema(schema)
-
-    def connect(self):
-        config = GetConfig().get_config()
-        try:
-            mysql_section = config['mysql']
-        except KeyError as e:
-            print(e,file=sys.stderr)
-            print("config:",file=sys.stderr)
-            print(config,file=sys.stderr)
-            exit(1)
-        auth = DBMySQLAuth(host=os.path.expandvars(mysql_section['host']),
-                               database=os.path.expandvars(mysql_section['database']),
-                               user=os.path.expandvars(mysql_section['user']),
-                               password=os.path.expandvars(mysql_section['password']))
-        self.dbs       = DBMySQL(auth)
-        self.dbs.cursor().execute('SET @@session.time_zone = "+00:00"') # UTC please
-        self.dbs.cursor().execute('SET autocommit = 1') # autocommit
-
-    def close(self):
-        return self.dbs.close()
-
 ################################################################
 ### The USA Geography object.
 ### tracks geographies. We should have created this originally.
@@ -367,8 +290,8 @@ Under spark, we don't use db_start, just db_done.
 """
 
 
-def db_lock(stusab, county, tract):
-    DB.csfr(f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+def db_lock(auth, stusab, county, tract):
+    DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
             (hostname(),os.getpid(),stusab,county,tract),
             rowcount=1)
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {stusab} {county} {tract} ")
@@ -393,7 +316,7 @@ def db_unlock_all(auth, hostname):
 
 def db_start(auth, what, stusab, county, tract):
     assert what in [LP, SOL, CSV]
-    DBMySQL.csfr(f"UPDATE {REIDENT}tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+    DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
                  (hostname(),hostname(),os.getpid(),stusab,county,tract),
                  rowcount=1 )
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {stusab} {county} {tract} ")
@@ -428,10 +351,10 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
 
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
-def is_db_done(what, stusab, county, tract, clear_start=False):
+def is_db_done(auth, what, stusab, county, tract, clear_start=False):
     """Returns true if all LP, SOL, or CSV are made"""
     assert what in [LP,SOL, CSV]
-    row = DB.csfr(
+    row = DBMySQL.csfr(auth,
         f"""
         SELECT {what}_end FROM {REIDENT}tracts 
         WHERE (stusab=%s) AND (county=%s) AND (tract=%s) and ({what}_end IS NOT NULL) AND (pop100>0) LIMIT 1
@@ -651,14 +574,14 @@ def parse_stusabs(statelist):
 
 def counties_for_state(stusab):
     """Return a list of the the county codes (as strings) for the counties in stusab"""
-    rows = DB.csfr(f"SELECT county FROM {REIDENT}geo WHERE stusab=%s and sumlev='050'",(stusab,))
+    rows = DBMySQL.csfr(auth(), f"SELECT county FROM {REIDENT}geo WHERE stusab=%s and sumlev='050'",(stusab,))
     return [row[0] for row in rows]
 
 def tracts_for_state_county(*,stusab,county):
     """Accessing the database, return the tracts for a given state/county.
     Only return tracts with non-zero population
     """
-    rows = DB.csfr(
+    rows = DBMySQL.csfr(auth(),
         f"""
         SELECT tract from {REIDENT}tracts 
         WHERE (stusab=%s) and (county=%s) AND (pop100>0)
@@ -743,7 +666,7 @@ def remove_csvfile(auth,stusab,county,tract):
             dpath_unlink(fn)
         except FileNotFoundError as e:
             pass
-    DB.csfr(f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",
+    DBMySQL.csfr(auth(),f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",
             (stusab,county))
 
 
@@ -860,7 +783,7 @@ def add_dfxml_tag(tag,text=None,attrs={}):
 
 def log_error(*,error=None, filename=None, last_value=None):
     reident = os.getenv('REIDENT','').replace('_','')
-    DB.csfr(f"INSERT INTO errors (`host`,`error`,`argv0`,`reident`,`file`,`last_value`) VALUES (%s,%s,%s,%s,%s,%s)",
+    DBMySQL.csfr(auth(),f"INSERT INTO errors (`host`,`error`,`argv0`,`reident`,`file`,`last_value`) VALUES (%s,%s,%s,%s,%s,%s)",
             (hostname(), error, sys.argv[0], reident, filename, last_value), quiet=True)
     logging.error(error)
 

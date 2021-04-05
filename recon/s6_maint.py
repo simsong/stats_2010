@@ -7,7 +7,7 @@ Various maintenance functions. Feel free to add your own.
 """
 
 import dbrecon
-from dbrecon import DB,GB,MB
+from dbrecon import DB,GB,MB,DBMySQL
 import glob
 import logging
 import os
@@ -47,7 +47,7 @@ def glog_scan_root(rootdir):
                     print(fname)
                     print(e)
                     exit(1)
-                DB.csfr(cmd=cmd, vals=vals, quiet=True)
+                DBMySQL.csfr(dbrecon.auth(),cmd=cmd, vals=vals, quiet=True)
                 print(fname)
 
 def final_pop_scan_sct(sct):
@@ -56,14 +56,14 @@ def final_pop_scan_sct(sct):
         final_pop = dbrecon.get_final_pop_from_sol(stusab, county, tract)
     except FileNotFoundError:
         print(f"{stusab} {county} {tract} has no solution. Removing")
-        DB.csfr(f"UPDATE {REIDENT}tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
+        DBMySQL.csfr(dbrecon.auth(), f"UPDATE {REIDENT}tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
     else:
         print(f"{stusab} {county} {tract} = {final_pop}")
-        DB.csfr(f"UPDATE {REIDENT}tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",(final_pop,stusab,county,tract))
+        DBMySQL.csfr(dbrecon.auth(), f"UPDATE {REIDENT}tracts set final_pop=%s where stusab=%s and county=%s and tract=%s",(final_pop,stusab,county,tract))
 
 def final_pop_scan():
     """This should be parallelized"""
-    rows = DB.csfr(f"SELECT stusab, county, tract from {REIDENT}tracts where final_pop is null")
+    rows = DBMySQL.csfr(dbrecon.auth(), f"SELECT stusab, county, tract from {REIDENT}tracts where final_pop is null")
     for row in rows:
         final_pop_scan_sct(row)
 
@@ -88,10 +88,10 @@ if __name__=="__main__":
     if args.clear or args.schema:
         glog = GurobiLogfileParser("tests/model_04001944300.log")
         if args.schema:
-            DB.csfr(f"DROP TABLE IF EXISTS {REIDENT}glog")
-            DB.csfr(glog.sql_schema())
+            DBMySQL.csfr(auth,(f"DROP TABLE IF EXISTS {REIDENT}glog")
+            DBMySQL.csfr(auth,(glog.sql_schema())
         if args.clear:
-            DB.csfr(f"DELETE from {REIDENT}glog")
+            DBMySQL.csfr(auth,(f"DELETE from {REIDENT}glog")
 
     if args.final_pop:
         final_pop_scan()
@@ -102,7 +102,7 @@ if __name__=="__main__":
         exit(0)
 
     if args.validate:
-        bad = DB.csfr(
+        bad = DBMySQL.csfr(auth,(
             f"""
             SELECT t.stusab,t.county,t.tract,t.final_pop,g.pop100
             FROM {REIDENT}tracts t
@@ -113,7 +113,7 @@ if __name__=="__main__":
         for (stusab,county,tract,final_pop,pop100) in bad:
             print(f"{stusab} {county} {tract} {final_pop} != {pop100}")
             if args.rm:
-                DB.csfr(f"""
+                DBMySQL.csfr(auth,(f"""
                 UPDATE {REIDENT}tracts
                 SET lp_start=Null,lp_end=null,sol_start=null,sol_end=null,hostlock=null,final_pop=null
                 where stusab=%s and county=%s and tract=%s

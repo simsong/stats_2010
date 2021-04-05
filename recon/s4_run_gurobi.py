@@ -220,7 +220,7 @@ def run_gurobi_for_county_tract(stusab, county, tract):
 
     sol_filename= dbrecon.SOLFILENAME(stusab=stusab, county=county, tract=tract)
     solgz_filename= sol_filename+".gz"
-    if dbrecon.is_db_done('sol',stusab, county, tract) and dbrecon.dpath_exists(solgz_filename):
+    if dbrecon.is_db_done(auth, SOL,stusab, county, tract) and dbrecon.dpath_exists(solgz_filename):
         logging.warning(f"SOL exists in database and sol file exists: {stusab}{county}{tract}; will not solve")
         return
 

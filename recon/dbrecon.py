@@ -290,10 +290,14 @@ Under spark, we don't use db_start, just db_done.
 """
 
 
-def db_lock(auth, stusab, county, tract):
-    DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s WHERE stusab=%s and county=%s and tract=%s",
-            (hostname(),os.getpid(),stusab,county,tract),
-            rowcount=1)
+def db_lock(auth, stusab, county, tract=None, extra=''):
+    cmd = f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s WHERE stusab=%s and county=%s"
+    args = [hostname(),os.getpid(),stusab,county]
+    if tract:
+        cmd+=" and tract=%s"
+        args.append(tract)
+    cmd+=' '+extra
+    DBMySQL.csfr(auth, cmd, args)
     logging.info(f"db_lock: {hostname()} {sys.argv[0]} {stusab} {county} {tract} ")
 
 def db_unlock(auth,stusab, county, tract):
@@ -308,10 +312,12 @@ def db_unlock_all(auth, hostname):
     :param hostname: the host to clear hostlock, or None for all hosts.
     """
 
-    where = '' if (hostname is None) else f" AND (hostlock = '{hostname}') "
+    hostlock= '1=1' if (hostname is None) else f" (hostlock = '{hostname}') "
 
-    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET lp_start=NULL,hostlock=NULL,lp_host=NULL WHERE (lp_start IS NOT NULL) AND (lp_end IS NULL) """ + where)
-    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL,hostlock=NULL,sol_host=NULL WHERE (sol_start IS NOT NULL) AND (sol_end IS NULL) """ + where)
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET lp_start=NULL,hostlock=NULL,lp_host=NULL WHERE (lp_start IS NOT NULL) AND (lp_end IS NULL) AND {hostlock}")
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL,hostlock=NULL,sol_host=NULL WHERE (sol_start IS NOT NULL) AND (sol_end IS NULL) AND {hostlock}")
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET hostlock=NULL WHERE  {hostlock}")
+    
 
 
 def db_start(auth, what, stusab, county, tract):
@@ -383,7 +389,7 @@ def get_tracts_needing_lp_files(auth, stusab, county):
                         f"""
                         SELECT tract FROM {REIDENT}tracts
                         WHERE (stusab=%s) AND (county=%s) AND (lp_end IS NULL) AND (pop100>0)
-                        """,(stusab,county), debug=True)
+                        """,(stusab,county))
     return [row[0] for row in rows]
     
 def tracts_in_county_ready_to_solve(auth, stusab, county):

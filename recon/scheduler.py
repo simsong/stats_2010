@@ -303,6 +303,10 @@ def run(auth, args):
                 time.sleep(PROCESS_DIE_TIME)
                 continue
 
+        ################################################################
+        ### LP SCHEDULER
+
+
         # See if we can create another process.
         # For stability, we create a max of one LP and one SOL each time through.
 
@@ -318,14 +322,15 @@ def run(auth, args):
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
 
             # We only launch one LP at a time because they take a few minutes to eat up a lot of memory.
-            # We make the entire county at a time
+            # We make the entire county at a time, so we group_by
+            # Ignore those with hostlock, as they are being processed on another system
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
                 SELECT stusab,county,count(*) as tracts,sum(pop100) as pop
                 FROM {REIDENT}tracts 
-                WHERE (lp_start IS NULL) AND  (pop100>0)
+                WHERE (lp_end IS NULL) AND (pop100>0) AND (hostlock IS NULL)
                 GROUP BY state,county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
@@ -344,6 +349,8 @@ def run(auth, args):
                 running.add(p)
                 last_lp_launch = time.time()
 
+        ################################################################
+        ## SOL scheduler.
         ## Evaluate Launching SOLs.
         ## Only evaluate solutions where we have a LP file
 

@@ -333,8 +333,6 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
     """
     assert what in [LP, SOL, CSV]
 
-    print("DB_DONE: start=",start,"clear_start=",clear_start)
-
     cmd  = f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL "
     args = []
 
@@ -349,12 +347,12 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
         args.append(hostname())
         
     if not is_db_done(auth, what, stusab, county, tract):
-        cmd += ",{what}_end=now() "
+        cmd += f",{what}_end=now() "
 
     cmd += " WHERE stusab=%s AND county=%s AND tract=%s"
     args += [stusab,county,tract] 
 
-    DBMySQL.csfr(auth, cmd, args, rowcount=1, debug=True)
+    DBMySQL.csfr(auth, cmd, args, rowcount=1)
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
 def is_db_done(auth, what, stusab, county, tract):
@@ -385,7 +383,7 @@ def get_tracts_needing_lp_files(auth, stusab, county):
                         f"""
                         SELECT tract FROM {REIDENT}tracts
                         WHERE (stusab=%s) AND (county=%s) AND (lp_end IS NULL) AND (pop100>0)
-                        """,(stusab,county))
+                        """,(stusab,county), debug=True)
     return [row[0] for row in rows]
     
 def tracts_in_county_ready_to_solve(auth, stusab, county):

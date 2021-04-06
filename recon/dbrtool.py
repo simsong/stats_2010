@@ -170,21 +170,25 @@ QUERIES = [
               LEFT JOIN
                (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL AND pop100>0 ) d
               ON 1=1
-"""),
+     """),
     ("SOL Files create and  Remaining",
      """SELECT * FROM
              (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) c
-               LEFT JOIN
-              (select count(*) AS sol_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL) d
-        ON 1=1 """),
+              LEFT JOIN
+               (select count(*) AS sol_remaining FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL) d
+              ON 1=1 
+              LEFT JOIN
+               (select count(*) AS sol_ready FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL AND lp_end IS NOT NULL) e
+              ON 1=1
+"""),
 
     ("LP files in progress",
-     """SELECT t.stusab,t.county,t.tract,t.lp_start,t.lp_host,timediff(t.lp_start,now()) AS age,t.hostlock
-     FROM {reident}tracts t WHERE t.pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
+     """SELECT stusab,county,tract,lp_start,lp_host,timediff(lp_start,now()) AS age,hostlock
+     FROM {reident}tracts WHERE pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
 
     ("SOLs in progress",
-     """SELECT t.stusab,t.county,t.tract,t.sol_start,t.sol_host,timediff(t.sol_start,now()) AS age,hostlock
-     FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
+     """SELECT stusab,county,tract,sol_start,sol_host,timediff(sol_start,now()) AS age,hostlock
+     FROM {reident}tracts WHERE pop100>0 AND sol_start IS NOT NULL and SOL_END IS NULL ORDER BY sol_start"""),
 
     ("Number of LP files created in past hour:",
      """select count(*) AS `count`,lp_host FROM {reident}tracts

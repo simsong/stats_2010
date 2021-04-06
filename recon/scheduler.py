@@ -387,7 +387,7 @@ def run(auth, args):
                 """
                 solve_lps = DBMySQL.csfr(auth,cmd,(max_sol_launch,))
                 if (len(solve_lps)==0 and needed_sol>0) or debug:
-                    print(f"2: needed_sol={needed_sol} len(solve_lps)={len(solve_lps)}")
+                    print(f"No LP files ready to solve")
 
                 for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
                     print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))

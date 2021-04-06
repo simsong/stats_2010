@@ -167,7 +167,7 @@ class PSTree():
             try:
                 print("PID{}: {:,} MiB {} children {} ".format(
                     p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
-                subprocess.call(f"ps wwx -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu --ppid={p.pid}".split())
+                subprocess.call(f"ps wwx -o uname,pid,ppid,pcpu,vsz,rss,command --sort=-pcpu --ppid={p.pid}".split())
             except psutil.NoSuchProcess as e:
                 continue
 

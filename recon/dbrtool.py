@@ -158,29 +158,43 @@ QUERIES = [
     ("Completed States:",
      """SELECT DISTINCT(stusab) from {reident}tracts where stusab not in (SELECT DISTINCT(stusab) from {reident}tracts where sol_end is not NULL)"""),
 
-    ("LP Files created and remaining ",
+    ("Files created and remaining ",
      """SELECT * FROM
-             (SELECT COUNT(*) AS lp_created   FROM {reident}tracts   WHERE lp_end IS NOT NULL) a
+              (SELECT COUNT(*) AS lp_created   FROM {reident}tracts   WHERE lp_end IS NOT NULL) a
+
               LEFT JOIN
                (SELECT COUNT(*) AS lp_remaining FROM {reident}tracts  WHERE lp_end IS NULL AND pop100>0 ) b
               ON 1=1
+
               LEFT JOIN
                (SELECT COUNT(*) AS lp_in_process FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND pop100>0 ) c
               ON 1=1
+
               LEFT JOIN
                (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL AND pop100>0 ) d
               ON 1=1
-     """),
-    ("SOL Files create and  Remaining",
-     """SELECT * FROM
-             (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) c
+
               LEFT JOIN
-               (select count(*) AS sol_remaining FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL) d
-              ON 1=1 
-              LEFT JOIN
-               (select count(*) AS sol_ready FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL AND lp_end IS NOT NULL) e
+               (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) e
               ON 1=1
-"""),
+
+              LEFT JOIN
+               (select count(*) AS sol_remaining FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL) f
+              ON 1=1
+
+              LEFT JOIN
+               (select count(*) AS sol_ready FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL AND lp_end IS NOT NULL) g
+              ON 1=1
+
+              LEFT JOIN
+               (SELECT COUNT(*) AS csv_completed FROM {reident}tracts  WHERE csv_end IS NOT NULL AND pop100>0 ) h
+              ON 1=1
+
+              LEFT JOIN
+               (SELECT COUNT(*) AS csv_remaining FROM {reident}tracts  WHERE csv_end IS NULL AND pop100>0 ) i
+              ON 1=1
+
+     """),
 
     ("LP files in progress",
      """SELECT stusab,county,tract,lp_start,lp_host,timediff(lp_start,now()) AS age,hostlock
@@ -646,8 +660,11 @@ if __name__ == "__main__":
         for (k,dicts) in ret['queries'][0][1]:
             print(k)
             for d in dicts:
-                print(json.dumps(d,default=str))
-            print()
+                for (ct,(k,v)) in enumerate(d.items()):
+                    print(f"   {k}: {v}")
+                if ct>1:
+                    print()
+            print('----------------------')
         if args.stusab and args.county and args.tract:
             if args.reident:
                 reidents = [args.reident]

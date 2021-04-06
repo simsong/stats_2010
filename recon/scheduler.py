@@ -334,7 +334,7 @@ def run(auth, args):
             direction = 'DESC' if args.desc else ''
             cmd = f"""
                 SELECT stusab,county,count(*) as tracts,sum(pop100) as pop
-                FROM {REIDENT}tracts 
+                FROM {REIDENT}tracts
                 WHERE (lp_end IS NULL) AND (pop100>0) AND (hostlock IS NULL)
                 GROUP BY state,county
                 ORDER BY pop {direction} LIMIT 1

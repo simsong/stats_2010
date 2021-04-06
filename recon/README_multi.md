@@ -139,6 +139,72 @@ This will require modificaitons to the scheduler so that each tract can be assig
 However, it's probably going to be easier to use each instance for a different state. It would be nice to break up CA and TX, though. So let's make it so the scheduler can run either for a specific state or a specific county
 
 
+Examples
+=========
+
+Status all nodes:
+-------------
+
+```
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $ ./dbrtool.py --cluster
+CORE: ip-10-252-44-156.ite.ti.census.gov 2 days, 19:09, 0 users, load average: 0.00, 0.00, 0.00
+CORE: ip-10-252-47-50.ite.ti.census.gov 12 days, 22:43, 0 users, load average: 0.14, 0.07, 0.06
+idle: ip-10-252-44-147.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.08, 0.06, 0.01
+idle: ip-10-252-44-170.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.00, 0.03, 0.02
+idle: ip-10-252-44-197.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.01, 0.05, 0.02
+idle: ip-10-252-44-59.ite.ti.census.gov 1 day, 15:36, 1 user, load average: 0.27, 0.15, 0.07
+idle: ip-10-252-45-106.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.00, 0.00, 0.00
+idle: ip-10-252-45-143.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.00, 0.02, 0.05
+idle: ip-10-252-45-235.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.00, 0.00, 0.00
+idle: ip-10-252-47-12.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.02, 0.01, 0.00
+idle: ip-10-252-47-202.ite.ti.census.gov 1 day, 15:36, 0 users, load average: 0.00, 0.00, 0.01
+in use: ip-10-252-45-251.ite.ti.census.gov 1 day, 15:36, 4 users, load average: 0.07, 0.10, 0.03
+```
+
+Launch on all available nodes:
+--------------------------------
+
+```
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $ ./dbrtool.py --launch_all --reident orig
+Launch:  ip-10-252-44-197.ite.ti.census.gov
+Launch:  ip-10-252-44-170.ite.ti.census.gov
+Launch:  ip-10-252-47-12.ite.ti.census.gov
+Launch:  ip-10-252-45-106.ite.ti.census.gov
+Launch:  ip-10-252-45-235.ite.ti.census.gov
+Launch:  ip-10-252-44-147.ite.ti.census.gov
+Launch:  ip-10-252-47-202.ite.ti.census.gov
+Launch:  ip-10-252-44-59.ite.ti.census.gov
+Launch:  ip-10-252-45-143.ite.ti.census.gov
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $
+```
+
+This:
+1. Logs into the idle nodes.
+2. Does a new checkout of `stats_2010`
+3. Runs scheduler.py for `--reident orig` and `--step3` and `--step4`, which kills any running stragglers.
+
+Add `--force` to go after all nodes.
+
+
+After a few minutes, you should see this:
+```
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $ ./dbrtool.py --cluster
+CORE: ip-10-252-44-156.ite.ti.census.gov 2 days, 19:22, 0 users, load average: 0.01, 0.04, 0.01
+CORE: ip-10-252-47-50.ite.ti.census.gov 12 days, 22:56, 0 users, load average: 0.00, 0.00, 0.00
+in use: ip-10-252-44-147.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 50.89, 50.28, 29.26
+in use: ip-10-252-44-170.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 51.79, 48.62, 28.14
+in use: ip-10-252-44-197.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 57.27, 52.17, 30.20
+in use: ip-10-252-44-59.ite.ti.census.gov 1 day, 15:49, 1 user, load average: 52.77, 50.11, 29.08
+in use: ip-10-252-45-106.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 49.90, 48.73, 28.50
+in use: ip-10-252-45-143.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 57.96, 50.30, 29.10
+in use: ip-10-252-45-235.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 51.72, 49.80, 29.09
+in use: ip-10-252-45-251.ite.ti.census.gov 1 day, 15:49, 4 users, load average: 0.00, 0.01, 0.00
+in use: ip-10-252-47-12.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 49.76, 49.12, 28.67
+in use: ip-10-252-47-202.ite.ti.census.gov 1 day, 15:49, 0 users, load average: 54.14, 49.67, 28.95
+```
+
+
+
 Monitoring
 ==========
 

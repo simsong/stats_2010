@@ -21,7 +21,7 @@ from os.path import dirname,basename,abspath
 import gurobipy
 
 import dbrecon
-from dbrecon import DB,dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT,REIDENT,ZCAT,GZIP,GZIP_OPT
+from dbrecon import DBMySQL,dopen,dmakedirs,dsystem,dpath_exists,GB,dgetsize,dpath_expand,MY_DIR,dpath_unlink,S3ZPUT,S3ZCAT,REIDENT,ZCAT,GZIP,GZIP_OPT,SOL
 
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
@@ -85,7 +85,7 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
 
     # make sure output directory exists
     dbrecon.dmakedirs( dirname( sol_filename))
-    dbrecon.db_start('sol', stusab, county, tract)
+    dbrecon.db_start( auth, SOL, stusab, county, tract)
 
     try:
         customer     = dbrecon.get_config_str('gurobi','customer')
@@ -165,7 +165,7 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
             cmd = [ GZIP, GZIP_OPT, sol_filename]
         subprocess.check_call(cmd)
 
-        dbrecon.db_done(auth, 'sol', stusab, county, tract) # indicate we have a solution
+        dbrecon.db_done(auth, SOL, stusab, county, tract) # indicate we have a solution
 
         # Save model information in the database
         for name in MODEL_ATTRS:
@@ -220,7 +220,7 @@ def run_gurobi_for_county_tract(stusab, county, tract):
 
     sol_filename= dbrecon.SOLFILENAME(stusab=stusab, county=county, tract=tract)
     solgz_filename= sol_filename+".gz"
-    if dbrecon.is_db_done('sol',stusab, county, tract) and dbrecon.dpath_exists(solgz_filename):
+    if dbrecon.is_db_done(auth, SOL,stusab, county, tract) and dbrecon.dpath_exists(solgz_filename):
         logging.warning(f"SOL exists in database and sol file exists: {stusab}{county}{tract}; will not solve")
         return
 
@@ -270,19 +270,13 @@ def run_gurobi_for_county(stusab, county, tracts):
     assert county is not None
     auth = dbrecon.auth()       # will not be used in subprocesses
     if (tracts==[]) or (tracts==['all']):
-        rows = DBMySQL.csfr(auth,
-            f"""
-            SELECT t.tract
-            FROM {REIDENT}tracts LEFT JOIN {REIDENT}geo g ON (t.stusab=g.stusab and t.county=g.county and t.tract=g.tract)
-            WHERE (t.lp_end IS NOT NULL) AND (t.sol_end IS NULL) AND (t.stusab=%s) AND (t.county=%s) AND (g.sumlev='140') and (g.pop100>0)
-            """, (stusab, county))
-        tracts = [row[0] for row in rows]
+        tracts = dbrecon.tracts_in_county_ready_to_solve(auth, stusab, county)
         logging.info(f"Tracts require solving in {stusab} {county}: {tracts}")
         if tracts==[]:
             # No tracts. Report if there are tracts in county missing LP files
-            rows = DBMySQL.csfr(auth,f"SELECT tract FROM {REIDENT}tracts WHERE (lp_end IS NULL) AND stusab=%s AND county=%s",(stusab,county))
-            if rows:
-                logging.warning(f"run_gurobi_for_county({stusab},{county}): {len(rows)} tracts do not have LP files")
+            needed = dbrecon.get_tracts_needing_lp_files(auth, stusab, county)
+            if needed:
+                logging.warning(f"run_gurobi_for_county({stusab},{county}): {len(needed)} tracts do not have LP files")
             return
 
     tracttuples = [(stusab, county, tract) for tract in tracts]

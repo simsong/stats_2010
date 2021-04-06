@@ -7,11 +7,9 @@ import sys
 import datetime
 import time
 
-sys.path.append( os.path.join(os.path.dirname(__file__),".."))
-
 import dbrecon
 import ctools.tydoc as tydoc
-from dbrecon import DB
+from dbrecon import DBMySQL
 
 class Format:
     END = '\033[0m'
@@ -58,7 +56,7 @@ if __name__=="__main__":
 
     for (label,desc,query) in queries1:
         print(query)
-        rows = DB.csfr(query)
+        rows = DBMySQL.csfr(dbrecon.auth(), query)
         if not query.upper().startswith("SELECT"):
             continue
         if len(rows)==0:

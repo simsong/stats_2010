@@ -33,9 +33,9 @@ from os.path import dirname,basename,abspath
 # Set up path, among other things
 import dbrecon
 
-from dbrecon import dopen,dmakedirs,dsystem
+from dbrecon import dopen,dmakedirs,dsystem,hostname
 from dfxml.writer import DFXMLWriter
-from dbrecon import DB,LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT
+from dbrecon import LP,SOL,MB,GB,MiB,GiB,get_config_int,REIDENT,LP
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
 import ctools.cspark as cspark
@@ -55,8 +55,6 @@ DEBUG  - enable/disable debugging
 SQL    - show/hide SQL
 """
 
-
-HOSTNAME = dbrecon.hostname()
 
 # Tuning parameters
 
@@ -117,7 +115,7 @@ def report_load_memory(auth):
             INSERT INTO sysload (t, host, min1, min5, min15, freegb)
             VALUES (NOW(), %s, %s, %s, %s, %s) ON DUPLICATE KEY update min1=min1
             """,
-            [HOSTNAME] + list(os.getloadavg()) + [get_free_mem()//GiB])
+            [hostname()] + list(os.getloadavg()) + [get_free_mem()//GiB])
         last_report = time.time()
     return free_mem
 
@@ -169,7 +167,7 @@ class PSTree():
             try:
                 print("PID{}: {:,} MiB {} children {} ".format(
                     p.pid, int(self.total_rss(p)/MiB), len(p.children(recursive=True)), pcmd(p)))
-                subprocess.call(f"ps wwx -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu --ppid={p.pid}".split())
+                subprocess.call(f"ps wwx -o uname,pid,ppid,pcpu,vsz,rss,command --sort=-pcpu --ppid={p.pid}".split())
             except psutil.NoSuchProcess as e:
                 continue
 
@@ -193,6 +191,7 @@ def run(auth, args):
     check_sol       = args.step4
     needed_lp       = 0
     needed_sol      = 0
+    limit           = args.limit
     os.set_blocking(sys.stdin.fileno(), False)
 
     # If neither step3 nor step4 were specified, run both!
@@ -206,6 +205,10 @@ def run(auth, args):
 
     stop_requested = False
     while True:
+        if (limit is not None) and limit < 1:
+            print("Limit reached. Requesting stop")
+            stop_requested = True
+            limit = None
         command = sys.stdin.read(256).strip().lower()
         if command!='':
             print("COMMAND:",command)
@@ -218,7 +221,7 @@ def run(auth, args):
             elif command=='stop':
                 stop_requested = True
             elif command.startswith('ps'):
-                subprocess.call("ps ww -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu".split())
+                subprocess.call("ps ww -o uname,pid,ppid,pcpu,vsz,rss,command --sort=-pcpu".split())
             elif command=='list':
                 last_ps_list = 0
             elif command=='uptime':
@@ -265,11 +268,11 @@ def run(auth, args):
         SHOW_PS = False
         with PSTree(running) as ps:
             from unicodedata import lookup
-            if ((time.time() > last_ps_list + PS_LIST_FREQUENCY) and SHOW_PS) or (last_ps_list==0):
+            if ((time.time() > last_ps_list + PS_LIST_FREQUENCY) and SHOW_PS) or (last_ps_list==0) or (stop_requested):
                 print("")
                 print(lookup('BLACK DOWN-POINTING TRIANGLE')*64)
                 print("{}: {} Free Memory: {} GiB  {}% Load: {}".format(
-                    HOSTNAME,
+                    hostname(),
                     time.asctime(), free_mem//GiB, psutil.virtual_memory().percent, os.getloadavg()))
                 print(f"Remaining LP: {remain['lp']} Remaining SOL: {remain['sol']}")
                 print("Running processes:")
@@ -290,7 +293,7 @@ def run(auth, args):
                 p = ps.youngest()
                 logging.warning("KILL "+pcmd(p))
                 DBMySQL.csfr(auth,f"INSERT INTO errors (host,file,error) VALUES (%s,%s,%s)",
-                                (HOSTNAME,__file__,"Free memory down to {}".format(get_free_mem())))
+                                (hostname(),__file__,"Free memory down to {}".format(get_free_mem())))
                 kill_tree(p)
                 running.remove(p)
                 continue
@@ -304,6 +307,10 @@ def run(auth, args):
                 print(f"Waiting for {len(running)} processes to stop...")
                 time.sleep(PROCESS_DIE_TIME)
                 continue
+
+        ################################################################
+        ### LP SCHEDULER
+
 
         # See if we can create another process.
         # For stability, we create a max of one LP and one SOL each time through.
@@ -320,18 +327,19 @@ def run(auth, args):
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
 
             # We only launch one LP at a time because they take a few minutes to eat up a lot of memory.
-            # We make the entire county at a time
+            # We make the entire county at a time, so we group_by
+            # Ignore those with hostlock, as they are being processed on another system
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
-                SELECT t.stusab,t.county,count(*) as tracts,sum(t.pop100) as pop
-                FROM {REIDENT}tracts t
-                WHERE (t.lp_end IS NULL) AND (t.hostlock IS NULL) AND (t.pop100>0)
-                GROUP BY t.state,t.county
+                SELECT stusab,county,count(*) as tracts,sum(pop100) as pop
+                FROM {REIDENT}tracts 
+                WHERE (lp_end IS NULL) AND (pop100>0) AND (hostlock IS NULL)
+                GROUP BY state,county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
-            make_lps = DBMySQL.csfr(auth, cmd)
+            make_lps = DBMySQL.csfr(auth, cmd, debug=True)
             if (len(make_lps)==0 and needed_lp>0) or debug:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
@@ -345,7 +353,13 @@ def run(auth, args):
                 p = prun(cmd)
                 running.add(p)
                 last_lp_launch = time.time()
+                if limit is not None:
+                    limit -= 1
+                    if limit==0:
+                        break
 
+        ################################################################
+        ## SOL scheduler.
         ## Evaluate Launching SOLs.
         ## Only evaluate solutions where we have a LP file
 
@@ -361,7 +375,7 @@ def run(auth, args):
         if get_free_mem()>MIN_FREE_MEM_FOR_SOL and needed_sol>0:
             # Run any solvers that we have room for
             # As before, we only launch one at a time
-            # Solve the biggest first, because they take the most time
+            # Always solve the biggest first, because they take the most time, and don't seem to take dramatically more memory.
 
             if last_sol_launch + MIN_SOL_WAIT > time.time():
                 print(f"Can't launch again for {last_sol_launch+MIN_SOL_WAIT-time.time()} seconds")
@@ -378,7 +392,7 @@ def run(auth, args):
                 for (ct,(stusab,county,tract)) in enumerate(solve_lps,1):
                     print("LAUNCHING SOLVE {} {} {} ({}/{}) {}".format(stusab,county,tract,ct,len(solve_lps),time.asctime()))
                     gurobi_threads = get_config_int('gurobi','threads')
-                    dbrecon.db_lock(stusab,county,tract)
+                    dbrecon.db_lock(auth, stusab,county,tract)
                     stusab         = stusab.lower()
                     cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
                     print("$ "+" ".join(cmd))
@@ -386,6 +400,10 @@ def run(auth, args):
                     running.add(p)
                     time.sleep(PYTHON_START_TIME)
                     last_sol_launch = time.time()
+                    if limit is not None:
+                        limit -= 1
+                        if limit==0:
+                            break
 
         time.sleep( get_config_int('run', 'sleep_time' ) )
         # and repeat
@@ -393,43 +411,6 @@ def run(auth, args):
 
 ################################################################
 ## killer stuff follows
-
-SHOW_RUNNING=False
-def set_none_running(auth, hostname):
-    """Tell the database that there are no processes running, either on this host or on all hosts"""
-
-    hostlock = '' if hostname is None else f" AND (hostlock = '{hostname}') "
-
-    if SHOW_RUNNING:
-        for (stusab,county,tract) in  DBMySQL.csfr(auth,
-                f"""
-                SELECT stusab,county,tract
-                FROM {REIDENT}tracts
-                WHERE lp_start IS NOT NULL AND lp_end IS NULL
-                """ + hostlock):
-            print("CLEARINING LP MAKING ",stusab,county,tract)
-    DBMySQL.csfr(auth,
-        f"""
-        UPDATE {REIDENT}tracts
-        SET lp_start=NULL
-        WHERE lp_start IS NOT NULL AND lp_end IS NULL
-        """ + hostlock)
-
-    if SHOW_RUNNING:
-        for (stusab,county,tract) in DBMySQL.csfr(auth,
-                f"""
-                SELECT stusab,county,tract
-                FROM {REIDENT}tracts
-                WHERE sol_start IS NOT NULL AND sol_end IS NULL
-                """ + hostlock):
-            print("CLEARING SOL MAKING",stusab,county,tract)
-    DBMySQL.csfr(auth,
-        f"""
-        UPDATE {REIDENT}tracts
-        SET sol_start=NULL
-        WHERE sol_start IS NOT NULL AND sol_end IS NULL
-        """ + hostlock)
-    print("Resume...")
 
 def kill_running_s3_s4():
     """Look for any running instances of s3 or s4. If they are found, print and abort"""
@@ -443,6 +424,8 @@ def kill_running_s3_s4():
             print("KILL PID{} {}".format(p.pid, " ".join(cmd)))
             p.kill()
             p.wait()
+    dbrecon.db_unlock_all(auth,hostname())
+
 
 ################################################################
 ## Spark support
@@ -760,12 +743,11 @@ if __name__=="__main__":
         clean(auth)
 
     elif args.set_none_running:
-        set_none_running(auth,HOSTNAME)
+        dbrecon.db_unlock_all(auth,hostname())
 
     elif args.set_none_running_anywhere:
-        set_none_running(auth, None)
+        dbrecon.db_unlock_all(auth, None)
 
     else:
         kill_running_s3_s4()
-        set_none_running(auth,HOSTNAME)
         run(auth, args)

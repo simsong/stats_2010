@@ -28,7 +28,7 @@ import datetime
 
 import dbrecon
 
-from dbrecon import DB,GB,MB
+from dbrecon import DBMySQL,GB,MB,LP,SOL,CSV
 from dbrecon import validate_lpfile,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
 from ctools.total_size import total_size
 from ctools.dbfile import DBMySQL,DBMySQLAuth
@@ -190,6 +190,8 @@ def update_constraints(f, level, n_con, summary_nums, geo_id, debug=False):
     return n_con
 
 
+
+
 class LPTractBuilder:
     """Build the LP files for a given tract"""
 
@@ -200,7 +202,6 @@ class LPTractBuilder:
         self.tract      = tract
         self.sf1_tract_data = sf1_tract_data
         self.sf1_block_data = sf1_block_data
-        self.auth       = dbrecon.auth()
         self.debug      = debug
         self.db_start_at_end = False # run db_start at the end of the tract building, rather than the start
         self.output     = output
@@ -209,7 +210,7 @@ class LPTractBuilder:
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         if not self.debug:
-            DBMySQL.csfr(self.auth,
+            DBMySQL.csfr(dbrecon.auth(),
                          f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
                          (self.stusab,self.county,self.tract),rowcount=1)
 
@@ -374,8 +375,8 @@ class LPTractBuilder:
 
             # Check to see if file is already finished, indicate that, and indicate that I don't know when it was started
             if dbrecon.validate_lpfile(lpfilenamegz):
-                logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} is properly terminated.")
-                dbrecon.db_done(self.auth,'lp',self.stusab, self.county, self.tract, clear_start=True)
+                logging.info(f"{lpfilenamegz} at {state_code}{self.county}{self.tract} validates.")
+                dbrecon.db_done(dbrecon.auth(),'lp',self.stusab, self.county, self.tract, clear_start=True)
                 return
 
             # If outputting to S3, make the output file a named temp
@@ -395,7 +396,7 @@ class LPTractBuilder:
             # db_start_at_end prevents the database from being updated with db_start() until the LP file is created.
             # We do that under spark.
             if (self.db_start_at_end==False):
-                dbrecon.db_start('lp', self.stusab, self.county, self.tract)
+                dbrecon.db_start(dbrecon.auth(), LP, self.stusab, self.county, self.tract)
             atexit.register(self.db_fail)
 
         if self.dry_run:
@@ -467,9 +468,10 @@ class LPTractBuilder:
             return
 
         # otherwise, rename the file (which may upload it to s3), and update the databse
+
         dbrecon.drename(outfilename, lpfilenamegz)
-        dbrecon.db_done(self.auth,'lp', self.stusab, self.county, self.tract, start=start)
-        DBMySQL.csfr(self.auth, f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
+        dbrecon.db_done(dbrecon.auth(), LP, self.stusab, self.county, self.tract, start=start)
+        DBMySQL.csfr(dbrecon.auth(), f"UPDATE {REIDENT}tracts SET lp_gb=%s WHERE stusab=%s AND county=%s AND tract=%s",
                      (dbrecon.maxrss()//GB,self.stusab, self.county, self.tract))
 
         atexit.unregister(self.db_fail)
@@ -500,7 +502,7 @@ def build_tract_lp_tuple(tracttuple):
     except MemoryError as e:
         logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
         cmd = f"""
-        UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL
+        UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL,lp_host=NULL
         WHERE stusab=%s and county=%s and tract=%s
         """
         DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
@@ -525,13 +527,8 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
     if force:
         tracts = [tractgen]
     else:
-        rows = DBMySQL.csfr(auth,
-                            f"""
-                            SELECT t.tract FROM {REIDENT}tracts t
-                            WHERE (t.stusab=%s) AND (t.county=%s) AND (t.lp_end IS NULL) AND (t.pop100>0)
-                            """,(stusab,county))
-        tracts_needing_lp_files = [row[0] for row in rows]
-        logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)
+        tracts_needing_lp_files = dbrecon.get_tracts_needing_lp_files(auth, stusab, county)
+        logging.info("tracts_needing_lp_files (%s,%s): %s",stusab,county,tracts_needing_lp_files)
         if tractgen==ALL:
             if len(tracts_needing_lp_files)==0:
                 logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
@@ -547,7 +544,7 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
                     remove_lpfile(auth, stusab, county, tractgen)
                 else:
                     logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
-                                    f"- tract {tractgen} not in tracts needing lp files: {' '.join(tracts_needing_lp_files)}")
+                                    f"- tract {tractgen} not in tracts needing lp files: {tracts_needing_lp_files}")
                     logging.warning(f"Use --force to force")
                     return
             tracts = [tractgen]
@@ -762,7 +759,6 @@ if __name__=="__main__":
     parser.add_argument("county", help="3-digit county code")
     parser.add_argument("tract",  help="If provided, just synthesize for this specific 6-digit tract code. Otherwise do all in the county",nargs="?")
 
-    DB.quiet = True
     args     = parser.parse_args()
     config   = dbrecon.setup_logging_and_get_config(args=args,prefix="03pan")
     args.stusab = args.stusab.lower()
@@ -788,14 +784,10 @@ if __name__=="__main__":
     auth = DBMySQLAuth.FromConfig(os.environ)
 
     # If we are doing a specific tract
+    if not args.debug:
+        dbrecon.db_lock(auth, args.stusab, args.county, args.tract, extra=' and lp_end is NULL')
     if args.tract:
-        if not args.debug:
-            dbrecon.db_lock(args.stusab, args.county, args.tract)
         make_state_county_files(auth, args.stusab, args.county, args.tract, debug=args.debug, force=args.force, output=args.output, dry_run=args.dry_run, sf1_vars = dbrecon.sf1_vars())
-
     else:
-        # We are doing a single stusab/county pair. We may do each tract multithreaded. Lock the tracts...
-        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
-                (dbrecon.hostname(),os.getpid(),args.stusab,args.county))
         make_state_county_files(auth, args.stusab, args.county, debug=args.debug, force=args.force, output=args.output, dry_run=args.dry_run, sf1_vars = dbrecon.sf1_vars())
     logging.info("s3_pandas_synth_lp_files.py finished")

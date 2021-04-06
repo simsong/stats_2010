@@ -221,7 +221,7 @@ def run(auth, args):
             elif command=='stop':
                 stop_requested = True
             elif command.startswith('ps'):
-                subprocess.call("ps ww -o uname,pid,ppid,pcpu,etimes,vsz,rss,command --sort=-pcpu".split())
+                subprocess.call("ps ww -o uname,pid,ppid,pcpu,vsz,rss,command --sort=-pcpu".split())
             elif command=='list':
                 last_ps_list = 0
             elif command=='uptime':

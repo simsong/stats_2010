@@ -308,6 +308,10 @@ def run(auth, args):
                 time.sleep(PROCESS_DIE_TIME)
                 continue
 
+        ################################################################
+        ### LP SCHEDULER
+
+
         # See if we can create another process.
         # For stability, we create a max of one LP and one SOL each time through.
 
@@ -323,18 +327,19 @@ def run(auth, args):
         if (get_free_mem()>MIN_FREE_MEM_FOR_LP) and (needed_lp>0) and (last_lp_launch + MIN_LP_WAIT < time.time()):
 
             # We only launch one LP at a time because they take a few minutes to eat up a lot of memory.
-            # We make the entire county at a time
+            # We make the entire county at a time, so we group_by
+            # Ignore those with hostlock, as they are being processed on another system
             if last_lp_launch + MIN_LP_WAIT > time.time():
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
                 SELECT stusab,county,count(*) as tracts,sum(pop100) as pop
                 FROM {REIDENT}tracts 
-                WHERE (lp_start IS NULL) AND  (pop100>0)
+                WHERE (lp_end IS NULL) AND (pop100>0) AND (hostlock IS NULL)
                 GROUP BY state,county
                 ORDER BY pop {direction} LIMIT 1
                 """.format()
-            make_lps = DBMySQL.csfr(auth, cmd)
+            make_lps = DBMySQL.csfr(auth, cmd, debug=True)
             if (len(make_lps)==0 and needed_lp>0) or debug:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
@@ -353,6 +358,8 @@ def run(auth, args):
                     if limit==0:
                         break
 
+        ################################################################
+        ## SOL scheduler.
         ## Evaluate Launching SOLs.
         ## Only evaluate solutions where we have a LP file
 

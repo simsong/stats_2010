@@ -528,7 +528,7 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
         tracts = [tractgen]
     else:
         tracts_needing_lp_files = dbrecon.get_tracts_needing_lp_files(auth, stusab, county)
-        logging.info("tracts_needing_lp_files: %s",tracts_needing_lp_files)
+        logging.info("tracts_needing_lp_files (%s,%s): %s",stusab,county,tracts_needing_lp_files)
         if tractgen==ALL:
             if len(tracts_needing_lp_files)==0:
                 logging.warning(f"make_state_county_files({stusab},{county},{tractgen}) "
@@ -784,14 +784,10 @@ if __name__=="__main__":
     auth = DBMySQLAuth.FromConfig(os.environ)
 
     # If we are doing a specific tract
+    if not args.debug:
+        dbrecon.db_lock(auth, args.stusab, args.county, args.tract, extra=' and lp_end is NULL')
     if args.tract:
-        if not args.debug:
-            dbrecon.db_lock(auth, args.stusab, args.county, args.tract)
         make_state_county_files(auth, args.stusab, args.county, args.tract, debug=args.debug, force=args.force, output=args.output, dry_run=args.dry_run, sf1_vars = dbrecon.sf1_vars())
-
     else:
-        # We are doing a single stusab/county pair. We may do each tract multithreaded. Lock the tracts...
-        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s where stusab=%s and county=%s and lp_end IS NULL",
-                (dbrecon.hostname(),os.getpid(),args.stusab,args.county))
         make_state_county_files(auth, args.stusab, args.county, debug=args.debug, force=args.force, output=args.output, dry_run=args.dry_run, sf1_vars = dbrecon.sf1_vars())
     logging.info("s3_pandas_synth_lp_files.py finished")

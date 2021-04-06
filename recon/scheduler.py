@@ -191,6 +191,7 @@ def run(auth, args):
     check_sol       = args.step4
     needed_lp       = 0
     needed_sol      = 0
+    limit           = args.limit
     os.set_blocking(sys.stdin.fileno(), False)
 
     # If neither step3 nor step4 were specified, run both!
@@ -204,6 +205,10 @@ def run(auth, args):
 
     stop_requested = False
     while True:
+        if (limit is not None) and limit < 1:
+            print("Limit reached. Requesting stop")
+            stop_requested = True
+            limit = None
         command = sys.stdin.read(256).strip().lower()
         if command!='':
             print("COMMAND:",command)
@@ -263,7 +268,7 @@ def run(auth, args):
         SHOW_PS = False
         with PSTree(running) as ps:
             from unicodedata import lookup
-            if ((time.time() > last_ps_list + PS_LIST_FREQUENCY) and SHOW_PS) or (last_ps_list==0):
+            if ((time.time() > last_ps_list + PS_LIST_FREQUENCY) and SHOW_PS) or (last_ps_list==0) or (stop_requested):
                 print("")
                 print(lookup('BLACK DOWN-POINTING TRIANGLE')*64)
                 print("{}: {} Free Memory: {} GiB  {}% Load: {}".format(
@@ -348,6 +353,10 @@ def run(auth, args):
                 p = prun(cmd)
                 running.add(p)
                 last_lp_launch = time.time()
+                if limit is not None:
+                    limit -= 1
+                    if limit==0:
+                        break
 
         ################################################################
         ## SOL scheduler.
@@ -391,6 +400,10 @@ def run(auth, args):
                     running.add(p)
                     time.sleep(PYTHON_START_TIME)
                     last_sol_launch = time.time()
+                    if limit is not None:
+                        limit -= 1
+                        if limit==0:
+                            break
 
         time.sleep( get_config_int('run', 'sleep_time' ) )
         # and repeat

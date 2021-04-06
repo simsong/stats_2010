@@ -168,9 +168,15 @@ QUERIES = [
                (SELECT COUNT(*) AS lp_in_process FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND pop100>0 ) c
               ON 1=1
               LEFT JOIN
-               (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL AND pop100>0 ) d
+               (SELECT COUNT(*) AS csv_completed FROM {reident}tracts  WHERE csv_end IS NOT NULL AND pop100>0 ) d
               ON 1=1
-"""),
+              LEFT JOIN
+               (SELECT COUNT(*) AS csv_remaining FROM {reident}tracts  WHERE csv_end IS NULL AND pop100>0 ) e
+              ON 1=1
+              LEFT JOIN
+               (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL AND pop100>0 ) f
+              ON 1=1
+      """),
     ("SOL Files create and  Remaining",
      """SELECT * FROM
              (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) c
@@ -642,8 +648,11 @@ if __name__ == "__main__":
         for (k,dicts) in ret['queries'][0][1]:
             print(k)
             for d in dicts:
-                print(json.dumps(d,default=str))
-            print()
+                for (ct,(k,v)) in enumerate(d.items()):
+                    print(f"   {k}: {v}")
+                if ct>1:
+                    print()
+            print('----------------------')
         if args.stusab and args.county and args.tract:
             if args.reident:
                 reidents = [args.reident]

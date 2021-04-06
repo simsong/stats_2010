@@ -373,7 +373,7 @@ def run(auth, args):
             else:
                 cmd = f"""
                 SELECT stusab,county,tract FROM {REIDENT}tracts
-                WHERE (sol_start IS NULL) AND (lp_end IS NOT NULL) 
+                WHERE (sol_end IS NULL) AND (lp_end IS NOT NULL) AND (hostlock IS NULL)
                 ORDER BY pop100 desc LIMIT %s
                 """
                 solve_lps = DBMySQL.csfr(auth,cmd,(max_sol_launch,))

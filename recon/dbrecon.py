@@ -291,6 +291,14 @@ Under spark, we don't use db_start, just db_done.
 
 
 def db_lock(auth, stusab, county, tract=None, extra=''):
+    """Sets the hostlock column for a stusab/county/[tract] so that the same combination won't be run on another host
+    :param auth: database authentication
+    :param stusab: state
+    :param county: county
+    :param tract: tract to lock, or None to lock all tracts
+    :param extra: extra SQL to add
+    """
+    
     cmd = f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s WHERE stusab=%s and county=%s"
     args = [hostname(),os.getpid(),stusab,county]
     if tract:

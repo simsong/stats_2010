@@ -158,39 +158,51 @@ QUERIES = [
     ("Completed States:",
      """SELECT DISTINCT(stusab) from {reident}tracts where stusab not in (SELECT DISTINCT(stusab) from {reident}tracts where sol_end is not NULL)"""),
 
-    ("LP Files created and remaining ",
+    ("Files created and remaining ",
      """SELECT * FROM
-             (SELECT COUNT(*) AS lp_created   FROM {reident}tracts   WHERE lp_end IS NOT NULL) a
+              (SELECT COUNT(*) AS lp_created   FROM {reident}tracts   WHERE lp_end IS NOT NULL) a
+
               LEFT JOIN
                (SELECT COUNT(*) AS lp_remaining FROM {reident}tracts  WHERE lp_end IS NULL AND pop100>0 ) b
               ON 1=1
+
               LEFT JOIN
                (SELECT COUNT(*) AS lp_in_process FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND pop100>0 ) c
               ON 1=1
+
               LEFT JOIN
-               (SELECT COUNT(*) AS csv_completed FROM {reident}tracts  WHERE csv_end IS NOT NULL AND pop100>0 ) d
+               (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL AND pop100>0 ) d
               ON 1=1
+
               LEFT JOIN
-               (SELECT COUNT(*) AS csv_remaining FROM {reident}tracts  WHERE csv_end IS NULL AND pop100>0 ) e
+               (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) e
               ON 1=1
+
               LEFT JOIN
-               (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL AND pop100>0 ) f
+               (select count(*) AS sol_remaining FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL) f
               ON 1=1
-      """),
-    ("SOL Files create and  Remaining",
-     """SELECT * FROM
-             (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) c
-               LEFT JOIN
-              (select count(*) AS sol_remaining FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_end is NULL) d
-        ON 1=1 """),
+
+              LEFT JOIN
+               (select count(*) AS sol_ready FROM {reident}tracts WHERE pop100>0 AND sol_end is NULL AND lp_end IS NOT NULL) g
+              ON 1=1
+
+              LEFT JOIN
+               (SELECT COUNT(*) AS csv_completed FROM {reident}tracts  WHERE csv_end IS NOT NULL AND pop100>0 ) h
+              ON 1=1
+
+              LEFT JOIN
+               (SELECT COUNT(*) AS csv_remaining FROM {reident}tracts  WHERE csv_end IS NULL AND pop100>0 ) i
+              ON 1=1
+
+     """),
 
     ("LP files in progress",
-     """SELECT t.stusab,t.county,t.tract,t.lp_start,t.lp_host,timediff(t.lp_start,now()) AS age,t.hostlock
-     FROM {reident}tracts t WHERE t.pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
+     """SELECT stusab,county,tract,lp_start,lp_host,timediff(lp_start,now()) AS age,hostlock
+     FROM {reident}tracts WHERE pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
 
     ("SOLs in progress",
-     """SELECT t.stusab,t.county,t.tract,t.sol_start,t.sol_host,timediff(t.sol_start,now()) AS age,hostlock
-     FROM {reident}tracts t WHERE t.pop100>0 AND t.sol_start IS NOT NULL and SOL_END IS NULL ORDER BY t.sol_start"""),
+     """SELECT stusab,county,tract,sol_start,sol_host,timediff(sol_start,now()) AS age,hostlock
+     FROM {reident}tracts WHERE pop100>0 AND sol_start IS NOT NULL and SOL_END IS NULL ORDER BY sol_start"""),
 
     ("Number of LP files created in past hour:",
      """select count(*) AS `count`,lp_host FROM {reident}tracts

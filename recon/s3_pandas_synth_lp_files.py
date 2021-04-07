@@ -25,11 +25,12 @@ import tempfile
 import subprocess
 import atexit
 import datetime
+import json
 
 import dbrecon
 
-from dbrecon import DBMySQL,GB,MB,LP,SOL,CSV
-from dbrecon import validate_lpfile,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile,REIDENT
+from dbrecon import DBMySQL,GB,MB,LP,SOL,CSV,REIDENT
+from dbrecon import validate_lpfile,LPFILENAMEGZ,dopen,dpath_expand,dmakedirs,LPDIR,dpath_exists,dpath_unlink,mem_info,dgetsize,remove_lpfile
 from ctools.total_size import total_size
 from ctools.dbfile import DBMySQL,DBMySQLAuth
 
@@ -507,6 +508,18 @@ def build_tract_lp_tuple(tracttuple):
         """
         DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
 
+def tractinfo(auth, stusab, county, tract):
+    sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )
+    if not dpath_exists(sf1_tract_data_file):
+        logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {stusab} {county} ")
+        return
+
+    print("sf1_tract_data_file:",sf1_tract_data_file)
+    sf1_tract_reader    = csv.DictReader(dopen( sf1_tract_data_file,'r'))
+    for (ct,s) in enumerate(sf1_tract_reader):
+        print(f"ct={ct} columns={len(s)} s['STATE']={s['STATE']}")
+
+
 """Support for multi-threading. tracttuple contains the stusab, county, tract, and sf1_tract_dict"""
 def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, db_start_at_end=False, force=None, output=None, dry_run=None, reident=None, sf1_vars):
     """
@@ -515,12 +528,11 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
     Consults the database to see which files need to be rebuilt, and only builds those files.
     For the large counties, this can take > 350GB
     """
-    global REIDENT
     assert (stusab[0].isalpha()) and (len(stusab)==2)
     assert (county[0].isdigit()) and (len(county)==3)
     stusab = stusab.lower()     # make sure it is lower case
     if reident:
-        REIDENT = reident
+        dbrecon.set_reident(REIDENT)
     logging.info(f"make_state_county_files({stusab},{county},{tractgen})")
 
     # Find the tracts in this county that do not yet have LP files
@@ -554,7 +566,6 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
     ### Has the variables and the collapsing values we want (e.g, to collapse race, etc)
     ### These data frames are all quite small
 
-
     assert len(sf1_vars) > 0
 
     make_attributes_categories(sf1_vars)
@@ -565,21 +576,12 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
     ### Read the actual data -- reformatted sf1.
     ### These files are not that large
 
-    try:
-        sf1_block_data_file = dpath_expand( dbrecon.SF1_BLOCK_DATA_FILE(stusab=stusab,county=county) )
-        sf1_block_reader = csv.DictReader(dopen( sf1_block_data_file,'r'))
-    except FileNotFoundError as e:
-        print(e)
+    sf1_block_data_file = dpath_expand( dbrecon.SF1_BLOCK_DATA_FILE(stusab=stusab,county=county) )
+    if not dpath_exists(sf1_block_data_file):
         logging.error(f"ERROR. NO BLOCK DATA FILE {sf1_block_data_file} for {stusab} {county} ")
         return
 
-    try:
-        sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )
-        sf1_tract_reader    = csv.DictReader(dopen( sf1_tract_data_file,'r'))
-    except FileNotFoundError as e:
-        print(e)
-        logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {stusab} {county} ")
-        return
+    sf1_block_reader    = csv.DictReader(dopen( sf1_block_data_file,'r'))
 
     ## make sf1_block_list, looks like this:
     ##                   geoid  tablevar  value
@@ -604,10 +606,12 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
     ##
     ## TODO: Improve this by turning the geoids and tablevars into categories.
     ##
+
     logging.info("building sf1_block_list for %s %s",stusab,county)
     sf1_block_list = []
     for s in sf1_block_reader:
         temp_list = []
+        # Only process the block records that have non-zero population
         if s['STATE'][:1].isdigit() and int(s['P0010001'])>0:
             geo_id=str(s['STATE'])+str(s['COUNTY']).zfill(3)+str(s['TRACT']).zfill(6)+str(s['BLOCK'])
             for k,v in list(s.items()):
@@ -655,10 +659,18 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
     ## This is a dictionary of lists where
     ## sf1_block_dict[tract] = list of sf1_tract rows from the SF1 data that match each tract
 
-    logging.info("getting tract data for %s %s",stusab,county)
+    sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )
+    if not dpath_exists(sf1_tract_data_file):
+        logging.error(f"ERROR. NO TRACT DATA FILE {sf1_tract_data_file} for {stusab} {county} ")
+        return
+
+    sf1_tract_reader    = csv.DictReader(dopen( sf1_tract_data_file,'r'))
+
+    logging.info("getting tract data for %s %s from %s",stusab,county,sf1_tract_data_file)
     sf1_tract_list=[]
     error_count = 0
     none_errors = 0
+    # This repeats for every tract in the file
     for (ct,s) in enumerate(sf1_tract_reader):
         if s['STATE'] is None:
             logging.error("s is none! ct:%s stusab:%s county:%s geo_id:%s ",ct,stusab,county,geo_id)
@@ -682,9 +694,8 @@ def make_state_county_files(auth, stusab, county, tractgen=ALL, *, debug=False, 
             none_errors += 1
             continue
 
-
-
     if none_errors>0:
+        print("None values read in sf1_tract_reader. In thie past, this has happened because of a memory allocation error in the Python dictReader....")
         raise RuntimeError("none_errors > 0 ")
 
     sf1_tract = pd.DataFrame.from_records(sf1_tract_list, columns=[GEOID,TABLEVAR,'value'])
@@ -754,6 +765,7 @@ if __name__=="__main__":
     parser.add_argument("--debug", help="Run in debug mode. Do not update database and write output to file specified by --output",action='store_true')
     parser.add_argument("--output", help="Specify output file. Requires that a single stusab/county/tract be specified")
     parser.add_argument("--force", help="Generate all tract files, even if they exist", action='store_true')
+    parser.add_argument("--tractinfo", help="print summary information regarding sf1_tract_{state}{county}.csv - for debugging", action='store_true')
 
     parser.add_argument("stusab",  help="2-character stusab abbreviation.")
     parser.add_argument("county", help="3-digit county code")
@@ -782,6 +794,10 @@ if __name__=="__main__":
         args.j2 = 1
 
     auth = DBMySQLAuth.FromConfig(os.environ)
+
+    if args.tractinfo:
+        tractinfo(auth, args.stusab, args.county, args.tract)
+        exit(0)
 
     # If we are doing a specific tract
     if not args.debug:

@@ -239,6 +239,88 @@ You can combine these with `watch`, like this:
 watch './dbrtool.py --cluster;./dbrtool.py --status --reident s005080090050030'
 ```
 
+Diagnosing crashes
+==================
+Eventaully the schedulers die:
+
+```
+Every 2.0s: ./dbrtool.py --cluster ; ./dbrtool.py --status --reident s005080090050030                                        Wed Apr  7 19:51:29 2021
+
+CORE: ip-10-252-44-156.ite.ti.census.gov 4 days, 5:35, 0 users, load average: 0.01, 0.04, 0.04
+CORE: ip-10-252-47-50.ite.ti.census.gov 14 days, 9:09, 0 users, load average: 0.12, 0.11, 0.04
+idle: ip-10-252-46-199.ite.ti.census.gov 4:01, 0 users, load average: 0.06, 0.08, 0.15
+idle: ip-10-252-47-191.ite.ti.census.gov 4:01, 0 users, load average: 0.00, 0.00, 0.00
+Current Time
+   now(): 2021-04-07 19:51:32
+----------------------
+Completed States:
+----------------------
+Files created and remaining
+   lp_created: 72368
+   lp_remaining: 163
+   lp_in_process: 0
+   lp_hostlocked: 0
+   sol_created: 72124
+   sol_remaining: 407
+   sol_ready: 244
+   csv_completed: 0
+   csv_remaining: 72531
+
+----------------------
+LP files in progress
+----------------------
+SOLs in progress
+----------------------
+Number of LP files created in past hour:
+----------------------
+Number of SOL files created in past hour:
+----------------------
+
+```
+
+If you launched with `--launch` or `--launch_all`, you can log into the machine and look for the 'output*' directory:
+```
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $ ssh hadoop@10.252.46.199
+...
+CORE:hadoop@ip-10-252-46-199$ ls -l
+total 4
+drwxr-xr-x 25 hadoop hadoop 4096 Apr  7 16:52 das-vm-config
+lrwxrwxrwx  1 hadoop hadoop   38 Apr  7 16:52 recon -> das-vm-config/dbrecon/stats_2010/recon
+CORE:hadoop@ip-10-252-46-199$ pwd
+/home/hadoop
+CORE:hadoop@ip-10-252-46-199$ cd recon/
+CORE:hadoop@ip-10-252-46-199$ ls -alt
+total 436
+-rw-r--r--  1 hadoop hadoop 27497 Apr  7 19:28 output-2021-04-07T19:28:19-0400
+drwxr-xr-x  2 hadoop hadoop  8192 Apr  7 19:28 logs
+drwxr-xr-x  7 hadoop hadoop  4096 Apr  7 19:28 .
+-rw-r--r--  1 hadoop hadoop  7576 Apr  7 19:28 s1_make_geo_files.py
+-rw-r--r--  1 hadoop hadoop 27442 Apr  7 16:56 output-2021-04-07T16:55:31-0400
+drwxr-xr-x  2 hadoop hadoop    83 Apr  7 16:55 __pycache__
+-rw-r--r--  1 hadoop hadoop 41632 Apr  7 16:55 dbrecon.py
+-rwxr-xr-x  1 hadoop hadoop 29880 Apr  7 16:55 dbrtool.py
+-rw-r--r--  1 hadoop hadoop   103 Apr  7 16:55 .gitignore
+...
+```
+Look at the top file to try to figure out what happened. In this case, it is becasue there was a bug in s4_run_gurobi.py:
+```
+2021-04-07 19:28:21,378 dbrecon.py:806 (log_error) PID40493: DBMySQL.csfr called with auth=fl
+Traceback (most recent call last):
+  File "s4_run_gurobi.py", line 319, in <module>
+    run_gurobi_for_county(stusab, county, tracts)
+  File "s4_run_gurobi.py", line 283, in run_gurobi_for_county
+    dbrecon.db_lock(stusab, county, tract)
+  File "/mnt/home/hadoop/das-vm-config/dbrecon/stats_2010/recon/dbrecon.py", line 308, in db_lock
+    DBMySQL.csfr(auth, cmd, args)
+  File "/mnt/home/hadoop/das-vm-config/dbrecon/stats_2010/recon/ctools/dbfile.py", line 413, in csfr
+    raise ValueError(f"DBMySQL.csfr called with auth={auth}")
+ValueError: DBMySQL.csfr called with auth=fl
+2021-04-07 19:28:22,370 dbrecon.py:811 (logging_exit) PID40676: DBMySQL.csfr called with auth=fl
+2021-04-07 19:28:22,371 dbrecon.py:812 (logging_exit) ['s4_run_gurobi.py', '--exit1', '--j1', '1', '--j2', '32', 'fl', '103', '026500']
+/usr/local/lib/python3.6/site-packages/pymysql/cursors.py:170: Warning: (1265, "Data truncated for column 'file' at row 1")
+  result = self._query(query)
+```
+
 
 TODO
 ====

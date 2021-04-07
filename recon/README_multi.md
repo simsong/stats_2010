@@ -4,7 +4,21 @@ This directory contains tools for running the database reconstruction software o
 
 AWS EMR monitors the free memory on every instance and kills the instance if it runs out of memory. This works great under Spark, which simply starts a new cluster. It's lousy here. And if the MASTER or one of the 2 CORE nodes dies, the cluster becomes unstable and the entire cluster gets killed. So in general, we try to do all of the heavy-living on TASK nodes, because we can kill all of the task nodes and not damage the cluster.
 
-You can control the cluster size with the ./dbrtool.py --resize command. It will only resize the TASK nodes.
+You can control the cluster size with the ./dbrtool.py --resize command. It will only resize the TASK nodes:
+
+```
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $ ./dbrtool.py --clus
+CORE: ip-10-252-44-156.ite.ti.census.gov 4 days, 1:32, 0 users, load average: 0.00, 0.01, 0.00
+CORE: ip-10-252-47-50.ite.ti.census.gov 14 days, 5:07, 0 users, load average: 0.02, 0.02, 0.00
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $ ./dbrtool.py --resize 10
+Resize cluster to 10 nodes?yes
+clusterId: j-2KI6WGJLYONB9
+DASTaskInstanceGroup  requested: 10  running: 0
+DASEMRDriverGroup  requested: 1  running: 1
+DASEMRCoreGroup  requested: 2  running: 2
+RESIZING
+urial-ITE-MASTER:hadoop@/mnt/users/garfi303/recon $
+```
 
 
 There are two-workflows for using EMR clusters.

@@ -132,7 +132,7 @@ def make_county_list(stusab:str):
     # Select georecords into the tracts
     DBMySQL.csfr(auth,
                  f"""
-                 INSERT INTO {REIDENT}tracts (stusab,state,county,tract)
+                 INSERT INTO {REIDENT}tracts (stusab,state,county,tract,pop100)
                  SELECT stusab,state,county,tract,pop100 FROM {REIDENT}geo where sumlev=140 and stusab=%s
                  """,(stusab,))
 
@@ -191,9 +191,10 @@ if __name__=="__main__":
         stusabs = nstusabs
 
     # Generate the CSV files. Do this in parallel
-    args.j1 = min(args.j1, len(stusabs))
-    with multiprocessing.Pool(args.j1) as p:
-        p.map(make_county_list, stusabs)
+    if stusabs:
+        args.j1 = min(args.j1, len(stusabs))
+        with multiprocessing.Pool(args.j1) as p:
+            p.map(make_county_list, stusabs)
 
     print("Made geofiles for: {}".format(" ".join(stusabs)))
     #validate(dbrecon.(), args.j1, stusabs)

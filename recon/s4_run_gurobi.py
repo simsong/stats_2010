@@ -280,7 +280,7 @@ def run_gurobi_for_county(stusab, county, tracts):
             return
 
     for tract in tracts:
-        dbrecon.db_lock(stusab, county, tract)
+        dbrecon.db_lock(auth, stusab, county, tract)
     tracttuples = [(stusab, county, tract) for tract in tracts]
     if args.j1>1:
         with multiprocessing.Pool(args.j1) as p:

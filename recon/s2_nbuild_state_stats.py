@@ -266,7 +266,7 @@ def process_stusab(stusab):
             if count%1000==0:
                 logging.info("count=%d",count)
 
-def validate_proc(row):
+def validate_county(row):
     (stusab,county) = row
     stusab=stusab.lower()
     ret = []
@@ -282,14 +282,14 @@ def validate(auth, j1, stusab):
     """Verify that all of the files exist for the named states"""
 
     stusab_set = ",".join([f'"{stusab}"' for stusab in stusabs])
-    tracts = DBMySQL.csfr(auth,
+    counties = DBMySQL.csfr(auth,
                           f"""SELECT stusab,county
                           FROM {REIDENT}geo
                           WHERE sumlev='050' AND pop100>0 AND stusab IN ({stusab_set})
                           """)
-    print("validating %s tracts" % len(tracts))
+    print("validating %s counties" % len(counties))
     with multiprocessing.Pool(j1) as p:
-        res = p.map(validate_proc, tracts)
+        res = p.map(validate_county, counties)
     res = [row for row in res if row!=[]]
     missing_states = set()
     state_re = re.compile("/work/(..)/")

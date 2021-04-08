@@ -366,7 +366,7 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
     cmd += " WHERE stusab=%s AND county=%s AND tract=%s"
     args += [stusab,county,tract]
 
-    DBMySQL.csfr(auth, cmd, args, rowcount=1)
+    DBMySQL.csfr(auth, cmd, args)
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
 def is_db_done(auth, what, stusab, county, tract):
@@ -873,6 +873,14 @@ def dpath_unlink(path):
         print(f"aws s3 rm s3://{bucket}/{key}")
     else:
         return os.unlink(path)
+
+def dpath_safe_unlink(path):
+    if path is None:            # no need to unlink None
+        return
+    try:
+        dpath_unlink(path)
+    except FileNotFoundError as e:
+        pass
 
 def dlistdir(path):
     path = dpath_expand(path)

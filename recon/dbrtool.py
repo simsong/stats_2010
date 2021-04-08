@@ -583,6 +583,7 @@ if __name__ == "__main__":
     parser.add_argument("--executor_memory", help="how much memory to give executors",default='1g')
     parser.add_argument("--executor_memoryOverhead", help="how much extra memory to give executors",default='100g')
     parser.add_argument('--disable-vmem-check', action='store_true', help='set yarn.nodemanager.vmem-check-enabled to false')
+    parser.add_argument("--watch", help="Run the watch command to watch the cluster status and the reident status", action='store_true')
     args = parser.parse_args()
 
     if args.env:
@@ -698,6 +699,13 @@ if __name__ == "__main__":
     else:
         print("Please specify --reident\n",file=sys.stderr)
         exit(1)
+
+    if args.watch:
+        try:
+            subprocess.call(['watch',f'python3 dbrtool.py --cluster ; python3 dbrtool.py --status --reident {args.reident}'])
+        except KeyboardInterrupt as e:
+            pass
+        exit(0)
 
     if args.register:
         do_register(auth, args.reident)

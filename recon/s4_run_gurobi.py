@@ -183,7 +183,7 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
             try:
                 final_pop = dbrecon.get_final_pop_from_sol(auth,stusab,county,tract,delete=False);
                 break           # exit for loop
-            except botocore.errorfactory.NoSuchKey as e:
+            except (FileNotFoundError,botocore.errorfactory.NoSuchKey) as e:
                 if retry_count==10:
                     logging.error(f"retry {retry_count} get_final_pop_from_sol. Retry count exceeded.")
                     raise
@@ -264,7 +264,7 @@ def run_gurobi_for_county_tract(stusab, county, tract):
             DBMySQL.csfr(auth,
                          f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                          (str(e),stusab,county,tract))
-            raise 
+            raise
     except InfeasibleError as e:
         logging.error(f"Infeasible in {stusab} {county} {tract}")
         DBMySQL(auth,f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',

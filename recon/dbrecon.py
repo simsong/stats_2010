@@ -332,7 +332,7 @@ def db_unlock_all(auth, hostname):
         whostlock = ''
     else:
         hostlock = f" AND (hostlock = '{hostname}') "
-        whostlock = f'WHERE {hostlock}';
+        whostlock = f"WHERE hostlock = '{hostname}'"
 
     logging.warning(f"UNSOLVE where lp_start is NOT NULL and lp_end is NULL and {hostlock}")
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET lp_start=NULL, hostlock=NULL,lp_host=NULL  WHERE (lp_start IS NOT NULL) AND (lp_end IS NULL) {hostlock}")

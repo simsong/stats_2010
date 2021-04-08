@@ -366,7 +366,7 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
     cmd += " WHERE stusab=%s AND county=%s AND tract=%s"
     args += [stusab,county,tract]
 
-    DBMySQL.csfr(auth, cmd, args, rowcount=1)
+    DBMySQL.csfr(auth, cmd, args)
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
 
 def is_db_done(auth, what, stusab, county, tract):

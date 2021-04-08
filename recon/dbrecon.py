@@ -684,7 +684,7 @@ def remove_csvfile(auth,stusab,county,tract):
             dpath_unlink(fn)
         except FileNotFoundError as e:
             pass
-    DBMySQL.csfr(auth(),f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",
             (stusab,county))
 
 

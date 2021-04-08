@@ -75,14 +75,8 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
     # Make sure output does not exist. If it exists, delete it, otherwise give an error
     for fn in [sol_filename,solgz_filename]:
         if dbrecon.dpath_exists(fn):
-            try:
-                logging.warning(f"File {fn} exists. size={dbrecon.dgetsize(fn)} Removing.")
-            except FileNotFoundError as e:
-                pass
-            try:
-                dbrecon.dpath_unlink(fn)
-            except FileNotFoundError as e:
-                pass
+            logging.warning(f"File {fn} exists. size={dbrecon.dgetsize(fn)} Removing.")
+            dbrecon.dpath_safe_unlink(fn)
 
 
     # make sure output directory exists
@@ -211,8 +205,8 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
     else:
         subprocess.check_call([ GZIP, GZIP_OPT], stdin=open(tmp_log_filename,'rb'), stdout=open(log_filename+'.gz','wb'))
 
-    dbrecon.path_safe_unlink(tmp_log_filename)
-    dbrecon.path_safe_unlink(tempname) # handles None paths
+    dbrecon.dpath_safe_unlink(tmp_log_filename)
+    dbrecon.dpath_safe_unlink(tempname) # handles None paths
 
 
 

@@ -663,7 +663,7 @@ def clean(auth):
                 DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET {what}_start=NULL,{what}_end=NULL "
                         "where stusab=%s and county=%s and tract=%s",
                         (stusab, county, tract))
-                os.unlink(path)
+                dbrecon.dpath_safe_unlink(path)
 
 
 

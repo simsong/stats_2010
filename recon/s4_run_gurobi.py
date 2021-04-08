@@ -257,7 +257,7 @@ def run_gurobi_for_county_tract(stusab, county, tract):
         return
 
     except gurobipy.GurobiError as e:
-        logging.error(f"GurobiError in {stusab} {county} {tract}")
+        logging.error(f"GurobiError '{e}' in {stusab} {county} {tract}")
         dbrecon.log_error(error=str(e), filename=__file__)
         if str(e)=='Unable to read model':
             dbrecon.log_error("Unable to read model. Deleting lp file", filename=__file__)

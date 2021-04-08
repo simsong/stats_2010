@@ -99,6 +99,8 @@ LP='lp'
 SOL='sol'
 CSV='csv'
 
+delete_on_exit = []
+
 ################################################################
 ### Summary Levels #############################################
 ################################################################
@@ -740,6 +742,7 @@ def argparse_add_logging(parser):
 
 def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
                   stdout=None,args=None,error_alert=True):
+    """Sets up loging and registers exit handlers"""
     global dfxml_writer
     if not prefix:
         prefix = config[SECTION_RUN][OPTION_NAME]
@@ -779,6 +782,7 @@ def setup_logging(*,config,loglevel=logging.INFO,logdir="logs",prefix='dbrecon',
 
     if error_alert:
         # Log exit codes
+        atexit.register(tempfile_exit)
         atexit.register(logging_exit)
 
     # Finally, indicate that we have started up
@@ -803,7 +807,16 @@ def log_error(*,error=None, filename=None, last_value=None):
             (hostname(), error, sys.argv[0], reident, filename, last_value), quiet=True)
     logging.error(error)
 
+def tempfile_exit():
+    """On exit, delete any tempfiles that were created."""
+    for path in delete_on_exit:
+        try:
+            os.unlink(path)
+        except FileNotFoundError as e:
+            pass
+
 def logging_exit():
+    """Called at exit. If the exit was caused by an exception, record that"""
     if hasattr(sys,'last_value'):
         msg = f'PID{os.getpid()}: {sys.last_value}'
         logging.error(msg)
@@ -899,6 +912,7 @@ def dopen(path, mode='r', encoding='utf-8',*, zipfilename=None, download=False):
                 raise FileNotFoundError(path)
             if download:
                 with tempfile.NamedTemporaryFile(mode='wb',delete=False) as tf:
+                    delete_on_exit.append(tf.name) # remember to delete the file!
                     boto3.client('s3').download_file(bucket, key, tf.name)
                     if mode=='r' and path.endswith('.gz'):
                         return codecs.getreader(encoding)(gzip.GzipFile(tf.name,'rb'),errors='ignore')

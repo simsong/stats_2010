@@ -68,7 +68,7 @@ SPARK_TRACTS_PER_PARTITION = 1
 
 # Failsafes: don't start an LP or SOL unless we have this much free
 MIN_FREE_MEM_FOR_LP  = 400*GiB  # we've seen LP generation take up to 350GiB
-MIN_FREE_MEM_FOR_SOL = 20*GiB
+MIN_FREE_MEM_FOR_SOL = 100*GiB  # don't launch a SOL if there is less than 100GiB free
 
 MIN_FREE_MEM_FOR_KILLER = 5*GiB  # if less than this, start killing processes
 

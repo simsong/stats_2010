@@ -352,7 +352,7 @@ def run(auth, args):
                 last_lp_launch = time.time()
 
             for (stusab,county, tract_count, tract_pop) in make_lps:
-                if (tract_pop > LP_MULTI_MAX_TRACT_POP) and (running_lp() > 1):
+                if (tract_pop > LP_MULTI_MAX_TRACT_POP) and (running_lps() > 1):
                     print(f"\n{stusab} {county} tracts: {tract_count} tract_pop: {tract_pop}. running_lps:{running_lps()}")
                     print(f"Will only run one LP maker at a time\n")
                     break

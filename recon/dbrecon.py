@@ -81,6 +81,12 @@ def set_reident(reident_no_sep):
     os.environ['REIDENT_NO_SEP'] = reident_no_sep
     dbrecon.REIDENT = REIDENT = os.environ['REIDENT'] = reident_no_sep + "_"
 
+def reident_no_sep():
+    ret = REIDENT
+    if ret.endswith('_'):
+        ret = ret[:-1]
+    return ret
+
 ##
 ## Functions that return paths.
 ## These cannot be constants because they do substituion, and f-strings don't work as macros

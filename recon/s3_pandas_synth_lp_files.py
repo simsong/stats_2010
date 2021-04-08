@@ -211,6 +211,7 @@ class LPTractBuilder:
     def db_fail(self):
         # remove from the database that we started. This is used to clean up the database if the program terminates improperly
         if not self.debug:
+            logging.warning("UNSOLVE LPTractBuilder db_fail %s %s %s",self.stusab, self.county, self.tract)
             DBMySQL.csfr(dbrecon.auth(),
                          f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
                          (self.stusab,self.county,self.tract))
@@ -501,7 +502,7 @@ def build_tract_lp_tuple(tracttuple):
         lptb.build_tract_lp()
         logging.info("build_tract_lp_tuple completed")
     except MemoryError as e:
-        logging.error(f"MEMORY ERROR in {stusab} {county} {tract}: {e}")
+        logging.error(f"UNSOLVE MEMORY ERROR in {stusab} {county} {tract}: {e}")
         cmd = f"""
         UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL,lp_host=NULL
         WHERE stusab=%s and county=%s and tract=%s

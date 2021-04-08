@@ -78,6 +78,7 @@ PS_LIST_FREQUENCY = 30   # big status report every 30 seconds
 
 S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
+S4_LOW_MEMORY_RETRIES = 60      # try for an hour before giving up
 LP_J1    = 1                    # let this program schedule
 
 SPARK_SMALL_LP_MAX_POP100 = 3000 # anything over 3000 requires large
@@ -394,7 +395,7 @@ def run(auth, args):
                     gurobi_threads = get_config_int('gurobi','threads')
                     dbrecon.db_lock(auth, stusab,county,tract)
                     stusab         = stusab.lower()
-                    cmd = [sys.executable,S4_RUN,'--reident', REIDENT, '--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
+                    cmd = [sys.executable,S4_RUN,'--reident', REIDENT, '--low_memory_retries', S4_LOW_MEMORY_RETRIES, '--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
                     print("$ "+" ".join(cmd))
                     p = prun(cmd)
                     running.add(p)

@@ -30,6 +30,11 @@ from ctools.dbfile import DBMySQL,DBMySQLAuth
 class InfeasibleError(RuntimeError):
     pass
 
+class LowMemoryError(RuntimeError):
+    pass
+
+LOW_MEMORY_RETRY_TIME = 60
+
 # Details on Gurobi output:
 # http://www.gurobi.com/documentation/8.1/refman/mip_logging.html
 
@@ -200,7 +205,8 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
         vars.append("sol_gb")
         vals.append(dbrecon.maxrss() // GB)
 
-        cmd = f"UPDATE {REIDENT}tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
+        cmd = (f"UPDATE {REIDENT}tracts set " + ",".join([var+'=%s' for var in vars])
+               + " where stusab=%s and county=%s and tract=%s")
         DBMySQL.csfr(auth,cmd, vals+[stusab,county,tract])
     del env                     # free the memory and release the Gurobi token
 
@@ -257,11 +263,14 @@ def run_gurobi_for_county_tract(stusab, county, tract):
             dbrecon.log_error("Unable to read model. Deleting lp file", filename=__file__)
             dbrecon.remove_lpfile(auth, stusab, county, tract)
             return
+        if str(e)=='Out of memory':
+            logging.warning('Gurobi out of memory.')
+            raise LowMemoryError()
         else:
             DBMySQL.csfr(auth,
                          f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
                          (str(e),stusab,county,tract))
-            raise e;
+            raise 
     except InfeasibleError as e:
         logging.error(f"Infeasible in {stusab} {county} {tract}")
         DBMySQL(auth,f'INSERT INTO errors (error,stusab,county,tract) values (%s,%s,%s,%s)',
@@ -275,10 +284,19 @@ def run_gurobi_for_county_tract(stusab, county, tract):
 def run_gurobi_tuple(tt):
     """Run gurobi on a tract tuple.
     This cannot be made a local function inside run_gurobi_for_county because then it won't work with map.
+    We should really pass an object rather than a tupple
     """
-    run_gurobi_for_county_tract(tt[0], tt[1], tt[2])
+    args = tt[0]
+    for retry in range(1,args.low_memory_retries+1):
+        try:
+            run_gurobi_for_county_tract(tt[1], tt[2], tt[3])
+            return
+        except LowMemoryError as e:
+            logging.warning(f"LowMemoryError. retry {retry} / {args.low_memory_retries}")
+            time.sleep(LOW_MEMORY_RETRY_TIME)
+    raise LowMemoryError()
 
-def run_gurobi_for_county(stusab, county, tracts):
+def run_gurobi_for_county(args, stusab, county, tracts):
     logging.info(f"run_gurobi_for_county({stusab},{county})")
     assert stusab is not None
     assert county is not None
@@ -295,7 +313,7 @@ def run_gurobi_for_county(stusab, county, tracts):
 
     for tract in tracts:
         dbrecon.db_lock(auth, stusab, county, tract)
-    tracttuples = [(stusab, county, tract) for tract in tracts]
+    tracttuples = [(args, stusab, county, tract) for tract in tracts]
     if args.j1>1:
         with multiprocessing.Pool(args.j1) as p:
             p.map(run_gurobi_tuple, tracttuples)
@@ -315,6 +333,7 @@ if __name__=="__main__":
     parser.add_argument("--j2", help="Specify number of threads for gurobi to use", default=GUROBI_THREADS_DEFAULT, type=int)
     parser.add_argument("--dry-run", help="do not run gurobi; just print model stats", action="store_true")
     parser.add_argument("--exit1", help="Exit Gurobi after the first execution", action='store_true')
+    parser.add_argument("--low_memory_retries", help="If we run out of memory, retry this many times, sleeping 60 seconds between each retry", default=1, type=int)
 
     if 'GUROBI_HOME' not in os.environ:
         raise RuntimeError("GUROBI_HOME not in environment")
@@ -330,4 +349,4 @@ if __name__=="__main__":
         counties = [args.county]
 
     for county in counties:
-        run_gurobi_for_county(stusab, county, tracts)
+        run_gurobi_for_county(args, stusab, county, tracts)

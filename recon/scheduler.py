@@ -395,7 +395,10 @@ def run(auth, args):
                     gurobi_threads = get_config_int('gurobi','threads')
                     dbrecon.db_lock(auth, stusab,county,tract)
                     stusab         = stusab.lower()
-                    cmd = [sys.executable,S4_RUN,'--reident', REIDENT, '--low_memory_retries', S4_LOW_MEMORY_RETRIES, '--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
+                    cmd = [sys.executable,S4_RUN,
+                           '--reident', REIDENT,
+                           '--low_memory_retries', str(S4_LOW_MEMORY_RETRIES),
+                           '--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
                     print("$ "+" ".join(cmd))
                     p = prun(cmd)
                     running.add(p)

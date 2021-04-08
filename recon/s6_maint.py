@@ -51,7 +51,7 @@ def final_pop_scan_sct(sct):
     try:
         final_pop = dbrecon.get_final_pop_from_sol(stusab, county, tract)
     except FileNotFoundError:
-        print(f"{stusab} {county} {tract} has no solution. Removing")
+        logging.warning(f"UNSOLVE {stusab} {county} {tract} has no solution. Removing")
         DBMySQL.csfr(dbrecon.auth(), f"UPDATE {REIDENT}tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",(stusab,county,tract))
     else:
         print(f"{stusab} {county} {tract} = {final_pop}")
@@ -84,10 +84,10 @@ if __name__=="__main__":
     if args.clear or args.schema:
         glog = GurobiLogfileParser("tests/model_04001944300.log")
         if args.schema:
-            DBMySQL.csfr(auth,(f"DROP TABLE IF EXISTS {REIDENT}glog")
-            DBMySQL.csfr(auth,(glog.sql_schema())
+            DBMySQL.csfr(auth,f"DROP TABLE IF EXISTS {REIDENT}glog")
+            DBMySQL.csfr(auth,glog.sql_schema())
         if args.clear:
-            DBMySQL.csfr(auth,(f"DELETE from {REIDENT}glog")
+            DBMySQL.csfr(auth,f"DELETE from {REIDENT}glog")
 
     if args.final_pop:
         final_pop_scan()
@@ -105,16 +105,16 @@ if __name__=="__main__":
             LEFT JOIN {REIDENT}geo g
             ON t.state=g.state AND t.county=g.county AND t.tract=g.tract
             WHERE g.sumlev=140 AND t.final_pop != g.pop100
-            """)
+            """))
         for (stusab,county,tract,final_pop,pop100) in bad:
-            print(f"{stusab} {county} {tract} {final_pop} != {pop100}")
+            logging.warning(f"{stusab} {county} {tract} {final_pop} != {pop100}")
             if args.rm:
-                DBMySQL.csfr(auth,(f"""
+                logging.warning(f"SUNSOLVE {stusab} {county} {tract} {final_pop} != {pop100}")
+                DBMySQL.csfr(auth,f"""
                 UPDATE {REIDENT}tracts
-                SET lp_start=Null,lp_end=null,sol_start=null,sol_end=null,hostlock=null,final_pop=null
+                SET lp_start=NULL,lp_end=NULL,sol_start=NULL,sol_end=NULL,hostlock=NULL,final_pop=NULL
                 where stusab=%s and county=%s and tract=%s
-                """,
-                        (stusab,county,tract))
+                """, (stusab,county,tract))
                 dbrecon.dpath_unlink(dbrecon.LPFILENAMEGZ(stusab=stusab,county=county,tract=tract))
                 dbrecon.dpath_unlink(dbrecon.SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract))
 

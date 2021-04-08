@@ -272,10 +272,10 @@ def get_final_pop_from_sol(auth, stusab, county, tract, delete=True):
     sol_filenamegz = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     count = get_final_pop_for_gzfile(sol_filenamegz)
     if count==0 or count>100000:
-        logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
+        logging.warning(f"UNSOLVE {sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
         if delete:
             dpath_safe_unlink(sol_filenamegz)
-        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
+        DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set sol_start=NULL, sol_end=NULL where stusab=%s and county=%s and tract=%s",
                 (stusab,county,tract))
         return None
     return count
@@ -327,17 +327,23 @@ def db_unlock_all(auth, hostname):
     :param hostname: the host to clear hostlock, or None for all hosts.
     """
 
-    hostlock= '1=1' if (hostname is None) else f" (hostlock = '{hostname}') "
+    if hostname is None:
+        hostlock = ''
+        whostlock = ''
+    else:
+        hostlock = f" AND (hostlock = '{hostname}') "
+        whostlock = f'WHERE {hostlock}';
 
-    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET lp_start=NULL,hostlock=NULL,lp_host=NULL WHERE (lp_start IS NOT NULL) AND (lp_end IS NULL) AND {hostlock}")
-    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL,hostlock=NULL,sol_host=NULL WHERE (sol_start IS NOT NULL) AND (sol_end IS NULL) AND {hostlock}")
-    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET hostlock=NULL WHERE  {hostlock}")
+    logging.warning(f"UNSOLVE where lp_start is NOT NULL and lp_end is NULL and {hostlock}")
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET lp_start=NULL, hostlock=NULL,lp_host=NULL  WHERE (lp_start IS NOT NULL) AND (lp_end IS NULL) {hostlock}")
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL,hostlock=NULL,sol_host=NULL WHERE (sol_start IS NOT NULL) AND (sol_end IS NULL) {hostlock}")
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET hostlock=NULL  {whostlock}")
 
 
 
 def db_start(auth, what, stusab, county, tract):
     assert what in [LP, SOL, CSV]
-    DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
+    DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set {what}_start=now(), {what}_host=%s, hostlock=%s, pid=%s where stusab=%s and county=%s and tract=%s",
                  (hostname(),hostname(),os.getpid(),stusab,county,tract))
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {stusab} {county} {tract} ")
 
@@ -353,7 +359,7 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
     """
     assert what in [LP, SOL, CSV]
 
-    cmd  = f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL "
+    cmd  = f"UPDATE {REIDENT}tracts set hostlock=NULL, pid=NULL "
     args = []
 
     if start:
@@ -646,6 +652,7 @@ def remove_lpfile(auth,stusab,county,tract):
     # Remove the LP file and its solution
     lpgz_filename = LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     dpath_safe_unlink(lpgz_filename)
+    logging.warning("UNSOLVE remove_lpfile %s %s %s",stusab, county, tract)
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set lp_start=NULL, lp_end=NULL, lp_gb=NULL  where stusab=%s and county=%s and tract=%s",
                  (stusab,county,tract))
     remove_solfile(auth,stusab, county, tract)
@@ -676,12 +683,14 @@ def validate_solfile(fname):
 def remove_solfile(auth,stusab,county,tract):
     solgz_filename = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
     dpath_safe_unlink(solgz_filename)
+    logging.warning("UNSOLVE remove_solfile %s %s %s",stusab,county,tract)
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL, sol_end=NULL, sol_gb=NULL WHERE stusab=%s AND county=%s AND tract=%s",
             (stusab,county,tract))
-    remove_csvfile(auth,stusab,county,tract)
+    remove_csvfile(auth,stusab,county)
 
-def remove_csvfile(auth,stusab,county,tract):
+def remove_csvfile(auth,stusab,county):
     csv_filename = COUNTY_CSV_FILENAME(stusab=stusab,county=county)
+    logging.warning("UNSOLVE remove_csvfile %s %s",stusab,county)
     for fn in [csv_filename, csv_filename+'.tmp']:
         dpath_safe_unlink(fn)
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",

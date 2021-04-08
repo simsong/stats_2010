@@ -198,6 +198,17 @@ QUERIES = [
 
      """),
 
+    ("Number of LP files created in past hour:",
+     """select count(*) AS `count`,lp_host FROM {reident}tracts
+     WHERE timediff(now(),lp_end) < "01:00:00"
+     GROUP BY lp_host ORDER BY 2
+     """),
+
+    ("Number of SOL files created in past hour:",
+     """select count(*) AS `count`,sol_host FROM {reident}tracts
+     WHERE timediff(now(),sol_end) < "01:00:00"
+     GROUP BY sol_host ORDER BY 2"""),
+
     ("LP files in progress",
      """SELECT stusab,county,tract,lp_start,lp_host,timediff(lp_start,now()) AS age,hostlock
      FROM {reident}tracts WHERE pop100>0 AND lp_start IS NOT NULL and LP_END IS NULL ORDER BY hostlock,lp_start"""),
@@ -205,17 +216,6 @@ QUERIES = [
     ("SOLs in progress",
      """SELECT stusab,county,tract,sol_start,sol_host,timediff(sol_start,now()) AS age,hostlock
      FROM {reident}tracts WHERE pop100>0 AND sol_start IS NOT NULL and SOL_END IS NULL ORDER BY sol_start"""),
-
-    ("Number of LP files created in past hour:",
-     """select count(*) AS `count`,lp_host FROM {reident}tracts
-     WHERE timediff(now(),lp_end) < "01:00:00"
-     GROUP BY lp_host
-     """),
-
-    ("Number of SOL files created in past hour:",
-     """select count(*) AS `count`,sol_host FROM {reident}tracts
-     WHERE timediff(now(),sol_end) < "01:00:00"
-     GROUP BY sol_host"""),
 
     ]
 
@@ -680,7 +680,7 @@ if __name__ == "__main__":
         auth.debug = True
         logging.getLogger().setLevel(logging.INFO)
 
-    if args.show:
+    if args.show:               # --status
         reidents = get_reidents(auth)
         if (not args.reident) or (args.reident not in reidents):
             print("Please specify a reident:")
@@ -692,8 +692,8 @@ if __name__ == "__main__":
             print(k)
             for d in dicts:
                 for (ct,(k,v)) in enumerate(d.items()):
-                    print(f"   {k}: {v}")
-                if ct>1:
+                    print(f"   {k}: {v}",end='\n' if k!='count' else '')
+                if ct>1 and k!='rows':
                     print()
             print('----------------------')
         if args.stusab and args.county and args.tract:
@@ -801,5 +801,5 @@ if __name__ == "__main__":
 
     if args.step5:
         if args.force:
-            dbrecon.remove_csvfile(auth, args.stusab, args.county, args.tract)
+            dbrecon.remove_csvfile(auth, args.stusab, args.county)
         do_step5(auth, args.reident, args.stusab, args.county)

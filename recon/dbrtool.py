@@ -628,7 +628,7 @@ if __name__ == "__main__":
         exit(0)
 
     if args.resize is not None:
-        confirm = input(f"Resize cluster to {args.resize} nodes?").strip()
+        confirm = input(f"Resize cluster to {args.resize} nodes? [y/n] ").strip()
         if confirm[0:1]=='y':
             subprocess.check_call([sys.executable,EMR_CONTROL,'--task',str(args.resize)])
         exit(0)

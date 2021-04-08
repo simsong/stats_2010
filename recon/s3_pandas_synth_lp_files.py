@@ -213,7 +213,7 @@ class LPTractBuilder:
         if not self.debug:
             DBMySQL.csfr(dbrecon.auth(),
                          f"UPDATE {REIDENT}tracts SET lp_start=NULL where stusab=%s and county=%s and tract=%s",
-                         (self.stusab,self.county,self.tract),rowcount=1)
+                         (self.stusab,self.county,self.tract))
 
     def get_constraint_summary(self, level, p01_data, data_dict, summary_nums):
         """

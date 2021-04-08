@@ -268,7 +268,7 @@ def get_final_pop_from_sol(auth, stusab, county, tract, delete=True):
     if count==0 or count>100000:
         logging.warning(f"{sol_filenamegz} has a final pop of {count}. This is invalid, so deleting")
         if delete:
-            dpath_unlink(sol_filenamegz)
+            dpath_safe_unlink(sol_filenamegz)
         DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set sol_start=null, sol_end=null where stusab=%s and county=%s and tract=%s",
                 (stusab,county,tract))
         return None
@@ -504,10 +504,7 @@ def sf1_zipfilename(stusab):
         (bucket,key) = s3.get_bucket_key(sf1_path)
         if not os.path.exists(local_path) or s3.getsize(bucket,key)!=os.path.getsize(local_path):
             logging.warning(f"Downloading {sf1_path} to {local_path}")
-            try:
-                os.unlink(local_path)
-            except FileNotFoundError:
-                pass
+            dpath_safe_unlink(local_path)
             s3.get_object(bucket, key, local_path)
         return local_path
     return sf1_path
@@ -642,7 +639,7 @@ def validate_lpfile(fname):
 def remove_lpfile(auth,stusab,county,tract):
     # Remove the LP file and its solution
     lpgz_filename = LPFILENAMEGZ(stusab=stusab,county=county,tract=tract)
-    dpath_unlink(lpgz_filename)
+    dpath_safe_unlink(lpgz_filename)
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set lp_start=NULL, lp_end=NULL, lp_gb=NULL  where stusab=%s and county=%s and tract=%s",
                  (stusab,county,tract))
     remove_solfile(auth,stusab, county, tract)
@@ -672,7 +669,7 @@ def validate_solfile(fname):
 
 def remove_solfile(auth,stusab,county,tract):
     solgz_filename = SOLFILENAMEGZ(stusab=stusab,county=county,tract=tract)
-    dpath_unlink(solgz_filename)
+    dpath_safe_unlink(solgz_filename)
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL, sol_end=NULL, sol_gb=NULL WHERE stusab=%s AND county=%s AND tract=%s",
             (stusab,county,tract))
     remove_csvfile(auth,stusab,county,tract)
@@ -680,11 +677,8 @@ def remove_solfile(auth,stusab,county,tract):
 def remove_csvfile(auth,stusab,county,tract):
     csv_filename = COUNTY_CSV_FILENAME(stusab=stusab,county=county)
     for fn in [csv_filename, csv_filename+'.tmp']:
-        try:
-            dpath_unlink(fn)
-        except FileNotFoundError as e:
-            pass
-    DBMySQL.csfr(auth(),f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",
+        dpath_safe_unlink(fn)
+    DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET csv_start=NULL, csv_end=NULL, csv_host=NULL WHERE stusab=%s AND county=%s",
             (stusab,county))
 
 
@@ -810,10 +804,7 @@ def log_error(*,error=None, filename=None, last_value=None):
 def tempfile_exit():
     """On exit, delete any tempfiles that were created."""
     for path in delete_on_exit:
-        try:
-            os.unlink(path)
-        except FileNotFoundError as e:
-            pass
+        dpath_safe_unlink(path)
 
 def logging_exit():
     """Called at exit. If the exit was caused by an exception, record that"""

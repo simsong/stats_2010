@@ -29,6 +29,8 @@ $ ./dbrtool.py --reident db10 --spark --step3 --pop100 '<2500' --executor_memory
 
 """
 
+__version__='1.0.0'
+
 
 import os
 from os.path import abspath,dirname
@@ -536,8 +538,11 @@ def do_launch(host, *, debug=False, desc=False, reident):
         'it checkout master ; git pull --recurse;'
         'kill $(ps auxww | grep dbrtool.py | grep -v grep | awk "{print $2;}");'
         'kill $(ps auxww | grep scheduler.py | grep -v grep | awk "{print $2;}");'
+        'grep __version__ *.py;'
         '$(./dbrtool.py --env);'
-        f'(./dbrtool.py --run --reident {reident} > output-$(date -Iseconds) 2>&1 </dev/null &)')
+        f'(./dbrtool.py --run --reident {reident} > output-$(date -Iseconds) 2>&1 </dev/null &);'
+        'echo launched scheduler at $(date) on $(hostname);'
+    )
     if desc:
         cmd = cmd.replace("--run","--run --desc ")
     # Run this in the background

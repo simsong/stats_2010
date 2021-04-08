@@ -298,7 +298,7 @@ def db_lock(auth, stusab, county, tract=None, extra=''):
     :param tract: tract to lock, or None to lock all tracts
     :param extra: extra SQL to add
     """
-    
+
     cmd = f"UPDATE {REIDENT}tracts set hostlock=%s,pid=%s WHERE stusab=%s and county=%s"
     args = [hostname(),os.getpid(),stusab,county]
     if tract:
@@ -310,8 +310,7 @@ def db_lock(auth, stusab, county, tract=None, extra=''):
 
 def db_unlock(auth,stusab, county, tract):
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts set hostlock=NULL,pid=NULL WHERE stusab=%s and county=%s and tract=%s",
-            (stusab,county,tract),
-            rowcount = 1)
+            (stusab,county,tract))
 
 def db_unlock_all(auth, hostname):
     """Hard clear the database fields for running jobs on a given host.
@@ -325,14 +324,13 @@ def db_unlock_all(auth, hostname):
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET lp_start=NULL,hostlock=NULL,lp_host=NULL WHERE (lp_start IS NOT NULL) AND (lp_end IS NULL) AND {hostlock}")
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET sol_start=NULL,hostlock=NULL,sol_host=NULL WHERE (sol_start IS NOT NULL) AND (sol_end IS NULL) AND {hostlock}")
     DBMySQL.csfr(auth,f"UPDATE {REIDENT}tracts SET hostlock=NULL WHERE  {hostlock}")
-    
+
 
 
 def db_start(auth, what, stusab, county, tract):
     assert what in [LP, SOL, CSV]
     DBMySQL.csfr(auth, f"UPDATE {REIDENT}tracts set {what}_start=now(),{what}_host=%s,hostlock=%s,pid=%s where stusab=%s and county=%s and tract=%s",
-                 (hostname(),hostname(),os.getpid(),stusab,county,tract),
-                 rowcount=1 )
+                 (hostname(),hostname(),os.getpid(),stusab,county,tract))
     logging.info(f"db_start: {hostname()} {sys.argv[0]} {what} {stusab} {county} {tract} ")
 
 def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False):
@@ -359,12 +357,12 @@ def db_done(auth, what, stusab, county, tract, *, start=None, clear_start=False)
     else:
         cmd += f",{what}_host=%s "
         args.append(hostname())
-        
+
     if not is_db_done(auth, what, stusab, county, tract):
         cmd += f",{what}_end=now() "
 
     cmd += " WHERE stusab=%s AND county=%s AND tract=%s"
-    args += [stusab,county,tract] 
+    args += [stusab,county,tract]
 
     DBMySQL.csfr(auth, cmd, args, rowcount=1)
     logging.info(f"db_done: {what} {stusab} {county} {tract} ")
@@ -374,7 +372,7 @@ def is_db_done(auth, what, stusab, county, tract):
     assert what in [LP,SOL, CSV]
     row = DBMySQL.csfr(auth,
         f"""
-        SELECT {what}_end FROM {REIDENT}tracts 
+        SELECT {what}_end FROM {REIDENT}tracts
         WHERE (stusab=%s) AND (county=%s) AND (tract=%s) and ({what}_end IS NOT NULL) AND (pop100>0) LIMIT 1
         """,
                   (stusab,county,tract))
@@ -399,16 +397,16 @@ def get_tracts_needing_lp_files(auth, stusab, county):
                         WHERE (stusab=%s) AND (county=%s) AND (lp_end IS NULL) AND (pop100>0)
                         """,(stusab,county))
     return [row[0] for row in rows]
-    
+
 def tracts_in_county_ready_to_solve(auth, stusab, county):
     rows = DBMySQL.csfr(auth,
                         f"""
                         SELECT tract
-                        FROM {REIDENT}tracts 
+                        FROM {REIDENT}tracts
                         WHERE (lp_end IS NOT NULL) AND (sol_end IS NULL) AND (stusab=%s) AND (county=%s) (pop100>0)
                         """, (stusab, county))
     return [row[0] for row in rows]
-    
+
 
 
 ################################################################
@@ -601,7 +599,7 @@ def tracts_for_state_county(*,stusab,county):
     """
     rows = DBMySQL.csfr(auth(),
         f"""
-        SELECT tract from {REIDENT}tracts 
+        SELECT tract from {REIDENT}tracts
         WHERE (stusab=%s) and (county=%s) AND (pop100>0)
         """,(stusab,county))
     return [row[0] for row in rows]

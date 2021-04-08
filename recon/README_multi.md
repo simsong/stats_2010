@@ -322,6 +322,27 @@ ValueError: DBMySQL.csfr called with auth=fl
 ```
 
 
+
+Out of Gurobi Licenses
+----------------------
+
+If you see this, you're out of gurobi licenses:
+```
+2021-04-07 20:00:07,399 dbfile.py:489 (csfr)    SELECTED ROWS count=0  row[0]=None
+2021-04-07 20:00:07,399 dbfile.py:489 (csfr)    SELECTED ROWS count=0  row[0]=None
+2021-04-07 20:00:07,399 scheduler.py:344 (run) needed_lp: 4 but search produced 0. NO MORE LPS FOR NOW...
+2021-04-07 20:00:07,399 scheduler.py:344 (run) needed_lp: 4 but search produced 0. NO MORE LPS FOR NOW...
+2021-04-07 20:00:39,504 s4_run_gurobi.py:240 (run_gurobi_for_county_tract) GurobiError in fl 103 024514
+2021-04-07 20:00:39,537 dbrecon.py:806 (log_error) No unlock license found.
+```
+
+On the DAS we retry license unlocks, but that hasn't been implemented here yet.
+You can monitor Gurobi licenses here:
+https://dasexperimental.ite.ti.census.gov/gurobi_usage.html?display_stat=inst&start=2021-04-06&end=2021-04-07
+
+
+
+
 TODO
 ====
 One of the fundamental mistakes in this project was to use the `datetime` filed in the MySQL database rather than storing Unix timestamps.

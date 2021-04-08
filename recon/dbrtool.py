@@ -439,7 +439,7 @@ def host_status(host):
         uptime = ''
     vmstats   = [line for line in lines if line.startswith('vmstat')]
     if vmstats:
-        vmstat = f'{int(vmstats[0][6:].split()[3])//(1024*1024)} GiB'
+        vmstat = f' Free: {int(vmstats[0][6:].split()[3])//(1024*1024)} GiB'
     else:
         vmstat = ''
 

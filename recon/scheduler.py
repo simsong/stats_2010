@@ -206,6 +206,10 @@ def run(auth, args):
         """Return a list of the runn LP makers"""
         return [p for p in running if p.args[1]==S3_SYNTH]
 
+    def running_lps():
+        """Return the count of running lp jobs"""
+        return len(running_lp())
+
     stop_requested = False
     while True:
         if (limit is not None) and limit < 1:
@@ -321,7 +325,7 @@ def run(auth, args):
         # Figure out how many we need to launch
         #
         if check_lp:
-            needed_lp =  min(get_config_int('run','max_lp'),args.maxlp) - len(running_lp())
+            needed_lp =  min(get_config_int('run','max_lp'),args.maxlp) - running_lps()
 
         if debug:
             print(f"needed_lp: {needed_lp}")
@@ -349,7 +353,7 @@ def run(auth, args):
 
             for (stusab,county, tract_count, tract_pop) in make_lps:
                 if (tract_pop > LP_MULTI_MAX_TRACT_POP) and (running_lp() > 1):
-                    print(f"\n{stusab} {county} tracts: {tract_count} tract_pop: {tract_pop}. running_lps:{running_lp()}")
+                    print(f"\n{stusab} {county} tracts: {tract_count} tract_pop: {tract_pop}. running_lps:{running_lps()}")
                     print(f"Will only run one LP maker at a time\n")
                     break
 

@@ -429,19 +429,23 @@ CORE='CORE'
 IN_USE='IN_USE'
 def host_status(host):
     """Print the status of host and return True if it is ready to run"""
-    cmd = 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime;echo -n vmstat ; vmstat | tail -1'
+    cmd = ('grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;'
+           'echo -n start  ; uptime -s;'
+           'echo -n uptime ; uptime   ;'
+           'echo -n vmstat ; vmstat | tail -1;')
     response = ssh_remote.run_command_on_host(host,cmd, pipeerror='True')
     lines = response.split('\n')
-    uptime   = [line for line in lines if 'load average' in line]
-    if uptime:
-        uptime = ' '.join(uptime[0].split()[2:])
-    else:
-        uptime = ''
-    vmstats   = [line for line in lines if line.startswith('vmstat')]
-    if vmstats:
-        vmstat = f' Free: {int(vmstats[0][6:].split()[3])//(1024*1024)} GiB'
-    else:
-        vmstat = ''
+
+    def grep(s):
+        line = [line.replace(s,'')  for line in lines if line.startswith(s)]
+        if line:
+            return line[0]
+        return ''
+
+    uptime   = grep('uptime')
+    vmstat   = grep('vmstat')
+    if vmstat != '':
+        vmstat = f' Free: {int(vmstat[6:].split()[3])//(1024*1024)} GiB'
 
     if "TASK" in response:
         if "scheduler.py" not in response:
@@ -505,15 +509,8 @@ def do_spark(args):
 
     ctools.cspark.spark_submit(files_to_zip = REQUIRED_FILES, pyfiles = ['layouts/sf1_vars_race_binaries.csv'], argv = cmd)
 
-def do_launch(host, *, debug=False, desc=False, reident):
-    cmd=(
-        'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
-        'ln -s das-vm-config/dbrecon/stats_2010/recon;'
-        'cd das-vm-config;'
-        'bash DAS-Bootstrap3-setup-python.sh;'
-        'source /etc/profile.d/census_dash.sh;'
-        'cd dbrecon/stats_2010/recon;'
-        'git fetch --all; git checkout master ; git pull; git submodule update;'
+"""
+these are taken out of below; we accidentally called census_dash.sh instead of census_das.sh!
         'export DAS_S3ROOT=s3://uscb-decennial-ite-das;'
         'export BCC_HTTPS_PROXY=https://proxy.ti.census.gov:3128;'
         'export BCC_HTTP_PROXY=http://proxy.ti.census.gov:3128;'
@@ -523,13 +520,33 @@ def do_launch(host, *, debug=False, desc=False, reident):
         'export GRB_APP_NAME=DAS;'
         'export GRB_LICENSE_FILE=/usr/local/lib64/python3.6/site-packages/gurobipy/gurobi_client.lic;'
         'export GRB_ISV_NAME=Census;'
-        "kill $(ps auxww | grep drbtool.py | grep -v grep | awk '{print $2;}');"
-        "kill $(ps auxww | grep scheduler.py | grep -v grep | awk '{print $2;}');"
+"""
+
+def do_launch(host, *, debug=False, desc=False, reident):
+    cmd=(
+        'cd /home/hadoop;'
+        'mv das-vm-config das-vm-config.$$;'
+        'git clone https://github.ti.census.gov/CB-DAS/das-vm-config.git --recursive;'
+        'ln -s das-vm-config/dbrecon/stats_2010/recon;'
+        'cd das-vm-config;'
+        'bash DAS-Bootstrap3-setup-python.sh;'
+        'source /etc/profile.d/census_das.sh;'
+        'cd dbrecon/stats_2010/recon;'
+        'echo getting most recent stats_2010;'
+        'it checkout master ; git pull --recurse;'
+        'kill $(ps auxww | grep dbrtool.py | grep -v grep | awk "{print $2;}");'
+        'kill $(ps auxww | grep scheduler.py | grep -v grep | awk "{print $2;}");'
         '$(./dbrtool.py --env);'
         f'(./dbrtool.py --run --reident {reident} > output-$(date -Iseconds) 2>&1 </dev/null &)')
     if desc:
         cmd = cmd.replace("--run","--run --desc ")
     # Run this in the background
+    if debug:
+        print(cmd)
+    #
+    # os.fork() makes this run in the background. Otherwise this takes too long.
+    # we don't go into the background if we are running in debug mode.
+
     if debug or os.fork()==0:
         out = ssh_remote.run_command_on_host(host, cmd, pipeerror=True)
         if debug:

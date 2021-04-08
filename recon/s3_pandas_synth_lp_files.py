@@ -506,7 +506,7 @@ def build_tract_lp_tuple(tracttuple):
         UPDATE {REIDENT}tracts SET hostlock=NULL,lp_start=NULL,lp_end=NULL,lp_host=NULL
         WHERE stusab=%s and county=%s and tract=%s
         """
-        DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract), debug=1)
+        DBMySQL.csfr(dbrecon.auth(),cmd, (stusab, county, tract))
 
 def tractinfo(auth, stusab, county, tract):
     sf1_tract_data_file = dpath_expand( dbrecon.SF1_TRACT_DATA_FILE(stusab=stusab,county=county) )

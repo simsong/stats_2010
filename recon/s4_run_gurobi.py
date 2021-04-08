@@ -200,7 +200,8 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
         vars.append("sol_gb")
         vals.append(dbrecon.maxrss() // GB)
 
-        cmd = f"UPDATE {REIDENT}tracts set " + ",".join([var+'=%s' for var in vars]) + " where stusab=%s and county=%s and tract=%s"
+        cmd = (f"UPDATE {REIDENT}tracts set " + ",".join([var+'=%s' for var in vars])
+               + " where stusab=%s and county=%s and tract=%s")
         DBMySQL.csfr(auth,cmd, vals+[stusab,county,tract])
     del env                     # free the memory and release the Gurobi token
 

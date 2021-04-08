@@ -429,20 +429,27 @@ CORE='CORE'
 IN_USE='IN_USE'
 def host_status(host):
     """Print the status of host and return True if it is ready to run"""
-    cmd = 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime'
+    cmd = 'grep instanceRole /emr/instance-controller/lib/info/extraInstanceData.json;ps ux;uptime;echo -n vmstat ; vmstat | tail -1'
     response = ssh_remote.run_command_on_host(host,cmd, pipeerror='True')
-    uptime   = [line for line in response.split('\n') if 'load average' in line]
+    lines = response.split('\n')
+    uptime   = [line for line in lines if 'load average' in line]
     if uptime:
         uptime = ' '.join(uptime[0].split()[2:])
     else:
         uptime = ''
+    vmstats   = [line for line in lines if line.startswith('vmstat')]
+    if vmstats:
+        vmstat = f'{int(vmstats[0][6:].split()[3])//(1024*1024)} GiB'
+    else:
+        vmstat = ''
+
     if "TASK" in response:
         if "scheduler.py" not in response:
-            return (IDLE, f"idle: {host} {uptime}")
+            return (IDLE, f"idle: {host} {uptime} {vmstat}")
         else:
-            return (IN_USE, f"in use: {host} {uptime}")
+            return (IN_USE, f"in use: {host} {uptime} {vmstat}")
     else:
-        return (CORE, f"CORE: {host} {uptime}")
+        return (CORE, f"CORE: {host} {uptime} {vmstat}")
 
 
 def fast_all(callback):

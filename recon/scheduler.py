@@ -348,7 +348,7 @@ def run(auth, args):
                 lp_j2 = get_config_int('run','lp_j2')
                 stusab = stusab.lower()
                 print(f"\nLAUNCHING LP {S3_SYNTH} {stusab} {county} TRACTS: {tract_count:,} POP: {pop:,}")
-                cmd = [sys.executable,'s3_pandas_synth_lp_files.py', '--j1', str(LP_J1), '--j2', str(lp_j2), stusab, county]
+                cmd = [sys.executable,'s3_pandas_synth_lp_files.py', '--reident', REIDENT, '--j1', str(LP_J1), '--j2', str(lp_j2), stusab, county]
                 print("$ " + " ".join(cmd))
                 p = prun(cmd)
                 running.add(p)
@@ -394,7 +394,7 @@ def run(auth, args):
                     gurobi_threads = get_config_int('gurobi','threads')
                     dbrecon.db_lock(auth, stusab,county,tract)
                     stusab         = stusab.lower()
-                    cmd = [sys.executable,S4_RUN,'--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
+                    cmd = [sys.executable,S4_RUN,'--reident', REIDENT, '--exit1','--j1','1','--j2',str(gurobi_threads),stusab,county,tract]
                     print("$ "+" ".join(cmd))
                     p = prun(cmd)
                     running.add(p)

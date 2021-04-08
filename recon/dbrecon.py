@@ -8,35 +8,35 @@ Note: much of this has been moved to ctools.dbfile.
 
 import argparse
 import atexit
+import codecs
 import csv
 import datetime
 import glob
+import gzip
+import inspect
 import io
 import json
-import resource
 import logging
 import logging.handlers
 import os
 import os.path
 import pickle
+import psutil
 import re
+import resource
 import socket
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
-import psutil
-import boto3
-import botocore
-import subprocess
-import inspect
-import gzip
-import codecs
-import tempfile
 from configparser import ConfigParser
 from os.path import dirname,basename,abspath
 
+import boto3
+import botocore
 import pandas as pd
 
 

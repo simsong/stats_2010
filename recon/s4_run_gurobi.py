@@ -4,20 +4,22 @@
 #
 # When all solutions are present, creates the CSV file
 
+import atexit
 import csv
 import dbrecon
 import gc
 import glob
 import logging
+import multiprocessing
 import os
 import os.path
 import subprocess
 import sys
 import time
-import atexit
-import multiprocessing
+
 from os.path import dirname,basename,abspath
 
+import botocore
 import gurobipy
 
 import dbrecon
@@ -175,8 +177,20 @@ def run_gurobi(auth, stusab, county, tract, lpgz_filename, dry_run):
             except AttributeError:
                 pass
 
-        # Get the final pop
-        final_pop = dbrecon.get_final_pop_from_sol(auth,stusab,county,tract,delete=False);
+        # Get the final pop. Becuase the key may not exist immediately (it happened to us!)
+        # retry if we get the boto3 error.
+        # It would be nice to have a higher-level retry interface for this.
+        for retry_count in range(1,11):
+            try:
+                final_pop = dbrecon.get_final_pop_from_sol(auth,stusab,county,tract,delete=False);
+                break           # exit for loop
+            except botocore.errorfactory.NoSuchKey as e:
+                if retry_count==10:
+                    logging.error(f"retry {retry_count} get_final_pop_from_sol. Retry count exceeded.")
+                    raise
+                logging.warning(f"retry {retry_count} get_final_pop_from_sol {e}")
+                time.sleep(1)   # wait a second
+
         if final_pop==0:
             raise RuntimeError("final pop cannot be 0")
         vars.append("final_pop")

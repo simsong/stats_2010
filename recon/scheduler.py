@@ -80,6 +80,8 @@ S3_SYNTH = 's3_pandas_synth_lp_files.py'
 S4_RUN   = 's4_run_gurobi.py'
 S4_LOW_MEMORY_RETRIES = 60      # try for an hour before giving up
 LP_J1    = 1                    # let this program schedule
+LP_MULTI_MAX_TRACT_POP = 10000  # if more than this many people in the tract, only run one LP file at a time
+
 
 SPARK_SMALL_LP_MAX_POP100 = 3000 # anything over 3000 requires large
 
@@ -334,21 +336,27 @@ def run(auth, args):
                 continue
             direction = 'DESC' if args.desc else ''
             cmd = f"""
-                SELECT stusab,county,count(*) as tracts,sum(pop100) as pop
+                SELECT stusab,county,count(*) as tracts, sum(pop100) as tract_pop
                 FROM {REIDENT}tracts
                 WHERE (lp_end IS NULL) AND (pop100>0) AND (hostlock IS NULL)
                 GROUP BY state,county
-                ORDER BY pop {direction} LIMIT 1
+                ORDER BY tract_pop {direction} LIMIT 1
                 """.format()
             make_lps = DBMySQL.csfr(auth, cmd, debug=True)
             if (len(make_lps)==0 and needed_lp>0) or debug:
                 logging.warning(f"needed_lp: {needed_lp} but search produced 0. NO MORE LPS FOR NOW...")
                 last_lp_launch = time.time()
-            for (stusab,county,tract_count,pop) in make_lps:
+
+            for (stusab,county, tract_count, tract_pop) in make_lps:
+                if (tract_pop > LP_MULTI_MAX_TRACT_POP) and (running_lp() > 1):
+                    print(f"\n{stusab} {county} tracts: {tract_count} tract_pop: {tract_pop}. running_lps:{running_lp()}")
+                    print(f"Will only run one LP maker at a time\n")
+                    break
+
                 # If the load average is too high, don't do it
                 lp_j2 = get_config_int('run','lp_j2')
                 stusab = stusab.lower()
-                print(f"\nLAUNCHING LP {S3_SYNTH} {stusab} {county} TRACTS: {tract_count:,} POP: {pop:,}")
+                print(f"\nLAUNCHING LP {S3_SYNTH} {stusab} {county} TRACTS: {tract_count:,} TRACT POP: {tract_pop:,}")
                 cmd = [sys.executable,'s3_pandas_synth_lp_files.py', '--reident', REIDENT, '--j1', str(LP_J1), '--j2', str(lp_j2), stusab, county]
                 print("$ " + " ".join(cmd))
                 p = prun(cmd)
@@ -358,6 +366,8 @@ def run(auth, args):
                     limit -= 1
                     if limit==0:
                         break
+                print("Sleeping 10 seconds to let the LP launch to happen...")
+                time.sleep(10)
 
         ################################################################
         ## SOL scheduler.

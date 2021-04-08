@@ -874,6 +874,14 @@ def dpath_unlink(path):
     else:
         return os.unlink(path)
 
+def dpath_safe_unlink(path):
+    if path is None:            # no need to unlink None
+        return
+    try:
+        dpath_unlink(path)
+    except FileNotFoundError as e:
+        pass
+
 def dlistdir(path):
     path = dpath_expand(path)
     url = urllib.parse.urlparse(path)

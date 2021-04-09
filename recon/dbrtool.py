@@ -560,6 +560,40 @@ def do_launch(host, *, debug=False, desc=False, reident):
         else:
             exit(0)
 
+def unlock(auth,reident):
+    """remove hostlock from hosts that are no longer in the cluster"""
+    host_re = re.compile('^([^.]+)')
+    def hostname(x):
+        m = host_re.search(x)
+        if m:
+            return m.group(1)
+        raise ValueError('cannot find host in: '+x)
+
+    hosts = [hostname(h) for h in all_hosts()]
+    params = ",".join(['%s' for _ in range(len(hosts))])
+    count = 0
+    for which in ['lp', 'sol', 'csv']:
+        cmd = (
+            f"""SELECT stusab,county,tract,hostlock FROM {reident}_tracts WHERE ({which}_start IS NOT NULL)
+            AND ({which}_end is null) AND (hostlock IS NOT NULL) and (HOSTLOCK NOT IN ({params}))""")
+        rows = DBMySQL.csfr(auth,cmd,hosts)
+        if rows:
+            print("Locked ",which,':')
+            for row in rows:
+                print(row)
+            print()
+            count += len(rows)
+    if count>0:
+        confirm = input(f"Unlock {count} tracts locked by hosts no longer in cluster? [y/n]: ").strip().lower()
+        if confirm=='y':
+            print("Unlocking...")
+            for which in ['lp', 'sol', 'csv']:
+                cmd = (
+                    f"""UPDATE {reident}_tracts set {which}_start=NULL, {which}_host=NULL, {which}_end=NULL, hostlock=NULL
+                    WHERE ({which}_start IS NOT NULL) AND ({which}_end IS NULL) AND (hostlock IS NOT NULL) AND (hostlock NOT IN ({params}))""")
+                DBMySQL.csfr(auth,cmd,hosts)
+
+
 def launch_if_needed(host):
     status = host_status(host)[0]
     if status==IDLE or (status==IN_USE and args.force):
@@ -592,6 +626,7 @@ if __name__ == "__main__":
     g.add_argument("--step5", help="manually run Step 5 and make microdata. Normall run this through the controller. This is for testing", action='store_true')
 
 
+    parser.add_argument('--unlock', action='store_true', help='clear the hostlock for hosts that are no longer part of the cluster.')
     parser.add_argument("--reident", help="specify the reconstruction identification")
     parser.add_argument("--spark", help="Run certian commands under spark",action='store_true')
 
@@ -638,21 +673,6 @@ if __name__ == "__main__":
             do_setup( host )
         exit(0)
 
-
-    if args.launch:
-        if not args.reident:
-            print("--launch requires --reident",file=sys.stderr)
-            exit(1)
-        for host in args.launch.split(','):
-            do_launch(host, debug=args.debug, desc=args.desc, reident=args.reident)
-        exit(0)
-
-    if args.launch_all:
-        if not args.reident:
-            print("--launch requires --reident",file=sys.stderr)
-            exit(1)
-        fast_all(launch_if_needed)
-        exit(0)
 
     if args.cluster_status:
         status_all()
@@ -729,6 +749,20 @@ if __name__ == "__main__":
     else:
         print("Please specify --reident\n",file=sys.stderr)
         exit(1)
+
+    if args.unlock:
+        unlock(auth,args.reident)
+
+    if args.launch:
+        unlock(auth, args.reident)
+        for host in args.launch.split(','):
+            do_launch(host, debug=args.debug, desc=args.desc, reident=args.reident)
+        exit(0)
+
+    if args.launch_all:
+        unlock(auth, args.reident)
+        fast_all(launch_if_needed)
+        exit(0)
 
     if args.watch:
         try:

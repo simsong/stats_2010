@@ -40,7 +40,7 @@ MAX_SF1_ERRORS = 10             # some files may have errors
 MISSING  = 'missing'
 HISPANIC = 'hispanic'
 DEFAULT_J1 = 1
-DEFAULT_J2 = 8
+DEFAULT_J2 = 4
 
 Y = 'Y'
 N = 'N'

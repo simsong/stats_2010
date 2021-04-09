@@ -158,26 +158,26 @@ def do_mysql():
 QUERIES = [
     ('Current Time', 'SELECT now()'),
     ("Completed States:",
-     """SELECT DISTINCT(stusab) from {reident}tracts where stusab not in (SELECT DISTINCT(stusab) from {reident}tracts where sol_end is not NULL)"""),
+     """SELECT stusab,count(*) as remaining from {reident}tracts where sol_end is NULL and pop100>0 group by stusab having remaining=0"""),
 
     ("Files created and remaining ",
      """SELECT * FROM
-              (SELECT COUNT(*) AS lp_created   FROM {reident}tracts   WHERE lp_end IS NOT NULL) a
+              (SELECT COUNT(*) AS lp_created   FROM {reident}tracts   WHERE pop100>0 and lp_end IS NOT NULL ) a
 
               LEFT JOIN
-               (SELECT COUNT(*) AS lp_remaining FROM {reident}tracts  WHERE lp_end IS NULL AND pop100>0 ) b
+               (SELECT COUNT(*) AS lp_remaining FROM {reident}tracts  WHERE pop100>0 and lp_end IS NULL ) b
               ON 1=1
 
               LEFT JOIN
-               (SELECT COUNT(*) AS lp_in_process FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND pop100>0 ) c
+               (SELECT COUNT(*) AS lp_in_process FROM {reident}tracts  WHERE pop100>0 and lp_end IS NULL AND lp_start IS NOT NULL ) c
               ON 1=1
 
               LEFT JOIN
-               (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL AND pop100>0 ) d
+               (SELECT COUNT(*) AS lp_hostlocked FROM {reident}tracts  WHERE pop100>0 and lp_end IS NULL AND lp_start IS NOT NULL AND hostlock IS NOT NULL ) d
               ON 1=1
 
               LEFT JOIN
-               (select count(*) AS sol_created FROM {reident}tracts WHERE sol_end IS NOT NULL) e
+               (select count(*) AS sol_created FROM {reident}tracts WHERE pop100>0 and sol_end IS NOT NULL) e
               ON 1=1
 
               LEFT JOIN
@@ -189,11 +189,11 @@ QUERIES = [
               ON 1=1
 
               LEFT JOIN
-               (SELECT COUNT(*) AS csv_completed FROM {reident}tracts  WHERE csv_end IS NOT NULL AND pop100>0 ) h
+               (SELECT COUNT(*) AS csv_completed FROM {reident}tracts  WHERE pop100>0 and csv_end IS NOT NULL ) h
               ON 1=1
 
               LEFT JOIN
-               (SELECT COUNT(*) AS csv_remaining FROM {reident}tracts  WHERE csv_end IS NULL AND pop100>0 ) i
+               (SELECT COUNT(*) AS csv_remaining FROM {reident}tracts  WHERE pop100>0 and csv_end IS NULL) i
               ON 1=1
 
      """),
